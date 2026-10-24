@@ -149,6 +149,69 @@ try {
         [IO.File]::WriteAllText((Join-Path $projectRoot ('Docs\Validation\final-report-'+$clientChoice.Client+'-menu.txt')),$finalUi,(New-Object Text.UTF8Encoding($false)))
         Write-Output ('PASS: '+$clientChoice.Client+' terminal offers Audit and Apply Fix; removed Final input runs no device check.')
     }
+    # Installation is always a fixture, including real interactive menu routing.
+    $installCallerExit=$global:LASTEXITCODE
+    $installationName='DeviceManagement/Installations/KIOSK/SaaS-Install.ps1'
+    $installFixture=@'
+param($Context)
+$script:InstallationFixtureCount++
+[IO.File]::AppendAllText((Join-Path $env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT 'install-calls.jsonl'),(([pscustomobject]@{Client=$Context.ClientType;Device=$Context.DeviceType;Operation=$Context.Operation;Mode=$Context.Mode;Count=$script:InstallationFixtureCount;PID=$PID} | ConvertTo-Json -Compress)+[Environment]::NewLine))
+$global:LASTEXITCODE=765
+switch($env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO) {
+    'throw' {throw 'Installation fixture refused to start.'}
+    'missing' {return}
+    'error' {Write-Error 'Installation fixture error' -ErrorAction Continue}
+    'interactive' {
+        $user=Read-Host 'Kiosk User [SELISE-KIOSK]'
+        $restaurant=Read-Host 'Restaurant ID'
+        $kiosk=Read-Host 'Kiosk ID'
+        $hostname=Read-Host 'Hostname [DEVICE-KIOSK01]'
+        Write-Host ('INSTALL_INPUTS='+(@($user,$restaurant,$kiosk,$hostname) -join '|'))
+    }
+}
+$result=[pscustomobject]@{Status=$(if($env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO -eq 'fail'){'Fail'}else{'Pass'});Message='SaaS KIOSK Installation fixture completed.';Context=$Context}
+if($env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO -eq 'invalid'){$result.Status='Unknown'}
+$result
+if($env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO -eq 'duplicate'){$result}
+'@
+    $bundle.Files[$installationName]=$installFixture
+    $oldInstallScenario=$env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO
+    try {
+        foreach($scenario in @('pass','fail','throw','missing','duplicate','invalid','error')) {
+            $env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO=$scenario
+            $execution=Invoke-DeviceManagementMemoryScript -Code $callCode -Bundle $bundle -RuntimeCode $runtime -Parameters @{Client='SaaS';Mode='Apply';OperationId='KioskInstallation'}
+            $expected=if($scenario -eq 'pass'){'Pass'}else{'Fail'}
+            Assert-Memory ($execution.State -eq 'Completed' -and $execution.Output.Count -eq 1 -and $execution.Output[0].Status -eq $expected) ('Installation dispatch/completion failed: '+$scenario)
+        }
+        $callsBefore=@(Get-Content -LiteralPath (Join-Path $fixtureRoot 'install-calls.jsonl')).Count
+        foreach($selection in @(@{Client='Subway';Mode='Apply';OperationId='KioskInstallation'},@{Client='SaaS';Mode='Audit';OperationId='KioskInstallation'})) {
+            $execution=Invoke-DeviceManagementMemoryScript -Code $callCode -Bundle $bundle -RuntimeCode $runtime -Parameters $selection
+            Assert-Memory ($execution.Output.Count -eq 1 -and $execution.Output[0].Status -eq 'Unavailable') 'Another selection reached installation.'
+        }
+        Assert-Memory (@(Get-Content -LiteralPath (Join-Path $fixtureRoot 'install-calls.jsonl')).Count -eq $callsBefore) 'Unsupported installation started a handler.'
+        $savedHandler=$bundle.Files[$installationName];$bundle.Files.Remove($installationName)
+        $execution=Invoke-DeviceManagementMemoryScript -Code $callCode -Bundle $bundle -RuntimeCode $runtime -Parameters @{Client='SaaS';Mode='Apply';OperationId='KioskInstallation'}
+        Assert-Memory ($execution.Output.Count -eq 1 -and $execution.Output[0].Status -eq 'Fail') 'Missing installation resource was not rejected.'
+        $bundle.Files[$installationName]=$savedHandler
+        Assert-Memory ($global:LASTEXITCODE -eq $installCallerExit) 'Installation exit state leaked to caller.'
+        $env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO='interactive'
+        $lines.Clear()
+        foreach($name in $bundle.Files.Keys) {
+            $bytes=[Text.Encoding]::UTF8.GetBytes($bundle.Files[$name])
+            $hasher=[Security.Cryptography.SHA256]::Create()
+            try{$hash=[BitConverter]::ToString($hasher.ComputeHash($bytes)).Replace('-','')}finally{$hasher.Dispose()}
+            $lines.Add(("'{0}' = @{{Data='{1}';SHA256='{2}'}}" -f $name,[Convert]::ToBase64String($bytes),$hash))
+        }
+        $literal='@{'+"`r`n"+($lines -join "`r`n")+"`r`n}"
+        $interactive=[IO.File]::ReadAllText((Join-Path $projectRoot 'Deployment\Bootstrap.ps1.template')).Replace('@@RESOURCES@@',$literal)
+        [IO.File]::WriteAllText($interactivePath,($interactive+"`r`n"+'Write-Output ''MEMORY_RETURNED_TO_CALLER'''),(New-Object Text.UTF8Encoding($false)))
+        $installInputs=@('2','1','3','SELISE-KIOSK','RESTAURANT-99','Kiosk-9','HOST-99','8','0')
+        $installUi=$installInputs | & (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $interactivePath 2>&1 | Out-String
+        Assert-Memory ($LASTEXITCODE -eq 0 -and $installUi -match 'INSTALL_INPUTS=SELISE-KIOSK\|RESTAURANT-99\|Kiosk-9\|HOST-99' -and $installUi -match 'MEMORY_RETURNED_TO_CALLER') 'SaaS installation menu/input/return failed.'
+        Assert-Memory ($installUi -notmatch 'KIOSK Installation \(Not available\)|Select Mode|Branch Name') 'Installation used the old unavailable/mode/branch path.'
+        [IO.File]::WriteAllText((Join-Path $projectRoot 'Docs\Validation\saas-kiosk-installation-menu.txt'),$installUi,(New-Object Text.UTF8Encoding($false)))
+        Write-Output 'PASS: SaaS installation direct menu and four prompts, verified/failed/missing/duplicate/error outcomes, client/mode isolation, Back/Exit and caller return. Only fixtures executed.'
+    } finally { $env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO=$oldInstallScenario }
 } finally {
     $env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT=$previousRoot
     $env:DEVICE_MANAGEMENT_MEMORY_TEST_SCENARIO=$previousScenario

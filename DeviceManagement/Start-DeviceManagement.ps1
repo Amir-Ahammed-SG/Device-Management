@@ -18,8 +18,7 @@ $clientsConfiguration = Import-PowerShellDataFile (Join-Path $architectureRoot '
 $operationsConfiguration = Import-PowerShellDataFile (Join-Path $architectureRoot 'Config\Operations.psd1')
 $paymentPackagesConfiguration = Import-PowerShellDataFile (Join-Path $architectureRoot 'Config\PaymentPackages.psd1')
 
-# The retained generic KIOSK Thorough Check is the only implemented operation.
-# Enable it locally in this launcher while all other configured operations remain pending.
+# Enable the retained Thorough Check sources in addition to configured handlers.
 $thoroughCheckOperation = @($operationsConfiguration.Operations | Where-Object { $_.Id -eq 'ThoroughCheck' }) | Select-Object -First 1
 if (-not $thoroughCheckOperation) { throw 'The Thorough Check operation is missing from Config\Operations.psd1.' }
 $thoroughCheckHandler = Join-Path $architectureRoot 'Checks\KIOSK\ThoroughCheck.ps1'
@@ -594,9 +593,12 @@ while (-not $exitRequested) {
         }
         'Result' {
             $preserveOperationOutput = ($selectedOperation.Id -eq 'ThoroughCheck' -and $lastResult.Message -match 'KIOSK Thorough Check completed') -or
-                ($selectedMode -eq 'Audit' -and $selectedOperation.Id -eq 'PaymentService')
+                ($selectedMode -eq 'Audit' -and $selectedOperation.Id -eq 'PaymentService') -or
+                $selectedOperation.Id -eq 'KioskInstallation'
             if (-not $preserveOperationOutput) {
                 Show-DeviceManagementHeader -Title 'Operation Result' -Breadcrumb ("{0} > {1} > {2}" -f $selectedClient.DisplayName, $selectedDevice, $selectedOperation.DisplayName)
+            }
+            if (-not $preserveOperationOutput -or $selectedOperation.Id -eq 'KioskInstallation') {
                 $color = if ($lastResult.Status -eq 'Fail') { 'Red' } elseif ($lastResult.Status -eq 'Unavailable') { 'Yellow' } else { 'Green' }
                 Write-Host ("  Status  : {0}" -f $lastResult.Status) -ForegroundColor $color
                 Write-Host ("  Details : {0}" -f $lastResult.Message) -ForegroundColor $color

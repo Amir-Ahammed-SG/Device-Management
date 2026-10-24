@@ -28,6 +28,8 @@ $files=[ordered]@{
     'SubwayKioskThoroughCheck.ps1'=Join-Path $workspaceRoot 'SubwayKioskThoroughCheck.ps1'
     'DeviceManagement/Start-DeviceManagement.ps1'=Join-Path $projectRoot 'Start-DeviceManagement.ps1'
     'DeviceManagement/Checks/KIOSK/ThoroughCheck.ps1'=Join-Path $projectRoot 'Checks\KIOSK\ThoroughCheck.ps1'
+    'DeviceManagement/Installations/KIOSK/SaaS-Install.ps1'=Join-Path $projectRoot 'Installations\KIOSK\SaaS-Install.ps1'
+    'DeviceManagement/Installations/KIOSK/SaaS/Kiosk_Mode_Setup.ps1'=Join-Path $projectRoot 'Installations\KIOSK\SaaS\Kiosk_Mode_Setup.ps1'
     'Deployment/MemoryRuntime.ps1'=Join-Path $PSScriptRoot 'MemoryRuntime.ps1'
 }
 foreach ($folder in @('Core','Config')) {

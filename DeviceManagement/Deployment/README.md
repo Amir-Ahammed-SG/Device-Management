@@ -9,7 +9,7 @@ Run in 64-bit Windows PowerShell 5.1 as Administrator when performing checks:
 irm 'https://cdn-ito.selisesme.com/script/DeviceManagement.ps1' -EA Stop | iex
 ```
 
-Latest publication: [20261024-actions-40073441632-1](https://github.com/Amir-Ahammed/Device-Management-Script/actions/runs/40073441632). It includes Apply-only hostname confirmation, narrow account password-flag repairs, preserved pre-fix Findings and amber missing AppSettings. Pushes and merges to `main` now build, test and deploy through GitHub Actions.
+Publication history is in [GitHub Actions](https://github.com/Amir-Ahammed/Device-Management-Script/actions/workflows/device-management.yml). The entry also includes the [SaaS KIOSK setup](../Installations/KIOSK/SaaS/README.md) with prompted inputs. Pushes and merges to `main` build, test and deploy through GitHub Actions.
 
 `/script/DeviceManagement.ps1` is the standard CDN entry for the shared device
 and tool menu. The previous `/device-management/Start-DeviceManagement.ps1` and
@@ -40,7 +40,9 @@ process, with the existing console host for Read-Host and confirmation prompts.
 This isolates script/global variables, preferences and native exit-code state.
 The checks return a completion result containing their actual exit status and
 exact report path. A missing, duplicate or invalid result fails verification.
-Pending operations remain unavailable.
+SaaS KIOSK Installation runs its separate embedded handler and setup source,
+validates all four inputs before changes, and returns one verified operation
+result. The bundle now contains 15 runtime resources. Pending operations remain unavailable.
 
 The repository's file-based launcher and client check sources are unchanged.
 Build-Release.ps1 adapts only these delivery boundaries in the emitted script:

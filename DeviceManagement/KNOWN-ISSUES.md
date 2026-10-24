@@ -1,7 +1,7 @@
 # Known issues
 
-1. Only SaaS/Subway KIOSK Thorough Check is implemented in the current launcher.
-   Payment Service, installation operations and POS/KDS Thorough Check remain
+1. SaaS/Subway KIOSK Thorough Check and SaaS KIOSK Installation are implemented.
+   Payment Service, other client/device installations and POS/KDS Thorough Check remain
    Pending. Earlier status notes describing these as implemented are obsolete.
 2. The local file-based KIOSK handler finds a recent HTML report by timestamp.
    The CDN in-memory dispatcher now receives and verifies the exact report path.

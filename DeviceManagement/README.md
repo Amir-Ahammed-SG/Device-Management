@@ -5,7 +5,7 @@ navigation with validated operation routing.
 
 Deferred production findings are tracked in [KNOWN-ISSUES.md](KNOWN-ISSUES.md).
 
-Runtime code is in `Start-DeviceManagement.ps1`, `Core`, `Config` and `Checks`.
+Runtime code is in `Start-DeviceManagement.ps1`, `Core`, `Config`, `Checks` and `Installations`.
 Development tests are grouped under `Tests`; reference documents, validation
 evidence and deployment records are under [Docs](Docs/README.md). Generated
 `output` files are disposable test artifacts and are excluded from deployment.
@@ -44,6 +44,11 @@ selecting one displays a notice and stays on the same menu. Back and Exit use
 preserved above the navigation footer.
 
 ## Current implementation
+
+SaaS KIOSK Installation is available directly from the operation menu. It prompts
+for an existing kiosk account, Restaurant ID, Kiosk ID and Hostname before running
+the supplied setup actions. Account and hostname suggestions can be confirmed
+with Enter or changed manually. See the [setup guide](Installations/KIOSK/SaaS/README.md).
 
 SaaS and Subway KIOSK Thorough Check are Ready for Audit and Apply. Final is a report tab generated from their observations. The shared
 KIOSK dispatcher selects the client-isolated source: `SaaSKioskThoroughCheckScript.ps1`
@@ -472,7 +477,7 @@ download failed HTTPS certificate validation during this change. No installer
 was executed. Package preparation must succeed before the Windows 10 fallback
 can install Nmap.
 
-Thorough Check for POS/KDS and every other operation remain Pending. Selecting
+Thorough Check for POS/KDS, Payment Service and other client/device installations remain Pending. Selecting
 a Pending operation returns Unavailable and makes no system changes.
 
 ## Local preview
