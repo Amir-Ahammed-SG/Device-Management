@@ -1,0 +1,43 @@
+# Track only the approved source layout at the repository root.
+/*
+!/.gitattributes
+!/.github/
+!/.gitignore
+!/README.md
+!/SaaSKioskThoroughCheckScript.ps1
+!/SubwayKioskThoroughCheck.ps1
+!/DeviceManagement/
+!/tests/
+
+# Generated and device-specific material never belongs in the source repository.
+/DeviceManagement/output/
+/DeviceManagement/Backups/
+/DeviceManagement/Docs/*
+!/DeviceManagement/Docs/Device Management - Kiosk Thorough Check Guide.md
+/DeviceManagement/Docs/Validation/
+/DeviceManagement/Docs/Deployments/
+**/node_modules/
+**/__pycache__/
+**/.aws/
+**/.ssh/
+**/.codex/
+**/.agents/
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+*.ppk
+*.bak
+*.log
+*.html
+*.pdf
+*.png
+*.exe
+*.msi
+*.zip
+*.tmp
+Thumbs.db
+Desktop.ini
+.DS_Store

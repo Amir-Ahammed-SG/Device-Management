@@ -1,0 +1,7 @@
+# Preserve the existing PowerShell source bytes and embedded-resource hashes.
+* -text
+*.sh text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
