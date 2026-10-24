@@ -14,6 +14,7 @@ param (
     [switch]$FinalReport,
     [ValidateSet('KIOSK', 'POS')][string]$DeviceType = 'KIOSK',
     [string]$ClientLocation,
+    [string]$AgentName,
     [string]$RestaurantId,
     [string]$KioskId,
     [string]$KioskHostname,
@@ -397,6 +398,22 @@ function Get-ThoroughAuditClientLocation {
     return $null
 }
 
+function Get-ThoroughAuditAgentName {
+    param([string]$Path,[string]$ClientType,[string]$ComputerName)
+    # Reuse only a uniquely identified saved Audit. Never guess a Windows user
+    # or attribute a legacy report to the person running Apply.
+    try {
+        $existing=Find-ThoroughExistingBundle -Path $Path -ClientType $ClientType -ComputerName $ComputerName
+        if($existing -and $existing.State.Reports.Audit){
+            $audit=$existing.State.Reports.Audit
+            if($audit.PSObject.Properties['AgentName'] -and -not [string]::IsNullOrWhiteSpace([string]$audit.AgentName) -and $audit.AgentName -ne 'Not provided'){
+                return [string]$audit.AgentName
+            }
+        }
+    } catch { return $null }
+    return $null
+}
+
 function Get-ThoroughFixAccountReportView {
     param($Row,$AccountView,[string]$RequirementHtml,[bool]$AfterApply=$false,[bool]$AuditBased=$false)
     if($null -eq $AccountView -or -not $AccountView.PSObject.Properties['Records'] -or -not @($AccountView.Records).Count){return $null}
@@ -463,11 +480,13 @@ function New-ThoroughReportSnapshot {
     param([Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Rows,
         [Parameter(Mandatory=$true)][ValidateSet('Audit','Fix','Final')][string]$DisplayMode,
         [string]$ClientLocation,[string]$DeviceType,[string]$Hostname,[string]$LauncherKioskId,
-        [string]$RequestedKioskId,[string]$KioskUserName,[bool]$AfterApply=$false,$AuditSource=$null,[AllowEmptyCollection()][object[]]$BeforeRows=@())
+        [string]$RequestedKioskId,[string]$KioskUserName,[bool]$AfterApply=$false,$AuditSource=$null,[AllowEmptyCollection()][object[]]$BeforeRows=@(),[string]$AgentName)
     # Presentation flags are separate from the execution gate. Rendering another
     # view never enables repairs or reruns a component check.
     $isApplyReport=$DisplayMode -eq 'Fix';$isFinalReport=$DisplayMode -eq 'Final'
     $reportHostname=$Hostname;$reportKioskId=$LauncherKioskId;$KioskId=$RequestedKioskId;$kioskUser=$KioskUserName
+    if([string]::IsNullOrWhiteSpace($AgentName) -and $AuditSource -and $AuditSource.PSObject.Properties['AgentName']){$AgentName=[string]$AuditSource.AgentName}
+    $preparedBy=if([string]::IsNullOrWhiteSpace($AgentName) -or $AgentName -eq 'Not provided'){'Not provided'}else{$AgentName.Trim()}
     $generatedAt=if($AuditSource){$AuditSource.GeneratedAt}else{Format-ThoroughReportDateTime -Value ([DateTimeOffset]::UtcNow) -TimeZone BST}
 $reportId = if($AuditSource){$AuditSource.ReportId}else{New-ThoroughReportId}
 $reportDeviceLabel = Get-ThoroughReportDeviceLabel -DeviceType $deviceType -LauncherKioskId $reportKioskId -RequestedKioskId $KioskId
@@ -518,7 +537,8 @@ $htmlHeader = @"
     .badge-fail { color: #922b21; }
     code { font: 10px/1.4 Consolas, monospace; white-space: normal; overflow-wrap: anywhere; }
     .legend, .report-footer { font-size: 11px; color: #555; }
-    .report-footer { border-top: 1px solid #b9bfc5; margin-top: 24px; padding-top: 8px; }
+    .report-footer { display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px 24px; border-top: 1px solid #b9bfc5; margin-top: 24px; padding-top: 8px; break-inside:avoid; }
+    .report-prepared-by { margin-left:auto; text-align:right; max-width:100%; overflow-wrap:anywhere; }
     @page { size: A4 portrait; margin: 12mm; }
     @media print {
         body { padding: 0; font-size: 9pt; }
@@ -640,7 +660,7 @@ if($isApplyReport -and -not @($htmlSections).Count){$message=if($reportRows.Coun
 
 $htmlFooter = @"
 <p class="legend">Green = Matched requirement or collected value; Red = Mismatched requirement or missing value; Amber = Not verified; Uncolored = Informational only. AppSettings values are a configuration record, not confirmation of the site assignment.</p>
-<footer class="report-footer">Retain with the device configuration records.</footer>
+<footer class="report-footer"><span>Retain with the device configuration records.</span><span class="report-prepared-by"><strong>Prepared by:</strong> $([Net.WebUtility]::HtmlEncode($preparedBy))</span></footer>
 $(Get-ThoroughReportCopyScript)
 $(Get-ThoroughReportBlockAlignmentScript)
 </main>
@@ -656,7 +676,7 @@ if ($isFinalReport) { $finalHtml = ConvertTo-ThoroughFinalReportHtml $finalHtml 
     $hostLabel=if($Hostname -and $Hostname -notin @('Not verified','Not detected')){$Hostname}else{$env:COMPUTERNAME}
     $hostLabel=($hostLabel -replace '[<>:"/\\|?*\x00-\x1F]','_').Trim().TrimEnd('.')
     if(-not $hostLabel){$hostLabel='Unknown'};if($hostLabel.Length -gt 60){$hostLabel=$hostLabel.Substring(0,60)}
-    [pscustomobject]@{Mode=$DisplayMode;ReportId=$reportId;GeneratedAt=$generatedAt;
+    [pscustomobject]@{Mode=$DisplayMode;ReportId=$reportId;GeneratedAt=$generatedAt;AgentName=$preparedBy;
         Origin=$(if($AuditSource){'Audit observations'}elseif($AfterApply){'Apply Fix readback'}elseif($DisplayMode -eq 'Final'){'Read-only verification'}else{$DisplayMode});
         HtmlBase64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($finalHtml));
         Observations=$(if($DisplayMode -eq 'Audit'){@(Copy-ThoroughObservationRows $reportRows)}else{$null});
@@ -2746,6 +2766,14 @@ function Test-KioskAutoLogin {
 }
 
 # Collect report identity in Audit; Apply reuses the session or saved Audit.
+if([string]::IsNullOrWhiteSpace($AgentName) -or $AgentName -eq 'Not provided'){
+    if($AuditOnly){
+        do {$AgentName=([string](Read-Host 'Agent Name')).Trim()} while([string]::IsNullOrWhiteSpace($AgentName))
+    }else{
+        $AgentName=Get-ThoroughAuditAgentName -Path $reportPath -ClientType 'Subway' -ComputerName $env:COMPUTERNAME
+        if([string]::IsNullOrWhiteSpace($AgentName)){$AgentName='Not provided'}
+    }
+}
 if([string]::IsNullOrWhiteSpace($ClientLocation) -or $ClientLocation -eq 'Not provided'){
     if($AuditOnly){
         do {$ClientLocation=Read-Host 'Branch Name'} while([string]::IsNullOrWhiteSpace($ClientLocation))
@@ -4761,7 +4789,7 @@ Add-AuditEntry -SectionNumber $sec4Num -SectionTitle $sec4Title -ItemTitle 'lodc
 $snapshotModes=if($script:ApplyChanges){@('Fix','Final')}elseif($FinalReport){@('Final')}else{@('Audit','Fix','Final')}
 $auditSource=$null
 $snapshots=@(foreach($snapshotMode in $snapshotModes){
-    $snapshot=New-ThoroughReportSnapshot -Rows $auditRows.ToArray() -DisplayMode $snapshotMode -ClientLocation $clientLocation -DeviceType $deviceType -Hostname $reportHostname -LauncherKioskId $reportKioskId -RequestedKioskId $KioskId -KioskUserName $kioskUser -AfterApply:([bool]$script:ApplyChanges) -AuditSource $auditSource -BeforeRows $(if($script:ApplyChanges){if($savedBeforeRows.Count){$savedBeforeRows}else{$beforeApplyRows}}else{@()})
+    $snapshot=New-ThoroughReportSnapshot -Rows $auditRows.ToArray() -DisplayMode $snapshotMode -ClientLocation $clientLocation -AgentName $AgentName -DeviceType $deviceType -Hostname $reportHostname -LauncherKioskId $reportKioskId -RequestedKioskId $KioskId -KioskUserName $kioskUser -AfterApply:([bool]$script:ApplyChanges) -AuditSource $auditSource -BeforeRows $(if($script:ApplyChanges){if($savedBeforeRows.Count){$savedBeforeRows}else{$beforeApplyRows}}else{@()})
     if($snapshotMode -eq 'Audit'){$auditSource=$snapshot}
     $snapshot
 })

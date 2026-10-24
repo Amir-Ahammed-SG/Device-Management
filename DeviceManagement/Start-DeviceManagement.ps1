@@ -52,6 +52,7 @@ $selectedOperation = $null
 $selectedPackage = $null
 $selectedMode = $null
 $clientLocation = $null
+$agentName = $null
 $lastResult = $null
 $exitRequested = $false
 
@@ -519,6 +520,7 @@ while (-not $exitRequested) {
             $selectedOperation = $null
             $selectedPackage = $null
             $clientLocation = $null
+            $agentName = $null
             $screen = 'Device'
         }
         'Device' {
@@ -576,6 +578,9 @@ while (-not $exitRequested) {
             }
             if ($selection -eq '__EXIT__') { $exitRequested = $true; break }
             $selectedMode = $selection.Id
+            if ($selectedOperation.Id -eq 'ThoroughCheck' -and $selectedMode -eq 'Audit' -and [string]::IsNullOrWhiteSpace($agentName)) {
+                do { $agentName = ([string](Read-Host '  Agent Name')).Trim() } while ([string]::IsNullOrWhiteSpace($agentName))
+            }
             if ((($selectedOperation.Id -eq 'ThoroughCheck' -and $selectedMode -eq 'Audit') -or ($selectedOperation.Id -notin @('ThoroughCheck','PaymentService') -and $selectedMode -eq 'Apply')) -and [string]::IsNullOrWhiteSpace($clientLocation)) {
                 $clientLocationPrompt = '  Branch Name'
                 do { $clientLocation = Read-Host $clientLocationPrompt } while ([string]::IsNullOrWhiteSpace($clientLocation))
@@ -583,7 +588,7 @@ while (-not $exitRequested) {
             $validated = Assert-RunSelection -ClientsConfiguration $clientsConfiguration -OperationsConfiguration $operationsConfiguration `
                 -ClientId $selectedClient.Id -Device $selectedDevice -OperationId $selectedOperation.Id -Mode $selectedMode
             $context = New-DeviceManagementContext -ClientType $validated.Client.Id -DeviceType $selectedDevice `
-                -Operation $validated.Operation.Id -Mode $selectedMode -ClientLocation $clientLocation -RootPath $architectureRoot `
+                -Operation $validated.Operation.Id -Mode $selectedMode -ClientLocation $clientLocation -AgentName $agentName -RootPath $architectureRoot `
                 -SelectedPackage $selectedPackage
             $lastResult = Invoke-ConfiguredOperation -RootPath $architectureRoot -Operation $validated.Operation -Context $context
             if ($selectedOperation.Id -eq 'ThoroughCheck') {

@@ -36,6 +36,7 @@ function Invoke-ConfiguredOperation {
     }
     else { $arguments.AuditOnly = $true }
     if (-not [string]::IsNullOrWhiteSpace([string]$Context.ClientLocation)) { $arguments.ClientLocation = [string]$Context.ClientLocation }
+    if ($Context.PSObject.Properties['AgentName'] -and -not [string]::IsNullOrWhiteSpace([string]$Context.AgentName)) { $arguments.AgentName = [string]$Context.AgentName }
 
     try {
         $execution = Invoke-DeviceManagementMemoryScript -Code $script:MemoryBundle.Files[$sourceName] -Bundle $script:MemoryBundle -RuntimeCode $script:MemoryRuntime -Parameters $arguments

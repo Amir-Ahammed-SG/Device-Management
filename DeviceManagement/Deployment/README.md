@@ -16,9 +16,13 @@ and tool menu. The previous `/device-management/Start-DeviceManagement.ps1` and
 `/kiosk/Start-DeviceManagement.ps1` entries remain at their last published version
 for existing commands; new releases use `/script/DeviceManagement.ps1`.
 
-Thorough Check asks **Branch Name:** in Audit. Apply Fix reuses that input or
+Thorough Check asks mandatory **Agent Name:** before **Branch Name:** in Audit.
+The agent appears as **Prepared by:** at the bottom right of Audit, Fix and
+Final, including Print. Apply Fix reuses those inputs or
 validated metadata from the same client/device's saved Audit without prompting
-again. This is published in [20261023-audit-client-input-02](../Docs/Deployments/20261023-audit-client-input-02/DEPLOYMENT.md).
+again. Legacy reports without Agent Name remain supported and show **Not provided**
+in newly generated views. The earlier Branch input publication is recorded in
+[20261023-audit-client-input-02](../Docs/Deployments/20261023-audit-client-input-02/DEPLOYMENT.md).
 
 The Thorough Check terminal menu offers Audit Report and Apply Fix. Audit saves
 Audit-derived Fix and Final views immediately; Apply replaces them with its

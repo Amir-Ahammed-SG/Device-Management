@@ -63,7 +63,9 @@ or completion file, and returns the exact report path through a completion
 result. Reports and explicitly selected software installers still write their
 normal output. The repository's local file-based execution path is retained.
 
-Thorough Check collects **Branch Name** when Audit is selected. Apply Fix
+Thorough Check collects mandatory **Agent Name**, then **Branch Name**, when
+Audit is selected. Every newly generated report view shows **Prepared by: <Agent Name>**
+at the bottom right, including the printed Final report. Apply Fix
 does not ask again: it reuses the selected client's input from the current
 session, including when the Audit report was declined. A fresh Apply run can
 reuse Branch from a validated saved Audit for the same client and Windows
@@ -71,6 +73,10 @@ computer in the existing report folder, including filenames based on the
 launcher hostname. Conflicting saved Branch values are not guessed. Without
 usable metadata it reports Not provided; explicit `-ClientLocation` values
 remain supported. No separate metadata/cache file is created.
+Agent Name follows the same session reuse and is recovered from a uniquely
+identified saved Audit in a fresh Apply run. Older reports without an agent
+remain readable; newly generated views show **Prepared by: Not provided** until
+Audit collects a name. Names are HTML-encoded before appearing in the footer.
 
 The responsive report frame has a maximum width of 1200px. Header, tabs and
 report frame share the same alignment. The inner report/table content is centered

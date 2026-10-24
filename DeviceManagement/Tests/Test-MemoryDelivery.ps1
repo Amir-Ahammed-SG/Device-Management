@@ -29,9 +29,9 @@ $env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT=$fixtureRoot
 $log=Join-Path $fixtureRoot 'calls.jsonl'
 $fixture=@'
 [CmdletBinding()]
-param([switch]$Apply,[switch]$AuditOnly,[switch]$FinalReport,[string]$DeviceType,[switch]$ArchitectureRun,[string]$ArchitectureResultPath,[string]$ClientLocation)
+param([switch]$Apply,[switch]$AuditOnly,[switch]$FinalReport,[string]$DeviceType,[switch]$ArchitectureRun,[string]$ArchitectureResultPath,[string]$ClientLocation,[string]$AgentName)
 $script:FixtureCount++
-[IO.File]::AppendAllText((Join-Path $env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT 'calls.jsonl'),(([pscustomobject]@{Client='@@CLIENT@@';Apply=[bool]$Apply;Audit=[bool]$AuditOnly;Final=[bool]$FinalReport;Device=$DeviceType;Architecture=[bool]$ArchitectureRun;CompletionFile=$ArchitectureResultPath;Branch=$ClientLocation;Count=$script:FixtureCount;PID=$PID} | ConvertTo-Json -Compress)+[Environment]::NewLine))
+[IO.File]::AppendAllText((Join-Path $env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT 'calls.jsonl'),(([pscustomobject]@{Client='@@CLIENT@@';Apply=[bool]$Apply;Audit=[bool]$AuditOnly;Final=[bool]$FinalReport;Device=$DeviceType;Architecture=[bool]$ArchitectureRun;CompletionFile=$ArchitectureResultPath;Branch=$ClientLocation;Agent=$AgentName;Count=$script:FixtureCount;PID=$PID} | ConvertTo-Json -Compress)+[Environment]::NewLine))
 $global:LASTEXITCODE=12345
 if ($env:DEVICE_MANAGEMENT_MEMORY_TEST_SCENARIO -eq 'throw') {throw 'Fixture refused to start.'}
 if ($env:DEVICE_MANAGEMENT_MEMORY_TEST_SCENARIO -eq 'incomplete') {return}
@@ -67,7 +67,7 @@ if ($attributes.Count) {$start=$attributes[0].Extent.StartOffset}
 $initialization=$initialization.Remove($start,$end-$start)
 $callCode='param([string]$Client,[string]$Mode,[string]$Device=''KIOSK'',[string]$OperationId=''ThoroughCheck'')'+"`r`n"+$initialization+@'
 $validated=Assert-RunSelection -ClientsConfiguration $clientsConfiguration -OperationsConfiguration $operationsConfiguration -ClientId $Client -Device $Device -OperationId $OperationId -Mode $Mode
-$context=New-DeviceManagementContext -ClientType $Client -DeviceType $Device -Operation $OperationId -Mode $Mode -ClientLocation 'Branch with spaces & apostrophe '' preserved' -RootPath $architectureRoot
+$context=New-DeviceManagementContext -ClientType $Client -DeviceType $Device -Operation $OperationId -Mode $Mode -ClientLocation 'Branch with spaces & apostrophe '' preserved' -AgentName 'Agent & O''Brien <fixture>' -RootPath $architectureRoot
 Invoke-ConfiguredOperation -RootPath $architectureRoot -Operation $validated.Operation -Context $context
 '@
 $originalExitCode=$global:LASTEXITCODE
@@ -96,6 +96,7 @@ try {
         Assert-Memory (@($call.Apply,$call.Audit,$call.Final | Where-Object {$_}).Count -eq 1) 'Audit/Apply/Final flags were mixed.'
         Assert-Memory ($call.Count -eq 1 -and $call.PID -eq $PID) 'Client state leaked between operations or a child process was used.'
         Assert-Memory ($call.Branch -eq 'Branch with spaces & apostrophe '' preserved') 'Audit/Apply/Final branch context changed.'
+        Assert-Memory ($call.Agent -ceq 'Agent & O''Brien <fixture>') 'Audit/Apply/Final agent context changed.'
     }
     Assert-Memory ($global:LASTEXITCODE -eq $originalExitCode) 'Client native exit state leaked to caller.'
     $before=$calls.Count
@@ -132,11 +133,12 @@ try {
     $interactivePath=Join-Path $fixtureRoot 'interactive.ps1'
     [IO.File]::WriteAllText($interactivePath,($interactive+"`r`n"+'Write-Output ''MEMORY_RETURNED_TO_CALLER'''),(New-Object Text.UTF8Encoding($false)))
     $env:DEVICE_MANAGEMENT_MEMORY_TEST_SCENARIO='no-report'
-    $inputs=@('invalid','1','1','2','1','1','','Interactive Branch','5','8','2','HOST-FROM-PROMPT','3','2','1','1','1','SaaS Branch','0')
+    $inputs=@('invalid','1','1','2','1','1','','Interactive Agent','','Interactive Branch','5','8','2','HOST-FROM-PROMPT','3','2','1','1','1','SaaS Agent','SaaS Branch','0')
     $ui=$inputs | & (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $interactivePath 2>&1 | Out-String
     Assert-Memory ($LASTEXITCODE -eq 0 -and $ui -match 'MEMORY_RETURNED_TO_CALLER' -and $ui -match 'FIXTURE_HOSTNAME=HOST-FROM-PROMPT' -and $ui -match 'Subway > KIOSK > Thorough Check' -and $ui -match 'SaaS > KIOSK > Thorough Check') ('Interactive memory navigation failed: '+$ui)
     $newCalls=@(Get-Content -LiteralPath $log | Select-Object -Skip $before | ForEach-Object {$_ | ConvertFrom-Json})
     Assert-Memory ($newCalls.Count -eq 3 -and $newCalls[0].Client -eq 'Subway' -and $newCalls[0].Audit -and $newCalls[0].Branch -eq 'Interactive Branch' -and $newCalls[1].Apply -and $newCalls[1].Branch -eq 'Interactive Branch' -and $newCalls[2].Client -eq 'SaaS' -and $newCalls[2].Audit -and $newCalls[2].Branch -eq 'SaaS Branch') 'Audit input was not forwarded, reused in Apply or isolated across clients.'
+    Assert-Memory ($newCalls[0].Agent -ceq 'Interactive Agent' -and $newCalls[1].Agent -ceq 'Interactive Agent' -and $newCalls[2].Agent -ceq 'SaaS Agent') 'Agent input was not forwarded, reused in Apply or isolated across clients.'
     Assert-Memory ([regex]::Matches($ui,'This option is not available yet').Count -eq 1) 'Unavailable selections advanced to another screen.'
     Assert-Memory ($ui -match '\[2\] Payment Service \(Not available\)' -and $ui -notmatch 'KIOSK Installation \(Not available\)') 'Installation readiness or pending payment label is incorrect.'
     Assert-Memory ($ui -match 'Invalid selection. Enter a displayed option number.' -and $ui -match 'Invalid selection. Enter 3, 8 or 0.') 'Invalid menu/navigation input was not explained.'

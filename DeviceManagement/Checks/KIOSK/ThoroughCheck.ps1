@@ -42,6 +42,7 @@ if ($Context.Mode -eq 'Apply') {
 }
 else { $arguments += '-AuditOnly' }
 if (-not [string]::IsNullOrWhiteSpace([string]$Context.ClientLocation)) { $arguments += @('-ClientLocation', [string]$Context.ClientLocation) }
+if ($Context.PSObject.Properties['AgentName'] -and -not [string]::IsNullOrWhiteSpace([string]$Context.AgentName)) { $arguments += @('-AgentName', [string]$Context.AgentName) }
 
 $startedAt = Get-Date
 $powershell = Join-Path $PSHOME 'powershell.exe'

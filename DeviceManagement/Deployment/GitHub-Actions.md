@@ -53,15 +53,17 @@ Only `main` deploys, including manual runs. Pull requests never receive SSH
 secrets. Deploy jobs run serially and do not cancel an active publication.
 Actions are pinned to reviewed commit SHAs. Checkout credentials are not retained.
 
-`Test-GitHubRelease.ps1` runs nine independent setup/client/report fixtures and the
+`Test-GitHubRelease.ps1` runs ten independent setup/client/report fixtures and the
 existing 54-case Thorough Check delivery suite plus both clients' installation completion/menu cases. Account, installer and launcher writes
 use fixtures. A separate Linux job verifies eight publication and rollback
 scenarios using fake SSH, SCP and HTTPS commands. The full older Pester suite is not a passing deployment gate:
 the current recorded baseline is 88 passed and 36 existing failures. Those
 failures need separate maintenance; a fixture pass is not a controlled device run.
 
-One account-renderer test now reads a small checked-in historical renderer
-fixture instead of a workstation's private backup. Generated HTML, browser
+One account-renderer test reads a small checked-in historical renderer fixture,
+comparing all output outside the approved agent footer markup/styles, instead
+of a workstation's private backup. Agent fixtures cover mandatory input order,
+escaped attribution and saved Audit reuse. Generated HTML, browser
 screenshots and local backup directories are not required for the CI gate.
 Other legacy tests may still require their documented local preview artifacts.
 

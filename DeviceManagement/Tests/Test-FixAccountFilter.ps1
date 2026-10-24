@@ -9,6 +9,15 @@ $restorePoint=Get-Content -LiteralPath $restorePath -Raw | ConvertFrom-Json
 $utf8=New-Object Text.UTF8Encoding($false)
 function Assert-FixAccount {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
 function Read-FixAccountSnapshot {param($Snapshot) [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Snapshot.HtmlBase64))}
+function Get-FixAccountBaselineHtml {
+    param($Snapshot)
+    # Agent attribution intentionally adds footer markup/styles. Keep comparing
+    # every other byte with the original account-filter renderer fixture.
+    $html=Read-FixAccountSnapshot $Snapshot
+    $html=[regex]::Replace($html,'(?s)<footer class="report-footer">.*?</footer>','')
+    $html=[regex]::Replace($html,'(?m)^    \.report-(?:footer|prepared-by) \{[^\r\n]*\}\r?\n','')
+    $html
+}
 function Get-FixAccountCells {
     param([string]$Html,[string]$Title)
     $titlePattern='<div class="device-title">'+[regex]::Escape($Title)+'</div>'
@@ -72,7 +81,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         . ([scriptblock]::Create($savedRenderer.Before))
         $oldAudit=New-ThoroughReportSnapshot -Rows @($row) -DisplayMode Audit -AuditSource $identity
         $oldFinal=New-ThoroughReportSnapshot -Rows @($row) -DisplayMode Final -AuditSource $identity
-        Assert-FixAccount ($oldAudit.HtmlBase64 -ceq $audit.HtmlBase64 -and $oldFinal.HtmlBase64 -ceq $final.HtmlBase64) 'Account Fix filtering changed Audit or Final output.'
+        Assert-FixAccount ((Get-FixAccountBaselineHtml $oldAudit) -ceq (Get-FixAccountBaselineHtml $audit) -and (Get-FixAccountBaselineHtml $oldFinal) -ceq (Get-FixAccountBaselineHtml $final)) 'Account Fix filtering changed Audit or Final output outside agent attribution.'
         . ([scriptblock]::Create(($definitions | Where-Object Name -EQ 'New-ThoroughReportSnapshot').Extent.Text))
         foreach($view in @($audit,$final)){
             $html=Read-FixAccountSnapshot $view
@@ -216,5 +225,5 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     }
     $bundle=[pscustomobject]@{Version=1;TestOnly=$true;ClientType=$client;ComputerName='SAMPLE-DEVICE';BundleId='OMK-230032';CreatedAt=$identity.GeneratedAt;UpdatedAt=$identity.GeneratedAt;LatestMode='Fix';Reports=$reports}
     [IO.File]::WriteAllText((Join-Path $outputRoot ($client+'-Fix-Account-Preview.html')),(New-ThoroughReportBundleHtml $bundle),$utf8)
-    Write-Output ('PASS: '+$client+' account records filtered independently; unresolved and actual repairs retained; original ordinals, commands/dividers/grouping, escaped identities and conservative history handling; Audit/Final byte-identical; observations and repair gate unchanged.')
+    Write-Output ('PASS: '+$client+' account records filtered independently; unresolved and actual repairs retained; original ordinals, commands/dividers/grouping, escaped identities and conservative history handling; Audit/Final unchanged outside agent footer; observations and repair gate unchanged.')
 }

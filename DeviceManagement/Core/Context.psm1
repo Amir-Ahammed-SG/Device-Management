@@ -7,6 +7,7 @@ function New-DeviceManagementContext {
         [Parameter(Mandatory = $true)][string]$Operation,
         [Parameter(Mandatory = $true)][ValidateSet('Audit', 'Apply', 'Final', 'Uninstall')][string]$Mode,
         [string]$ClientLocation,
+        [string]$AgentName,
         [Parameter(Mandatory = $true)][string]$RootPath,
         $SelectedPackage
     )
@@ -14,6 +15,7 @@ function New-DeviceManagementContext {
         SchemaVersion  = '1.0'
         ClientType     = $ClientType
         ClientLocation = $ClientLocation
+        AgentName      = $AgentName
         DeviceType     = $DeviceType
         Operation      = $Operation
         Mode           = $Mode
