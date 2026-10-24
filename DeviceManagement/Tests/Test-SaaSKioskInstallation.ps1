@@ -144,7 +144,7 @@ try {
     $operations=Import-PowerShellDataFile (Join-Path $projectRoot 'Config\Operations.psd1')
     $operation=Get-DeviceOperations $operations KIOSK SaaS | Where-Object Id -eq KioskInstallation
     Assert-Installation (Test-OperationSelectionReady $operation SaaS KIOSK Apply) 'SaaS KIOSK Apply is unavailable.'
-    foreach($selection in @(@('SaaS','KIOSK','Audit'),@('Subway','KIOSK','Apply'),@('SaaS','POS','Apply'),@('ViCafe','KIOSK','Apply'))) {
+    foreach($selection in @(@('SaaS','KIOSK','Audit'),@('Subway','KIOSK','Audit'),@('SaaS','POS','Apply'),@('ViCafe','KIOSK','Apply'))) {
         Assert-Installation (-not (Test-OperationSelectionReady $operation $selection[0] $selection[1] $selection[2])) 'Another installation selection was enabled.'
     }
     Write-Output 'PASS: SaaS setup input defaults/manual/retries; unchanged setup body; local and embedded source paths; prerequisites, readback/native failures, WhatIf and routing isolation. No Windows mutation executed.'

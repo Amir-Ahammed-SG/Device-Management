@@ -10,7 +10,7 @@ The 24 Oct 2026 hostname, account and report updates are published on the CDN. T
 - Have administrator credentials and an internet connection available.
 - Run **Apply Fix** during a maintenance window: it can start, stop or restart services and change device settings.
 
-Thorough Check checks an existing kiosk installation and repairs supported settings. Missing accounts and profiles require manual setup. For SaaS launcher/Startup setup, use [SaaS KIOSK Installation](../Installations/KIOSK/SaaS/README.md). Subway/SaaS **KIOSK → Thorough Check** and SaaS **KIOSK → KIOSK Installation** are available; other operations marked **Not available** cannot be run.
+Thorough Check checks an existing kiosk installation and repairs supported settings. Missing accounts and profiles require manual setup. For launcher/Startup setup, use the client-specific [SaaS](../Installations/KIOSK/SaaS/README.md) or [Subway](../Installations/KIOSK/Subway/README.md) KIOSK Installation. Both clients support **KIOSK → Thorough Check** and **KIOSK → KIOSK Installation**; other operations marked **Not available** cannot be run.
 
 ## 2. Open Device Management
 

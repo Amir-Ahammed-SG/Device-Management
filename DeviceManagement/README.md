@@ -45,10 +45,11 @@ preserved above the navigation footer.
 
 ## Current implementation
 
-SaaS KIOSK Installation is available directly from the operation menu. It prompts
+SaaS and Subway KIOSK Installation are available directly from the operation menu. Each prompts
 for an existing kiosk account, Restaurant ID, Kiosk ID and Hostname before running
 the supplied setup actions. Account and hostname suggestions can be confirmed
-with Enter or changed manually. See the [setup guide](Installations/KIOSK/SaaS/README.md).
+with Enter or changed manually. Each uses its supplied client-specific setup body.
+See the [SaaS](Installations/KIOSK/SaaS/README.md) and [Subway](Installations/KIOSK/Subway/README.md) setup guides.
 
 SaaS and Subway KIOSK Thorough Check are Ready for Audit and Apply. Final is a report tab generated from their observations. The shared
 KIOSK dispatcher selects the client-isolated source: `SaaSKioskThoroughCheckScript.ps1`

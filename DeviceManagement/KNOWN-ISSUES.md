@@ -1,6 +1,6 @@
 # Known issues
 
-1. SaaS/Subway KIOSK Thorough Check and SaaS KIOSK Installation are implemented.
+1. SaaS/Subway KIOSK Thorough Check and KIOSK Installation are implemented.
    Payment Service, other client/device installations and POS/KDS Thorough Check remain
    Pending. Earlier status notes describing these as implemented are obsolete.
 2. The local file-based KIOSK handler finds a recent HTML report by timestamp.

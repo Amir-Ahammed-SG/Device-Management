@@ -30,7 +30,7 @@
             DisplayName         = 'KIOSK Installation'
             Devices             = @('KIOSK')
             ReadyDevices        = @()
-            ReadySelections     = @('SaaS|KIOSK|Apply')
+            ReadySelections     = @('SaaS|KIOSK|Apply','Subway|KIOSK|Apply')
             HandlerTemplate     = 'Installations\KIOSK\{Client}-Install.ps1'
             ImplementationState = 'Ready'
         }

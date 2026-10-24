@@ -8,9 +8,9 @@ function Invoke-ConfiguredOperation {
     if (-not (Test-OperationSelectionReady -Operation $Operation -ClientId $Context.ClientType -Device $Context.DeviceType -Mode $Context.Mode)) {
         return New-OperationResult -Status Unavailable -Message ("{0} for {1}/{2} is not implemented yet. No system changes were made." -f $Operation.DisplayName, $Context.ClientType, $Context.DeviceType) -Context $Context
     }
-    if ($Context.Operation -eq 'KioskInstallation' -and $Operation.Id -eq 'KioskInstallation' -and $Context.ClientType -eq 'SaaS' -and $Context.DeviceType -eq 'KIOSK' -and $Context.Mode -eq 'Apply') {
+    if ($Context.Operation -eq 'KioskInstallation' -and $Operation.Id -eq 'KioskInstallation' -and $Context.ClientType -in @('SaaS','Subway') -and $Context.DeviceType -eq 'KIOSK' -and $Context.Mode -eq 'Apply') {
         try {
-            $handlerName='DeviceManagement/Installations/KIOSK/SaaS-Install.ps1'
+            $handlerName='DeviceManagement/Installations/KIOSK/'+$Context.ClientType+'-Install.ps1'
             if (-not $script:MemoryBundle.Files.ContainsKey($handlerName)) { throw 'The embedded installation handler is missing.' }
             $execution=Invoke-DeviceManagementMemoryScript -Code $script:MemoryBundle.Files[$handlerName] -Bundle $script:MemoryBundle -RuntimeCode $script:MemoryRuntime -Parameters @{Context=$Context}
             $results=@($execution.Output)
@@ -19,7 +19,7 @@ function Invoke-ConfiguredOperation {
             }
             return New-OperationResult -Status $results[0].Status -Message $results[0].Message -Context $Context
         } catch {
-            return New-OperationResult -Status Fail -Message ('SaaS KIOSK Installation could not start or complete. '+$_.Exception.Message) -Context $Context
+            return New-OperationResult -Status Fail -Message ($Context.ClientType+' KIOSK Installation could not start or complete. '+$_.Exception.Message) -Context $Context
         }
     }
     if ($Context.Operation -ne 'ThoroughCheck' -or $Operation.Id -ne 'ThoroughCheck' -or $Context.DeviceType -ne 'KIOSK' -or $Context.ClientType -notin @('SaaS', 'Subway') -or $Context.Mode -notin @('Audit', 'Apply', 'Final')) {

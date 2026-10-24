@@ -9,7 +9,7 @@ Run in 64-bit Windows PowerShell 5.1 as Administrator when performing checks:
 irm 'https://cdn-ito.selisesme.com/script/DeviceManagement.ps1' -EA Stop | iex
 ```
 
-Publication history is in [GitHub Actions](https://github.com/Amir-Ahammed/Device-Management-Script/actions/workflows/device-management.yml). The entry also includes the [SaaS KIOSK setup](../Installations/KIOSK/SaaS/README.md) with prompted inputs. Pushes and merges to `main` build, test and deploy through GitHub Actions.
+Publication history is in [GitHub Actions](https://github.com/Amir-Ahammed/Device-Management-Script/actions/workflows/device-management.yml). The entry includes the [SaaS](../Installations/KIOSK/SaaS/README.md) and [Subway](../Installations/KIOSK/Subway/README.md) KIOSK setups with prompted inputs. Pushes and merges to `main` build, test and deploy through GitHub Actions.
 
 `/script/DeviceManagement.ps1` is the standard CDN entry for the shared device
 and tool menu. The previous `/device-management/Start-DeviceManagement.ps1` and
@@ -40,9 +40,9 @@ process, with the existing console host for Read-Host and confirmation prompts.
 This isolates script/global variables, preferences and native exit-code state.
 The checks return a completion result containing their actual exit status and
 exact report path. A missing, duplicate or invalid result fails verification.
-SaaS KIOSK Installation runs its separate embedded handler and setup source,
+Each client's KIOSK Installation runs its separate embedded handler and setup source,
 validates all four inputs before changes, and returns one verified operation
-result. The bundle now contains 15 runtime resources. Pending operations remain unavailable.
+result. The bundle now contains 17 runtime resources. Pending operations remain unavailable.
 
 The repository's file-based launcher and client check sources are unchanged.
 Build-Release.ps1 adapts only these delivery boundaries in the emitted script:
