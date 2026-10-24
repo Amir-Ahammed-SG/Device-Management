@@ -2,7 +2,7 @@
 
 An operator guide for **Subway** and **SaaS** KIOSK Thorough Check.
 
-The hostname, account and report changes described below are in the 24 Oct 2026 local revision. CDN publication is pending.
+The 24 Oct 2026 hostname, account and report updates are published on the CDN. The [verified GitHub Actions deployment](https://github.com/Amir-Ahammed/Device-Management-Script/actions/runs/40073441632) records the build and publication results.
 
 ## 1. Prepare the device
 

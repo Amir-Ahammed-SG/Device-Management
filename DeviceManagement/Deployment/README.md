@@ -9,7 +9,7 @@ Run in 64-bit Windows PowerShell 5.1 as Administrator when performing checks:
 irm 'https://cdn-ito.selisesme.com/script/DeviceManagement.ps1' -EA Stop | iex
 ```
 
-Latest published report update: [20261023-report-header-cleanup-01](../Docs/Deployments/20261023-report-header-cleanup-01/DEPLOYMENT.md). It includes the simplified header, account-level Fix filtering and current account/width presentation.
+Latest publication: [20261024-actions-40073441632-1](https://github.com/Amir-Ahammed/Device-Management-Script/actions/runs/40073441632). It includes Apply-only hostname confirmation, narrow account password-flag repairs, preserved pre-fix Findings and amber missing AppSettings. Pushes and merges to `main` now build, test and deploy through GitHub Actions.
 
 `/script/DeviceManagement.ps1` is the standard CDN entry for the shared device
 and tool menu. The previous `/device-management/Start-DeviceManagement.ps1` and

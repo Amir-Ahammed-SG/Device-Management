@@ -4,6 +4,11 @@ Repository: https://github.com/Amir-Ahammed/Device-Management-Script
 Branch: `main`
 Public entry: https://cdn-ito.selisesme.com/script/DeviceManagement.ps1
 
+Configured and verified on 24 Oct 2026 using a dedicated deployment key and the
+server's already-trusted SSH host keys. Automatic deployment is enabled.
+The [first publication](https://github.com/Amir-Ahammed/Device-Management-Script/actions/runs/40073441632)
+passed both fixture jobs, atomic activation and public checksum verification.
+
 ## One-time setup
 
 In repository Settings, open **Secrets and variables > Actions**. Create:
