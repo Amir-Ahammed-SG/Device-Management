@@ -139,7 +139,7 @@ $StartupFolder=Join-Path $ProfilePath 'AppData\Roaming\Microsoft\Windows\Start M
 $BatchFilePath=Join-Path $StartupFolder 'LaunchKiosk.bat'
 # A separate Chrome profile prevents an ordinary running Chrome instance from consuming kiosk flags.
 $ChromeProfile=Join-Path $ScriptDir 'ChromeKioskProfile'
-$arguments='--kiosk "'+$URL+'" --no-first-run --no-default-browser-check --disable-pinch --overscroll-history-navigation=0 --user-data-dir="'+$ChromeProfile+'"'
+$arguments='--kiosk "'+$URL+'" --incognito --no-first-run --no-default-browser-check --disable-pinch --overscroll-history-navigation=0 --user-data-dir="'+$ChromeProfile+'"'
 $KioskScriptContent="Start-Process -FilePath '"+$ChromePath.Replace("'","''")+"' -ArgumentList '"+$arguments.Replace("'","''")+"' -WindowStyle Maximized`r`n"
 $BatchFileContent="@echo off`r`nsetlocal DisableDelayedExpansion`r`nchcp 65001 >nul`r`n"+'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "'+$KioskScriptPath.Replace('%','%%')+'"'+"`r`n"
 # Windows PowerShell 5.1 needs a BOM for non-ASCII launcher paths; CMD needs a BOM-free BAT.

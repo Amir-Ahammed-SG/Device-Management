@@ -156,6 +156,7 @@ try {
          $batchBytes=$script:files[$batch]
          Assert-Chrome ($batchBytes[0] -eq 64 -and [Text.Encoding]::UTF8.GetString($batchBytes).StartsWith("@echo off`r`nsetlocal DisableDelayedExpansion`r`nchcp 65001 >nul`r`n")) 'BAT has an invalid CMD encoding/header.'
          & ([scriptblock]::Create($launcher.TrimStart([char]0xFEFF)))
+         Assert-Chrome ([regex]::Matches($script:launchedArguments,'(?:^|\s)--incognito(?:\s|$)').Count -eq 1) 'Generated kiosk launcher must pass --incognito exactly once.'
          Assert-Chrome ($script:launchedPath -eq $chrome -and $script:launchedArguments.Contains('--kiosk "'+$origin+'/#/onboarding/login?restaurantId=BRANCH-1&kioskId=KIOSK-2&host=FIXTURE-KIOSK01"')) 'Generated launcher changed runtime arguments.'
          Assert-Chrome (($script:savedShortcut -ne $null) -eq ($client -eq 'Subway')) 'Desktop shortcut scope changed.'
      }
