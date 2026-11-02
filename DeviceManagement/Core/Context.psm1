@@ -8,6 +8,7 @@ function New-DeviceManagementContext {
         [Parameter(Mandatory = $true)][ValidateSet('Audit', 'Apply', 'Final', 'Uninstall')][string]$Mode,
         [string]$ClientLocation,
         [string]$AgentName,
+        [ValidateSet('Edge', 'Chrome')][string]$Browser = 'Edge',
         [Parameter(Mandatory = $true)][string]$RootPath,
         $SelectedPackage
     )
@@ -19,6 +20,7 @@ function New-DeviceManagementContext {
         DeviceType     = $DeviceType
         Operation      = $Operation
         Mode           = $Mode
+        Browser        = $Browser
         SelectedPackage = $SelectedPackage
         RunId          = '{0}_{1}' -f (Get-Date -Format 'yyyyMMdd_HHmmss'), ([guid]::NewGuid().ToString('N').Substring(0, 8))
         RootPath       = [IO.Path]::GetFullPath($RootPath)

@@ -31,8 +31,8 @@ as in the original script and reported for manual review. The script can also
 run directly; menu context/admin checks and result readback belong to the handler.
 
 
-## Chrome copy
+## Browser selection
 
-A standalone `Kiosk_Mode_Setup_Chrome.ps1` is available beside the Edge setup.
+KIOSK Installation first offers **Microsoft Edge** and **Google Chrome**. Choose the browser before entering the kiosk account and onboarding values. Back and Exit at the browser menu make no setup changes. The Edge behavior described above is retained; Chrome uses `Kiosk_Mode_Setup_Chrome.ps1`, which can also run directly.
 See [Chrome kiosk setup](../Chrome-README.md) for commands,
-behavior, verification, and the current Edge-only menu/Thorough Check limits.
+behavior, verification, and the remaining Edge-only Thorough Check limits.

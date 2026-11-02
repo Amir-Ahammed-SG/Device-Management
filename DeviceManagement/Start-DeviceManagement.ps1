@@ -543,6 +543,10 @@ while (-not $exitRequested) {
             $selectedOperation = $selection
             $selectedPackage = $null
             if ($selectedOperation.Id -eq 'KioskInstallation') {
+                if (Test-OperationSelectionReady $selectedOperation $selectedClient.Id $selectedDevice 'Apply') {
+                    $screen = 'Browser'
+                    break
+                }
                 $selectedMode = 'Apply'
                 $validated = Assert-RunSelection -ClientsConfiguration $clientsConfiguration -OperationsConfiguration $operationsConfiguration `
                     -ClientId $selectedClient.Id -Device $selectedDevice -OperationId $selectedOperation.Id -Mode $selectedMode
@@ -554,6 +558,23 @@ while (-not $exitRequested) {
             else {
                 $screen = if ($selectedOperation.Id -eq 'PaymentService') { 'Package' } else { 'Mode' }
             }
+        }
+        'Browser' {
+            Show-DeviceManagementHeader -Title 'Select Kiosk Browser' -Breadcrumb ("{0} > {1} > KIOSK Installation" -f $selectedClient.DisplayName, $selectedDevice)
+            $browsers = @(
+                [pscustomobject]@{ Id = 'Edge'; DisplayName = 'Microsoft Edge'; Description = '' },
+                [pscustomobject]@{ Id = 'Chrome'; DisplayName = 'Google Chrome'; Description = '' }
+            )
+            $selection = Read-NumberedSelection -Items $browsers -AllowBack -AllowExit -Prompt 'Select option'
+            if ($selection -eq '__BACK__') { $screen = 'Operation'; break }
+            if ($selection -eq '__EXIT__') { $exitRequested = $true; break }
+            $selectedMode = 'Apply'
+            $validated = Assert-RunSelection -ClientsConfiguration $clientsConfiguration -OperationsConfiguration $operationsConfiguration `
+                -ClientId $selectedClient.Id -Device $selectedDevice -OperationId $selectedOperation.Id -Mode $selectedMode
+            $context = New-DeviceManagementContext -ClientType $validated.Client.Id -DeviceType $selectedDevice `
+                -Operation $validated.Operation.Id -Mode $selectedMode -Browser $selection.Id -RootPath $architectureRoot
+            $lastResult = Invoke-ConfiguredOperation -RootPath $architectureRoot -Operation $validated.Operation -Context $context
+            $screen = 'Result'
         }
         'Package' {
             Show-DeviceManagementHeader -Title 'Select Payment Package' -Breadcrumb ("{0} > {1} > Payment Service" -f $selectedClient.DisplayName, $selectedDevice)
@@ -616,7 +637,7 @@ while (-not $exitRequested) {
             if ($choice -eq '3') { $screen = 'Client' }
             elseif ($choice -eq '8') {
                 if ($selectedOperation.Id -eq 'PaymentService') { $screen = 'Package' }
-                elseif ($selectedOperation.Id -eq 'KioskInstallation') { $screen = 'Operation' }
+                elseif ($selectedOperation.Id -eq 'KioskInstallation') { $screen = 'Browser' }
                 else { $screen = 'Mode' }
             }
             else { $exitRequested = $true }

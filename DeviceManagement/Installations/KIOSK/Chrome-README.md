@@ -1,6 +1,6 @@
 # Chrome kiosk setup copies
 
-Both original kiosk setup scripts and both Device Management installation handlers are Edge-only. The Chrome copies are standalone scripts; the installation menu, embedded release bundle, Thorough Check browser checks, and CDN have not been changed. Thorough Check still expects Edge for browser-specific checks and fixes, so it cannot validate these Chrome settings.
+Choose **SaaS or Subway > KIOSK > KIOSK Installation > Google Chrome**. The browser menu also offers **Microsoft Edge**, with Back and Exit before any setup starts. The release bundle embeds both browser setups for both clients. The Chrome scripts can still run directly. Thorough Check still expects Edge for browser-specific checks and fixes, so it cannot validate these Chrome settings.
 
 | Client | Standalone Chrome setup | Kiosk origin | Desktop shortcut |
 | --- | --- | --- | --- |

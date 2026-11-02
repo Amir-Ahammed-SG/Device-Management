@@ -30,7 +30,7 @@ publishing a new version. It does not enable operations marked Pending.
 4. Mode: Thorough Check displays Audit Report and Apply Fix. Payment Service
    displays each available version followed by Audit Report and Remove Payment Service;
    selecting a version starts its installation directly. Installation operations
-   run their reviewed installation handler directly.
+   first ask for Microsoft Edge or Google Chrome for KIOSK, then run the selected setup.
 
 Client/device compatibility and operation visibility come from the data files in
 `Config`. They are validated again before dispatch, so a hidden or manually
@@ -45,10 +45,10 @@ preserved above the navigation footer.
 
 ## Current implementation
 
-SaaS and Subway KIOSK Installation are available directly from the operation menu. Each prompts
+SaaS and Subway KIOSK Installation offer Microsoft Edge and Google Chrome from the operation menu. Each prompts
 for an existing kiosk account, Restaurant ID, Kiosk ID and Hostname before running
 the supplied setup actions. Account and hostname suggestions can be confirmed
-with Enter or changed manually. Each uses its supplied client-specific setup body.
+with Enter or changed manually. Both browser setups are included in the release bundle.
 See the [SaaS](Installations/KIOSK/SaaS/README.md) and [Subway](Installations/KIOSK/Subway/README.md) setup guides.
 
 SaaS and Subway KIOSK Thorough Check are Ready for Audit and Apply. Final is a report tab generated from their observations. The shared

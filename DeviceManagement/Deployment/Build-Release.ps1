@@ -29,8 +29,10 @@ $files=[ordered]@{
     'DeviceManagement/Start-DeviceManagement.ps1'=Join-Path $projectRoot 'Start-DeviceManagement.ps1'
     'DeviceManagement/Checks/KIOSK/ThoroughCheck.ps1'=Join-Path $projectRoot 'Checks\KIOSK\ThoroughCheck.ps1'
     'DeviceManagement/Installations/KIOSK/SaaS-Install.ps1'=Join-Path $projectRoot 'Installations\KIOSK\SaaS-Install.ps1'
+    'DeviceManagement/Installations/KIOSK/SaaS/Kiosk_Mode_Setup_Chrome.ps1'=Join-Path $projectRoot 'Installations\KIOSK\SaaS\Kiosk_Mode_Setup_Chrome.ps1'
     'DeviceManagement/Installations/KIOSK/SaaS/Kiosk_Mode_Setup.ps1'=Join-Path $projectRoot 'Installations\KIOSK\SaaS\Kiosk_Mode_Setup.ps1'
     'DeviceManagement/Installations/KIOSK/Subway-Install.ps1'=Join-Path $projectRoot 'Installations\KIOSK\Subway-Install.ps1'
+    'DeviceManagement/Installations/KIOSK/Subway/Kiosk_Mode_Setup_Chrome.ps1'=Join-Path $projectRoot 'Installations\KIOSK\Subway\Kiosk_Mode_Setup_Chrome.ps1'
     'DeviceManagement/Installations/KIOSK/Subway/kiosk_mode_setup.ps1'=Join-Path $projectRoot 'Installations\KIOSK\Subway\kiosk_mode_setup.ps1'
     'Deployment/MemoryRuntime.ps1'=Join-Path $PSScriptRoot 'MemoryRuntime.ps1'
 }

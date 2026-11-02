@@ -94,7 +94,7 @@ class DeploymentTests(unittest.TestCase):
         (self.root / 'current.ps1').write_bytes(b"# fixture previous\nWrite-Output 'old'\n")
         shutil.copyfile(self.root / 'current.ps1', self.root / 'previous.ps1')
         self.release_id = '20261024-actions-fixture-01'
-        manifest = dict(ReleaseId=self.release_id, Delivery='InMemory', BootstrapSHA256=sha(self.candidate), Files=[{}] * 17)
+        manifest = dict(ReleaseId=self.release_id, Delivery='InMemory', BootstrapSHA256=sha(self.candidate), Files=[{}] * 19)
         (self.release / 'release.json').write_text(json.dumps(manifest), encoding='utf-8')
         for name in ('ssh', 'scp', 'curl', 'sleep', 'python3'):
             script = '#!/usr/bin/env bash\n'
@@ -161,6 +161,16 @@ class DeploymentTests(unittest.TestCase):
     def test_bad_artifact_never_connects(self):
         self.candidate.write_bytes(b'corrupted')
         self.assertNotEqual(self.run_deploy().returncode, 0)
+        self.assertNotIn('ssh ', self.events)
+
+    def test_wrong_resource_inventory_never_connects(self):
+        manifest_path = self.release / 'release.json'
+        manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+        manifest['Files'] = [{}] * 17
+        manifest_path.write_text(json.dumps(manifest), encoding='utf-8')
+        result = self.run_deploy()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Unexpected runtime resource inventory', result.stderr)
         self.assertNotIn('ssh ', self.events)
 
     def test_missing_key_never_connects(self):

@@ -65,9 +65,9 @@ $end=$callAst.ParamBlock.Extent.EndOffset
 $attributes=$callAst.ParamBlock.Attributes
 if ($attributes.Count) {$start=$attributes[0].Extent.StartOffset}
 $initialization=$initialization.Remove($start,$end-$start)
-$callCode='param([string]$Client,[string]$Mode,[string]$Device=''KIOSK'',[string]$OperationId=''ThoroughCheck'')'+"`r`n"+$initialization+@'
+$callCode='param([string]$Client,[string]$Mode,[string]$Device=''KIOSK'',[string]$OperationId=''ThoroughCheck'',[string]$Browser=''Edge'')'+"`r`n"+$initialization+@'
 $validated=Assert-RunSelection -ClientsConfiguration $clientsConfiguration -OperationsConfiguration $operationsConfiguration -ClientId $Client -Device $Device -OperationId $OperationId -Mode $Mode
-$context=New-DeviceManagementContext -ClientType $Client -DeviceType $Device -Operation $OperationId -Mode $Mode -ClientLocation 'Branch with spaces & apostrophe '' preserved' -AgentName 'Agent & O''Brien <fixture>' -RootPath $architectureRoot
+$context=New-DeviceManagementContext -ClientType $Client -DeviceType $Device -Operation $OperationId -Mode $Mode -Browser $Browser -ClientLocation 'Branch with spaces & apostrophe '' preserved' -AgentName 'Agent & O''Brien <fixture>' -RootPath $architectureRoot
 Invoke-ConfiguredOperation -RootPath $architectureRoot -Operation $validated.Operation -Context $context
 '@
 $originalExitCode=$global:LASTEXITCODE
@@ -162,7 +162,7 @@ try {
 param($Context)
 if($Context.ClientType -ne '@@INSTALLCLIENT@@'){throw 'Wrong installation source selected.'}
 $script:InstallationFixtureCount++
-[IO.File]::AppendAllText((Join-Path $env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT 'install-calls.jsonl'),(([pscustomobject]@{Client=$Context.ClientType;Device=$Context.DeviceType;Operation=$Context.Operation;Mode=$Context.Mode;Count=$script:InstallationFixtureCount;PID=$PID} | ConvertTo-Json -Compress)+[Environment]::NewLine))
+[IO.File]::AppendAllText((Join-Path $env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT 'install-calls.jsonl'),(([pscustomobject]@{Client=$Context.ClientType;Device=$Context.DeviceType;Operation=$Context.Operation;Mode=$Context.Mode;Browser=$Context.Browser;Count=$script:InstallationFixtureCount;PID=$PID} | ConvertTo-Json -Compress)+[Environment]::NewLine))
 $global:LASTEXITCODE=765
 switch($env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO) {
     'throw' {throw 'Installation fixture refused to start.'}
@@ -185,12 +185,16 @@ if($env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO -eq 'duplicate'){$result}
     $oldInstallScenario=$env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO
     try {
         foreach($installClient in @('SaaS','Subway')) {
-        foreach($scenario in @('pass','fail','throw','missing','duplicate','invalid','error')) {
-            $env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO=$scenario
-            $execution=Invoke-DeviceManagementMemoryScript -Code $callCode -Bundle $bundle -RuntimeCode $runtime -Parameters @{Client=$installClient;Mode='Apply';OperationId='KioskInstallation'}
-            $expected=if($scenario -eq 'pass'){'Pass'}else{'Fail'}
-            Assert-Memory ($execution.State -eq 'Completed' -and $execution.Output.Count -eq 1 -and $execution.Output[0].Status -eq $expected) ('Installation dispatch/completion failed: '+$scenario)
-        }
+            foreach($browser in @('Edge','Chrome')) {
+                foreach($scenario in @('pass','fail','throw','missing','duplicate','invalid','error')) {
+                    $env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO=$scenario
+                    $execution=Invoke-DeviceManagementMemoryScript -Code $callCode -Bundle $bundle -RuntimeCode $runtime -Parameters @{Client=$installClient;Mode='Apply';Browser=$browser;OperationId='KioskInstallation'}
+                    $expected=if($scenario -eq 'pass'){'Pass'}else{'Fail'}
+                    Assert-Memory ($execution.State -eq 'Completed' -and $execution.Output.Count -eq 1 -and $execution.Output[0].Status -eq $expected) ('Installation dispatch/completion failed: '+$installClient+'/'+$browser+'/'+$scenario)
+                    $lastCall=Get-Content -LiteralPath (Join-Path $fixtureRoot 'install-calls.jsonl') | Select-Object -Last 1 | ConvertFrom-Json
+                    Assert-Memory ($lastCall.Browser -eq $browser -and $lastCall.Client -eq $installClient -and $lastCall.Count -eq 1) 'Browser/client context was lost across the installation runspace.'
+                }
+            }
         }
         $callsBefore=@(Get-Content -LiteralPath (Join-Path $fixtureRoot 'install-calls.jsonl')).Count
         foreach($selection in @(@{Client='Subway';Mode='Audit';OperationId='KioskInstallation'},@{Client='SaaS';Mode='Audit';OperationId='KioskInstallation'})) {
@@ -215,13 +219,30 @@ if($env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO -eq 'duplicate'){$result}
         $interactive=[IO.File]::ReadAllText((Join-Path $projectRoot 'Deployment\Bootstrap.ps1.template')).Replace('@@RESOURCES@@',$literal)
         [IO.File]::WriteAllText($interactivePath,($interactive+"`r`n"+'Write-Output ''MEMORY_RETURNED_TO_CALLER'''),(New-Object Text.UTF8Encoding($false)))
         foreach($clientKey in @('2','1')) {
-        $installInputs=@($clientKey,'1','3','SELISE-KIOSK','RESTAURANT-99','Kiosk-9','HOST-99','8','0')
-        $installUi=$installInputs | & (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $interactivePath 2>&1 | Out-String
-        Assert-Memory ($LASTEXITCODE -eq 0 -and $installUi -match 'INSTALL_INPUTS=SELISE-KIOSK\|RESTAURANT-99\|Kiosk-9\|HOST-99' -and $installUi -match 'MEMORY_RETURNED_TO_CALLER') 'SaaS installation menu/input/return failed.'
-        Assert-Memory ($installUi -notmatch 'KIOSK Installation \(Not available\)|Select Mode|Branch Name') 'Installation used the old unavailable/mode/branch path.'
+            foreach($browserKey in @('1','2')) {
+                $expectedBrowser=if($browserKey -eq '1'){'Edge'}else{'Chrome'}
+                $installInputs=@($clientKey,'1','3','invalid',$browserKey,'SELISE-KIOSK','RESTAURANT-99','Kiosk-9','HOST-99','8','8','0')
+                $installUi=$installInputs | & (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $interactivePath 2>&1 | Out-String
+                Assert-Memory ($LASTEXITCODE -eq 0 -and $installUi -match 'INSTALL_INPUTS=SELISE-KIOSK\|RESTAURANT-99\|Kiosk-9\|HOST-99' -and $installUi -match 'MEMORY_RETURNED_TO_CALLER') 'Browser installation menu/input/return failed.'
+                Assert-Memory ($installUi -match 'Select Kiosk Browser' -and $installUi -match '\[1\] Microsoft Edge' -and $installUi -match '\[2\] Google Chrome') 'Kiosk browser choices were not displayed.'
+                Assert-Memory ($installUi -notmatch 'KIOSK Installation \(Not available\)|Select Mode|Branch Name') 'Installation used the old unavailable/mode/branch path.'
+                $lastCall=Get-Content -LiteralPath (Join-Path $fixtureRoot 'install-calls.jsonl') | Select-Object -Last 1 | ConvertFrom-Json
+                Assert-Memory ($lastCall.Browser -eq $expectedBrowser) 'Interactive browser choice did not reach the handler.'
+            }
+            $callsBeforeCancel=@(Get-Content -LiteralPath (Join-Path $fixtureRoot 'install-calls.jsonl')).Count
+            foreach($cancelInputs in @(@($clientKey,'1','3','0'),@($clientKey,'1','3','8','0'))) {
+                $cancelUi=$cancelInputs | & (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $interactivePath 2>&1 | Out-String
+                Assert-Memory ($LASTEXITCODE -eq 0 -and $cancelUi -match 'MEMORY_RETURNED_TO_CALLER' -and $cancelUi -notmatch 'INSTALL_INPUTS=') 'Browser Back/Exit started setup.'
+            }
+            Assert-Memory (@(Get-Content -LiteralPath (Join-Path $fixtureRoot 'install-calls.jsonl')).Count -eq $callsBeforeCancel) 'Browser cancellation reached an installer.'
         }
+        $switchBefore=@(Get-Content -LiteralPath (Join-Path $fixtureRoot 'install-calls.jsonl')).Count
+        $switchInputs=@('2','1','3','2','SELISE-KIOSK','R1','K1','HOST1','8','1','SELISE-KIOSK','R2','K2','HOST2','0')
+        $switchUi=$switchInputs | & (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $interactivePath 2>&1 | Out-String
+        $switchCalls=@(Get-Content -LiteralPath (Join-Path $fixtureRoot 'install-calls.jsonl') | Select-Object -Skip $switchBefore | ForEach-Object {$_ | ConvertFrom-Json})
+        Assert-Memory ($LASTEXITCODE -eq 0 -and $switchCalls.Count -eq 2 -and $switchCalls[0].Browser -eq 'Chrome' -and $switchCalls[1].Browser -eq 'Edge') 'Result Back did not allow switching browsers.'
         [IO.File]::WriteAllText((Join-Path $projectRoot 'Docs\Validation\saas-kiosk-installation-menu.txt'),$installUi,(New-Object Text.UTF8Encoding($false)))
-        Write-Output 'PASS: SaaS/Subway isolated installation sources, direct menu/four prompts, verified/failed/missing/duplicate/error outcomes, mode isolation, Back/Exit and caller return. Only fixtures executed.'
+        Write-Output 'PASS: SaaS/Subway isolated installation sources, Edge/Chrome menu/four prompts, verified/failed/missing/duplicate/error outcomes, mode isolation, Back/Exit and caller return. Only fixtures executed.'
     } finally { $env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO=$oldInstallScenario }
 } finally {
     $env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT=$previousRoot

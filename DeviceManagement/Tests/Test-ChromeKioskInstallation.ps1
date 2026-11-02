@@ -103,6 +103,11 @@ function Reset-Chrome {
  $script:writes=0;$script:fileWriteCount=0
  $script:registryNoEffect=$false;$script:fileNoEffect=$false;$script:failSecondFile=$false;$script:shortcutNoEffect=$false;$script:savedShortcut=$null
 }
+function Get-ChromeFixtureLocalSource {
+ param([string]$Path)
+ Assert-Chrome ($Path -ceq $script:expectedLocalSource) 'Handler selected the wrong local Chrome source.'
+ return $script:chromeSetupFixtureCode
+}
 function Invoke-ChromeFixture { & $script:fixture -Confirm:$false }
 function Assert-ChromeFailure {
  param([string]$Message)
@@ -204,6 +209,67 @@ try {
      Reset-Chrome
      & $script:fixture -WhatIf
      Assert-Chrome ($script:writes -eq 0 -and $script:prompts.Count -eq 0) 'WhatIf requested input or mutated state.'
+     # Run the real per-client handler through both source loaders, with the same
+     # isolated setup body used above. No registry, file, account, or COM access is live.
+     $handlerPath=Join-Path $projectRoot ('Installations\KIOSK\'+$client+'-Install.ps1')
+     $handlerCode=[IO.File]::ReadAllText($handlerPath)
+     $handlerAst=[Management.Automation.Language.Parser]::ParseInput($handlerCode,[ref]$tokens,[ref]$errors)
+     Assert-Chrome ($errors.Count -eq 0) 'Handler parse failure.'
+     $adminName='Test-'+$client+'KioskInstallationAdministrator'
+     $adminFn=@($handlerAst.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $adminName},$true))[0]
+     $handlerCode=$handlerCode.Remove($adminFn.Extent.StartOffset,$adminFn.Extent.EndOffset-$adminFn.Extent.StartOffset).Insert($adminFn.Extent.StartOffset,('function '+$adminName+' { Mock-ChromeAdmin }'))
+     $handlerCode=$handlerCode.Replace('[IO.File]::ReadAllText($sourcePath)','(Get-ChromeFixtureLocalSource $sourcePath)')
+     $handlerAst=[Management.Automation.Language.Parser]::ParseInput($handlerCode,$handlerPath,[ref]$tokens,[ref]$errors)
+     $handlerFixture=$handlerAst.GetScriptBlock()
+     $script:expectedLocalSource=$sourcePath
+     $script:chromeSetupFixtureCode=$source
+     $context=[pscustomobject]@{ClientType=$client;DeviceType='KIOSK';Operation='KioskInstallation';Mode='Apply';Browser='Chrome'}
+     $resource='DeviceManagement/Installations/KIOSK/'+$client+'/Kiosk_Mode_Setup_Chrome.ps1'
+     foreach($loader in @('local','embedded')) {
+         Reset-Chrome
+         $script:DeviceManagementMemoryBundle=if($loader -eq 'embedded'){@{Files=@{$resource=$source}}}else{$null}
+         $global:LASTEXITCODE=487
+         $result=@(& $handlerFixture -Context $context)
+         Assert-Chrome ($result.Count -eq 1 -and $result[0].Status -eq 'Pass' -and $result[0].Message.Contains('Chrome KIOSK Installation')) ('Chrome handler failed through '+$loader+' source loader.')
+         Assert-Chrome ($global:LASTEXITCODE -eq 487) 'Chrome handler changed caller native exit state.'
+     }
+     foreach($failure in @('registryNoEffect','fileNoEffect','failSecondFile')) {
+         Reset-Chrome
+         $script:DeviceManagementMemoryBundle=@{Files=@{$resource=$source}}
+         Set-Variable -Scope Script -Name $failure -Value $true
+         $result=@(& $handlerFixture -Context $context)
+         Assert-Chrome ($result.Count -eq 1 -and $result[0].Status -eq 'Fail') ('Handler hid Chrome setup failure: '+$failure)
+     }
+     foreach($badSource in @(
+         'param([switch]$PassThru)',
+         'param([switch]$PassThru) throw "Fixture failed"',
+         'param([switch]$PassThru) [pscustomobject]@{ChromeKioskSetupCompleted=$false;ClientType="'+$client+'";KioskUser="Fixture";HostName="Fixture"}',
+         'param([switch]$PassThru) [pscustomobject]@{ChromeKioskSetupCompleted=$true;ClientType="WrongClient";KioskUser="Fixture";HostName="Fixture"}',
+         'param([switch]$PassThru) 1;2'
+     )) {
+         Reset-Chrome
+         $script:DeviceManagementMemoryBundle=@{Files=@{$resource=$badSource}}
+         $result=@(& $handlerFixture -Context $context)
+         Assert-Chrome ($result.Count -eq 1 -and $result[0].Status -eq 'Fail' -and $script:writes -eq 0) 'Handler accepted unverified Chrome completion.'
+     }
+     Reset-Chrome
+     $script:DeviceManagementMemoryBundle=@{Files=@{}}
+     $result=@(& $handlerFixture -Context $context)
+     Assert-Chrome ($result.Count -eq 1 -and $result[0].Status -eq 'Fail' -and $script:writes -eq 0) 'Missing embedded Chrome script was accepted.'
+     foreach($badSelection in @(@{Browser='Firefox'},@{Mode='Audit'},@{ClientType='ViCafe'},@{DeviceType='POS'})) {
+         Reset-Chrome
+         $script:DeviceManagementMemoryBundle=@{Files=@{$resource=$source}}
+         $invalid=[pscustomobject]@{ClientType=$client;DeviceType='KIOSK';Operation='KioskInstallation';Mode='Apply';Browser='Chrome'}
+         foreach($key in $badSelection.Keys){$invalid.$key=$badSelection[$key]}
+         $result=@(& $handlerFixture -Context $invalid)
+         Assert-Chrome ($result.Count -eq 1 -and $result[0].Status -eq 'Fail' -and $script:writes -eq 0 -and $script:prompts.Count -eq 0) 'Invalid browser/client/device/mode reached Chrome setup.'
+     }
+     Reset-Chrome
+     $WhatIfPreference=$true
+     try{$result=@(& $handlerFixture -Context $context)}finally{$WhatIfPreference=$false}
+     Assert-Chrome ($result.Count -eq 1 -and $result[0].Status -eq 'Unavailable' -and $script:writes -eq 0 -and $script:prompts.Count -eq 0) 'Chrome handler WhatIf started setup.'
+     $script:DeviceManagementMemoryBundle=$null
+     Write-Output ('PASS: '+$client+' Chrome local/embedded handlers, verified completion, invalid context/resource/failure/WhatIf isolation.')
      Write-Output ('PASS: '+$client+' Chrome detection, inputs, launch arguments, policies, credentials, repeated setup, prerequisites, failure readback, rollback, and WhatIf. No live Windows changes.')
  }
 } finally { $env:COMPUTERNAME=$oldComputer }

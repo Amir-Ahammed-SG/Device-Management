@@ -2,7 +2,7 @@
 # Chrome must already be installed. This replaces this account's LaunchKiosk startup target.
 # Browser kiosk mode is fullscreen; it does not configure Windows Assigned Access.
 [CmdletBinding(SupportsShouldProcess=$true, ConfirmImpact='Medium')]
-param()
+param([switch]$PassThru)
 $ErrorActionPreference='Stop'
 
 function Test-ChromeKioskAdministrator {
@@ -207,3 +207,6 @@ try {
 }
 Write-Host "Chrome kiosk setup saved and verified for '$KioskUser': $URL"
 Write-Host 'Sign in as the kiosk user to test Chrome, touch gestures, local network access, and auto-login. Existing Chrome kiosk windows must be closed before relaunch.'
+if($PassThru) {
+    [pscustomobject]@{ChromeKioskSetupCompleted=$true;ClientType='Subway';KioskUser=$KioskUser;HostName=$HostName}
+}

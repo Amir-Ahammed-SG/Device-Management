@@ -23,14 +23,31 @@ try {
         throw 'Run KIOSK Installation from 64-bit Windows PowerShell 5.1.'
     }
     if(-not (Test-SaaSKioskInstallationAdministrator)) { throw 'Run KIOSK Installation from an Administrator terminal.' }
-    $sourceName='DeviceManagement/Installations/KIOSK/SaaS/Kiosk_Mode_Setup.ps1'
+    $browser=if($Context.PSObject.Properties['Browser']) { [string]$Context.Browser } else { 'Edge' }
+    if($browser -notin @('Edge','Chrome')) { throw 'Choose Microsoft Edge or Google Chrome for KIOSK Installation.' }
+    $sourceFile=if($browser -eq 'Chrome') { 'Kiosk_Mode_Setup_Chrome.ps1' } else { 'Kiosk_Mode_Setup.ps1' }
+    $sourceName='DeviceManagement/Installations/KIOSK/SaaS/'+$sourceFile
     $memory=Get-Variable -Name DeviceManagementMemoryBundle -ValueOnly -ErrorAction SilentlyContinue
     if($memory) {
         if(-not $memory.Files.ContainsKey($sourceName)) { throw 'The embedded SaaS KIOSK setup script is missing.' }
         $setupCode=[string]$memory.Files[$sourceName]
     } else {
-        $sourcePath=Join-Path $PSScriptRoot 'SaaS\Kiosk_Mode_Setup.ps1'
+        $sourcePath=Join-Path (Join-Path $PSScriptRoot 'SaaS') $sourceFile
         $setupCode=[IO.File]::ReadAllText($sourcePath)
+    }
+    if($browser -eq 'Chrome') {
+        $previousNativeExit=Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+        $previousNativeValue=if($previousNativeExit) { $previousNativeExit.Value } else { $null }
+        try {
+            $chromeResults=@(& ([scriptblock]::Create($setupCode)) -PassThru)
+        } finally {
+            if($previousNativeExit) { $global:LASTEXITCODE=$previousNativeValue }
+            else { Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue }
+        }
+        if($chromeResults.Count -ne 1 -or -not $chromeResults[0].PSObject.Properties['ChromeKioskSetupCompleted'] -or $chromeResults[0].ChromeKioskSetupCompleted -ne $true -or $chromeResults[0].ClientType -cne 'SaaS' -or [string]::IsNullOrWhiteSpace([string]$chromeResults[0].KioskUser) -or [string]::IsNullOrWhiteSpace([string]$chromeResults[0].HostName)) {
+            throw 'Chrome setup did not return one verified completion result.'
+        }
+        return [pscustomobject]@{Status='Pass';Message=('SaaS Chrome KIOSK Installation completed and verified. Kiosk User: '+$chromeResults[0].KioskUser+'; Hostname: '+$chromeResults[0].HostName+'.');Context=$Context}
     }
     # Dot sourcing retains the original script's values for readback. Capture
     # native stdout so the handler returns exactly one structured result.
