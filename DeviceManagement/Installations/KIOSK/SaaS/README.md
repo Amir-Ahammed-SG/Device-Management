@@ -32,3 +32,10 @@ The setup file can also be run directly from this folder. The Device Management
 handler adds context/admin checks, native exit handling and result verification.
 This handler accepts only SaaS/KIOSK/Apply. Subway has its own isolated handler
 and supplied setup source; other client/device installations stay pending.
+
+
+## Chrome copy
+
+A standalone `Kiosk_Mode_Setup_Chrome.ps1` is available beside the Edge setup.
+See [Chrome kiosk setup](../Chrome-README.md) for commands,
+behavior, verification, and the current Edge-only menu/Thorough Check limits.

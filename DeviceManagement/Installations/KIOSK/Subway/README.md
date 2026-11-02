@@ -29,3 +29,10 @@ The separate handler verifies resulting registry/files and Desktop shortcut
 properties before reporting success. An incorrect existing shortcut is retained
 as in the original script and reported for manual review. The script can also
 run directly; menu context/admin checks and result readback belong to the handler.
+
+
+## Chrome copy
+
+A standalone `Kiosk_Mode_Setup_Chrome.ps1` is available beside the Edge setup.
+See [Chrome kiosk setup](../Chrome-README.md) for commands,
+behavior, verification, and the current Edge-only menu/Thorough Check limits.
