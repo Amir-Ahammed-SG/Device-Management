@@ -8,7 +8,7 @@ Administrator terminal running 64-bit Windows PowerShell 5.1.
 | Kiosk User | Suggests existing SELISE-KIOSK, otherwise SELISE. Enter confirms; another existing, enabled local account can be entered. |
 | Restaurant ID | Required; empty or unsafe URL values are requested again. |
 | Kiosk ID | Required; empty or unsafe URL values are requested again. |
-| Hostname | Suggests the current Windows computer name; Enter confirms or a valid manual hostname can be entered. |
+| Hostname | Suggests the full Windows DNS hostname, including names longer than 15 characters; Enter confirms or a valid manual hostname can be entered. |
 
 All inputs are collected before setup writes anything. The selected account's
 existing C:\Users\<account> profile and the script's original Edge path must exist.
@@ -36,3 +36,5 @@ run directly; menu context/admin checks and result readback belong to the handle
 KIOSK Installation first offers **Microsoft Edge** and **Google Chrome**. Choose the browser before entering the kiosk account and onboarding values. Back and Exit at the browser menu make no setup changes. The Edge behavior described above is retained; Chrome uses `Kiosk_Mode_Setup_Chrome.ps1`, which can also run directly.
 See [Chrome kiosk setup](../Chrome-README.md) for commands,
 behavior, verification, and the remaining Edge-only Thorough Check limits.
+
+Hostname detection reads `Win32_ComputerSystem.DNSHostName` directly. If it is unavailable, enter the full hostname manually; setup does not substitute a shortened environment name.

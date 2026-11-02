@@ -48,10 +48,10 @@ preserved above the navigation footer.
 SaaS and Subway KIOSK Installation offer Microsoft Edge and Google Chrome from the operation menu. Each prompts
 for an existing kiosk account, Restaurant ID, Kiosk ID and Hostname before running
 the supplied setup actions. Account and hostname suggestions can be confirmed
-with Enter or changed manually. Both browser setups are included in the release bundle.
+with Enter or changed manually. Hostname suggestions use the full Windows DNS hostname, preserving names longer than 15 characters; unavailable detection requires manual entry. Both browser setups are included in the release bundle.
 See the [SaaS](Installations/KIOSK/SaaS/README.md) and [Subway](Installations/KIOSK/Subway/README.md) setup guides.
 
-SaaS and Subway KIOSK Thorough Check are Ready for Audit and Apply. Final is a report tab generated from their observations. The shared
+SaaS and Subway KIOSK Thorough Check are Ready for Audit and Apply. Hostname display and launcher/monitoring comparisons use the full Windows DNS hostname; unavailable detection remains unverified. Final is a report tab generated from their observations. The shared
 KIOSK dispatcher selects the client-isolated source: `SaaSKioskThoroughCheckScript.ps1`
 for SaaS and `SubwayKioskThoroughCheck.ps1` for Subway. Each source runs in a
 child 64-bit Windows PowerShell process when run locally and returns a verified completion signal

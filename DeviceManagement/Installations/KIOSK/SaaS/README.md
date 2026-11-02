@@ -12,7 +12,7 @@ All four values are collected before setup starts:
 | Kiosk User | Suggests an existing SELISE-KIOSK account, otherwise SELISE. Enter confirms the suggestion; another existing, enabled local account can be entered. |
 | Restaurant ID | Required; empty or unsafe URL values are requested again. |
 | Kiosk ID | Required; empty or unsafe URL values are requested again. |
-| Hostname | Suggests the current Windows computer name; Enter confirms it or a valid manual hostname can be entered. |
+| Hostname | Suggests the full Windows DNS hostname, including names longer than 15 characters; Enter confirms it or a valid manual hostname can be entered. |
 
 The setup uses the selected account's existing `C:\Users\<account>` profile and
 the original fixed Edge executable path. Both must exist before changes start.
@@ -39,3 +39,5 @@ and supplied setup source; other client/device installations stay pending.
 KIOSK Installation first offers **Microsoft Edge** and **Google Chrome**. Choose the browser before entering the kiosk account and onboarding values. Back and Exit at the browser menu make no setup changes. The Edge behavior described above is retained; Chrome uses `Kiosk_Mode_Setup_Chrome.ps1`, which can also run directly.
 See [Chrome kiosk setup](../Chrome-README.md) for commands,
 behavior, verification, and the remaining Edge-only Thorough Check limits.
+
+Hostname detection reads `Win32_ComputerSystem.DNSHostName` directly. If it is unavailable, enter the full hostname manually; setup does not substitute a shortened environment name.

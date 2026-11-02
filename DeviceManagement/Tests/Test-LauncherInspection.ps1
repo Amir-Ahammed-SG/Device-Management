@@ -60,6 +60,7 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroug
     Assert-Inspection ($errors.Count -eq 0) 'Source did not parse'
     $definitions=$ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($definitions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
+    function Get-ThoroughDeviceHostname { return 'HOST-01' }
     # Pinch repair has its own file/rollback fixtures in Test-PinchZoom.ps1.
     function Invoke-KioskPinchZoomCheck {param($UserName) New-CheckResult 'Pass' 'Fixture pinch check; no launcher changes.' 'Disabled'}
     function Get-KioskProfilePath { param($UserName) if ($script:profileMissing) { return $null }; return $script:profilePath }

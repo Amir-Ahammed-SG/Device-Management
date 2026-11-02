@@ -22,6 +22,7 @@ $fixture=$fixtureAst.GetScriptBlock()
 $oldComputerName=$env:COMPUTERNAME
 $env:COMPUTERNAME='DEVICE-KIOSK01'
 function Get-SubwayFixtureAdministrator { $script:administrator }
+function Get-CimInstance { [CmdletBinding()]param([string]$ClassName,[string[]]$Property) [pscustomobject]@{DNSHostName=$script:dnsHostName} }
 function Get-LocalUser {[CmdletBinding()]param() $script:users}
 function Read-Host {
     param([string]$Prompt)
@@ -113,7 +114,7 @@ function Reset-Installation {
     $script:files=@{};$script:registry=@{};$script:directories=@{};$script:writes=0
     $script:stops=New-Object 'Collections.Generic.List[string]'
     $script:starts=New-Object 'Collections.Generic.List[string]'
-    $script:administrator=$true;$script:profilePresent=$true;$script:edgePresent=$true
+    $script:administrator=$true;$script:profilePresent=$true;$script:edgePresent=$true;$script:dnsHostName='DEVICE-KIOSK01'
     $script:writeDenied=$false;$script:propertyNoEffect=$false;$script:fileNoEffect=$false;$script:nativeFailure=$false
     $script:shortcuts=@{};$script:shortcutSaves=0;$script:regCalls=0;$script:shortcutDenied=$false;$script:shortcutNoEffect=$false
     $script:DeviceManagementMemoryBundle=$null
@@ -137,6 +138,12 @@ try {
     $shortcutPath='C:\Users\SELISE-KIOSK\Desktop\LaunchKiosk.lnk'
     Assert-Installation ($script:shortcuts[$shortcutPath].TargetPath -eq 'C:\Users\SELISE-KIOSK\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\LaunchKiosk.bat') 'Desktop shortcut target changed.'
 
+    Reset-Installation
+    $env:COMPUTERNAME='OM-DHK-PAN-KIOS';$script:dnsHostName='OM-DHK-PAN-KIOSK'
+    try {
+        $result=Invoke-InstallationFixture
+        Assert-Installation ($result.Status -eq 'Pass' -and $script:prompts[3] -ceq 'Hostname [OM-DHK-PAN-KIOSK]' -and $script:files['C:\Users\SELISE-KIOSK\Scripts\LaunchKiosk.ps1'].Contains('host=OM-DHK-PAN-KIOSK')) 'Full DNS hostname was truncated during Edge setup.'
+    } finally { $env:COMPUTERNAME='DEVICE-KIOSK01' }
     Reset-Installation @('missing-user','sElIsE','','BAD&ID','BRANCH-2',"bad'id",'Kiosk-2','bad host','MANUAL-HOST')
     $script:DeviceManagementMemoryBundle=@{Files=@{'DeviceManagement/Installations/KIOSK/Subway/kiosk_mode_setup.ps1'=$source}}
     $result=Invoke-InstallationFixture

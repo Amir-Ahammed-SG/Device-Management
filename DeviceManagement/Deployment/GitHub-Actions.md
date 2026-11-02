@@ -53,8 +53,8 @@ Only `main` deploys, including manual runs. Pull requests never receive SSH
 secrets. Deploy jobs run serially and do not cancel an active publication.
 Actions are pinned to reviewed commit SHAs. Checkout credentials are not retained.
 
-`Test-GitHubRelease.ps1` runs eleven independent setup/client/report fixtures and the
-existing 54-case Thorough Check delivery suite plus both clients' Edge/Chrome installation completion/menu cases, including browser Back/Exit and switching browsers. Account, installer and launcher writes
+`Test-GitHubRelease.ps1` runs twelve independent setup/client/report fixtures and the
+existing 54-case Thorough Check delivery suite plus both clients' Edge/Chrome installation completion/menu cases, including browser Back/Exit and switching browsers. Full hostname fixtures cover the reported 16-character truncation, long DNS names, manual fallback, and read-only report comparisons. Account, installer and launcher writes
 use fixtures. A separate Linux job verifies nine publication and rollback
 scenarios using fake SSH, SCP and HTTPS commands. The full older Pester suite is not a passing deployment gate:
 the current recorded baseline is 88 passed and 36 existing failures. Those

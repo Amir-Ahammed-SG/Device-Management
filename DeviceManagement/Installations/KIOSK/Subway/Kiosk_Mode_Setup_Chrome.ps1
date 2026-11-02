@@ -47,8 +47,21 @@ function Test-ChromeKioskHostName {
     return $true
 }
 
+function Get-ChromeKioskFullHostname {
+    # DNSHostName preserves the full active hostname, including names longer than 15 characters.
+    $systems=@(Get-CimInstance -ClassName Win32_ComputerSystem -Property DNSHostName -ErrorAction Stop)
+    if($systems.Count -ne 1) { throw 'The full Windows DNS hostname could not be read.' }
+    $name=([string]$systems[0].DNSHostName).Trim()
+    if($name.Length -lt 1 -or $name.Length -gt 63 -or $name -notmatch '^[A-Za-z0-9_](?:[A-Za-z0-9_-]*[A-Za-z0-9_])?$') {
+        throw 'The full Windows DNS hostname could not be verified.'
+    }
+    return $name
+}
+
 function Read-ChromeKioskHostName {
-    $suggestion=[string]$env:COMPUTERNAME
+    $suggestion=$null
+    try { $suggestion=Get-ChromeKioskFullHostname }
+    catch { Write-Host 'Full Windows hostname could not be detected. Enter the full hostname manually.' -ForegroundColor Yellow }
     if(-not (Test-ChromeKioskHostName $suggestion)) { $suggestion=$null }
     while($true) {
         $prompt=if($suggestion) { 'Hostname ['+$suggestion+']' } else { 'Hostname' }

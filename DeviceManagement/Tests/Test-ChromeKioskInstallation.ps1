@@ -27,6 +27,7 @@ function Mock-ChromeFileWrite {
  if($script:failSecondFile -and $script:fileWriteCount -eq 2) { throw 'Fixture file write failed' }
  if(-not $script:fileNoEffect){$script:files[$Path]=[byte[]]$Bytes.Clone()}
 }
+function Get-CimInstance { [CmdletBinding()]param([string]$ClassName,[string[]]$Property) [pscustomobject]@{DNSHostName=$script:dnsHostName} }
 function Get-LocalUser { [CmdletBinding()]param() $script:users }
 function Read-Host {
  param([string]$Prompt)
@@ -97,7 +98,7 @@ function Reset-Chrome {
  foreach($answer in $Answers){$script:answers.Enqueue($answer)}
  $script:prompts=[Collections.Generic.List[string]]::new()
  $script:users=@([pscustomobject]@{Name='SELISE-KIOSK';Enabled=$true})
- $script:admin=$true;$script:profilePresent=$true;$script:profilePath='C:\Users\SELISE-KIOSK'
+ $script:admin=$true;$script:profilePresent=$true;$script:dnsHostName='FIXTURE-KIOSK01';$script:profilePath='C:\Users\SELISE-KIOSK'
  $script:chromePath='C:\Program Files\Google\Chrome\Application\chrome.exe'
  $script:files=@{};$script:directories=@{};$script:registry=@{}
  $script:writes=0;$script:fileWriteCount=0
@@ -160,6 +161,12 @@ try {
          Assert-Chrome ($script:launchedPath -eq $chrome -and $script:launchedArguments.Contains('--kiosk "'+$origin+'/#/onboarding/login?restaurantId=BRANCH-1&kioskId=KIOSK-2&host=FIXTURE-KIOSK01"')) 'Generated launcher changed runtime arguments.'
          Assert-Chrome (($script:savedShortcut -ne $null) -eq ($client -eq 'Subway')) 'Desktop shortcut scope changed.'
      }
+     Reset-Chrome
+     $env:COMPUTERNAME='OM-DHK-PAN-KIOS';$script:dnsHostName='OM-DHK-PAN-KIOSK'
+     try {
+         Invoke-ChromeFixture
+         Assert-Chrome ($script:prompts[3] -ceq 'Hostname [OM-DHK-PAN-KIOSK]' -and [Text.Encoding]::UTF8.GetString($script:files[$launch]).Contains('host=OM-DHK-PAN-KIOSK')) 'Full DNS hostname was truncated during Chrome setup.'
+     } finally { $env:COMPUTERNAME='FIXTURE-KIOSK01' }
      Reset-Chrome @("Kiosk O'Brien",'BRANCH-1','KIOSK-2','')
      $script:users=@([pscustomobject]@{Name="Kiosk O'Brien";Enabled=$true})
      $script:profilePath="C:\Users\Kiosk O'Brien"

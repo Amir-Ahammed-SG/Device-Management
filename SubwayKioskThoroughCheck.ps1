@@ -30,6 +30,17 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     throw 'Please run Windows PowerShell as Administrator.'
 }
 
+function Get-ThoroughDeviceHostname {
+    # Keep unavailable detection explicit; never substitute a shortened environment name.
+    try {
+        $systems=@(Get-CimInstance -ClassName Win32_ComputerSystem -Property DNSHostName -ErrorAction Stop)
+        if($systems.Count -ne 1) { return 'Not detected' }
+        $name=([string]$systems[0].DNSHostName).Trim()
+        if($name.Length -lt 1 -or $name.Length -gt 63 -or $name -notmatch '^[A-Za-z0-9_](?:[A-Za-z0-9_-]*[A-Za-z0-9_])?$') { return 'Not detected' }
+        return $name
+    } catch { return 'Not detected' }
+}
+
 function Confirm-KioskApply {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param ()
@@ -42,7 +53,7 @@ do {
 $script:AuditRunTimer = [Diagnostics.Stopwatch]::StartNew()
 $script:AuditStepTimer = $null
 $script:ApplyChanges = $false
-$reportHostname = $env:COMPUTERNAME
+$reportHostname = Get-ThoroughDeviceHostname
 $reportKioskId = $null
 if (-not $Apply -and -not $AuditOnly -and -not $FinalReport -and -not $WhatIfPreference) {
     Write-Host "`n  SELISE | KIOSK SYSTEM CHECK" -ForegroundColor Cyan
@@ -673,7 +684,7 @@ if ($isFinalReport) { $finalHtml = ConvertTo-ThoroughFinalReportHtml $finalHtml 
     if($isFinalReport -and $AfterApply){
         $finalHtml=$finalHtml.Replace('This report records the observed configuration without applying repairs.','This report records the actual post-fix configuration observed during Apply Fix. No additional repairs were run to generate this view.')
     }
-    $hostLabel=if($Hostname -and $Hostname -notin @('Not verified','Not detected')){$Hostname}else{$env:COMPUTERNAME}
+    $hostLabel=if($Hostname -and $Hostname -notin @('Not verified','Not detected')){$Hostname}else{'Unknown'}
     $hostLabel=($hostLabel -replace '[<>:"/\\|?*\x00-\x1F]','_').Trim().TrimEnd('.')
     if(-not $hostLabel){$hostLabel='Unknown'};if($hostLabel.Length -gt 60){$hostLabel=$hostLabel.Substring(0,60)}
     [pscustomobject]@{Mode=$DisplayMode;ReportId=$reportId;GeneratedAt=$generatedAt;AgentName=$preparedBy;
@@ -1759,7 +1770,7 @@ function Get-ThoroughReportFindingComparison {
     if($presence -eq 'unverified'){return ''}
     $actual=$Value.Trim()
     if($Label -ieq 'Host name' -and $Row.ItemTitle -in @('Kiosk Launch Architecture','Zabbix Agent 2')){
-        $expectedHost=if($Row.PSObject.Properties['ExpectedHostName']){[string]$Row.ExpectedHostName}else{$env:COMPUTERNAME}
+        $expectedHost=if($Row.PSObject.Properties['ExpectedHostName']){[string]$Row.ExpectedHostName}elseif($Requirements -and $Requirements.Contains($Label)){[string]$Requirements[$Label]}else{'Not detected'}
         if(-not (Test-ThoroughHostname $expectedHost) -or -not (Test-ThoroughHostname $actual)){return 'unverified'}
         if($Row.ItemTitle -eq 'Zabbix Agent 2'){
             if($actual -ceq $expectedHost){return 'match'}
@@ -1900,14 +1911,14 @@ function Get-ReportRequirement {
         return ConvertTo-ReportDefinitionHtml ([ordered]@{ 'Expected Names'='SubwayLocal or AspPaymentSubwayProd'; 'Service State'='Running'; 'Startup type'='Automatic'; 'First failure'='Restart the service'; 'Second failure'='Restart the service'; 'Subsequent failures'='Take No Action'; 'Version'='0.0.0.0' })
     }
     if ($Row.ItemSub -eq 'Type: Infrastructure Monitoring') {
-        return ConvertTo-ReportDefinitionHtml ([ordered]@{ 'Service State'='Running'; 'Startup type'='Automatic'; 'First failure'='Restart the service'; 'Second failure'='Restart the service'; 'Subsequent failures'='Take No Action'; 'Host Name'=$(if ($Row.PSObject.Properties['ExpectedHostName']) {$Row.ExpectedHostName} else {$env:COMPUTERNAME}) })
+        return ConvertTo-ReportDefinitionHtml ([ordered]@{ 'Service State'='Running'; 'Startup type'='Automatic'; 'First failure'='Restart the service'; 'Second failure'='Restart the service'; 'Subsequent failures'='Take No Action'; 'Host Name'=$(if ($Row.PSObject.Properties['ExpectedHostName']) {$Row.ExpectedHostName} else {'Not detected'}) })
     }
     $values = switch -Regex ($Row.ItemTitle) {
         '^(KIOSK Account|Local Account:|Administrative Account|SELISE Local Accounts)' {
             [ordered]@{ 'Account Status'='Active / Disabled'; 'Password Never Expires'='Enabled'; 'User Cannot Change Password'='Enabled' }; break
         }
         '^Kiosk Launch Architecture$' {
-            [ordered]@{ 'Launch Script'='Available'; 'Restaurant ID'='Configured'; 'Kiosk ID'='Configured'; 'Host name'=$(if($Row.PSObject.Properties['ExpectedHostName']){$Row.ExpectedHostName}else{$env:COMPUTERNAME}); 'URL origin'='https://kiosk.subway.ch' }; break
+            [ordered]@{ 'Launch Script'='Available'; 'Restaurant ID'='Configured'; 'Kiosk ID'='Configured'; 'Host name'=$(if($Row.PSObject.Properties['ExpectedHostName']){$Row.ExpectedHostName}else{'Not detected'}); 'URL origin'='https://kiosk.subway.ch' }; break
         }
         '^SELISE-KIOSK Startup Folder$' { [ordered]@{ 'Location'='Path'; 'Startup BAT'='Available'; 'Desktop Shortcut'='Available' }; break }
         '^Kiosk Auto-Login$' {
@@ -2447,7 +2458,7 @@ function Repair-LauncherDetails {
     if ($url -eq 'Not detected') {$result.Action='A single supported static URL was not identified. Manual action required.';return $result}
     $inspection=Resolve-KioskUrl -Url $url
     if ($inspection.Issues.Count) {$result.Action=($inspection.Issues -join '; ')+'. Manual action required. No launcher values changed.';return $result}
-    $expected=if(Test-CanApply){$Hostname}else{$env:COMPUTERNAME}
+    $expected=if(Test-CanApply){$Hostname}else{Get-ThoroughDeviceHostname}
     if(-not (Test-ThoroughHostname $expected)){$result.Action='The expected device/launcher hostname is not verified. Manual action required.';return $result}
     if($result.LauncherValues['Host Name'] -ine $expected){
         if(-not (Test-CanApply)){$result.Action='Launcher hostname differs from the Windows device hostname. Apply Fix can update the host parameter.';return $result}
@@ -2791,7 +2802,7 @@ if($script:ApplyChanges -and $existingBundle){
     $savedBeforeRows=@(Get-ThoroughSnapshotObservations $existingBundle.State.Reports.Audit)
 }
 if($script:ApplyChanges){
-    $KioskHostname=Read-ThoroughFixHostname -SuggestedName $env:COMPUTERNAME -SuppliedName $KioskHostname
+    $KioskHostname=Read-ThoroughFixHostname -SuggestedName (Get-ThoroughDeviceHostname) -SuppliedName $KioskHostname
 }
 $applyRequested=[bool]$script:ApplyChanges
 $beforeApplyRows=@()
@@ -3218,7 +3229,7 @@ try {
     $result = Invoke-KioskLauncherConfiguration -UserName $kioskUser -Restaurant $RestaurantId -Kiosk $KioskId -Hostname $KioskHostname
     if ($result.PSObject.Properties['LauncherValues'] -and $result.LauncherValues['KIOSK ID'] -notin @($null,'','Not detected')) { $reportKioskId = [string]$result.LauncherValues['KIOSK ID'] }
     Add-ResultEntry $sec2Num $sec2Title 'Kiosk Launch Architecture' $result
-    $auditRows[-1]|Add-Member NoteProperty ExpectedHostName $(if(Test-CanApply){$KioskHostname}else{$env:COMPUTERNAME})
+    $auditRows[-1]|Add-Member NoteProperty ExpectedHostName $(if(Test-CanApply){$KioskHostname}else{Get-ThoroughDeviceHostname})
 } catch { Add-ResultEntry $sec2Num $sec2Title 'Kiosk Launch Architecture' (New-CheckResult 'Fail' $_.Exception.Message 'Launcher configuration failed') }
 
 try {
@@ -4428,7 +4439,7 @@ function Invoke-ZabbixAgentInstall {
 Start-AuditStep 8 'Zabbix Agent 2'
 $zabbixInstallError = $null
 $zabbixInstalledThisRun = $false
-$zabbixExpectedHostname = $env:COMPUTERNAME
+$zabbixExpectedHostname = Get-ThoroughDeviceHostname
 try {
     $zabbixService = Get-AuditService -ServiceName 'Zabbix Agent 2'
     if (-not $zabbixService -and (Test-CanApply)) {
