@@ -440,7 +440,10 @@ function Get-ThoroughFixAccountReportView {
         $state=Format-ThoroughReportFieldLabels ([string]$account.FindingsHtml)
         $state=Format-ThoroughReportFindingHighlights -Row $record -FindingsHtml $state -RequirementHtml $RequirementHtml
         $fields=@([regex]::Matches($state,'(?is)<div\b[^>]*>(?:(?!</?div\b).)*</div>') | Where-Object {$_.Value.Contains('class="kv-label"')})
-        $allMatched=$fields.Count -eq 5 -and -not @($fields | Where-Object {$_.Value -notmatch 'class="finding-value finding-match"'}).Count
+        $expectedFields=Get-ThoroughReportHighlightFields $RequirementHtml
+        $requiredFieldCount=$expectedFields.Count
+        if($account.PSObject.Properties['AdministrativePolicy'] -and $account.AdministrativePolicy -and $expectedFields.ContainsKey('User Cannot Change Password')){$requiredFieldCount--}
+        $allMatched=$fields.Count -gt 0 -and $fields.Count -eq $requiredFieldCount -and -not @($fields | Where-Object {$_.Value -notmatch 'class="finding-value finding-match"'}).Count
         $uncertain=$false
         if($null -ne $own -and -not [string]::IsNullOrWhiteSpace([string]$own.Status)){
             $record.Status=[string]$own.Status
@@ -931,7 +934,7 @@ function Get-ThoroughReportAppliedHtml {
     $passed=$Row.Status -in @('Pass','Online','Remediated') -or ($Row.Status -eq 'Offline' -and $Row.ItemSub -eq 'Type: Old Payment Service')
     $readOnlyCheck=$Row.ItemTitle -in @('Kiosk Auto-Login','SELISE-KIOSK Startup Folder','Payment Service Restart Task','PaymentService Restart Task')
     $parts=@($note -split ';\s*' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    $changePattern='(?i)\b(?:Enabled (?:Keep printed documents|Password Never Expires|User Cannot Change Password)|Updated (?:launcher|Zabbix) hostname|Startup set to (?:Automatic|Manual|Disabled)|Service (?:started|stopped|stop requested)|Crash recovery configured|Recovery actions (?:configured|set to Take No Action)|PrintService log enabled|Created (?:missing |the )?desktop shortcut|(?:Created|Updated) inbound TCP \d+ rule|Installed missing (?:Nmap|Zabbix Agent)|Performance counters rebuilt|Added (?:only --disable-pinch|Local Network Allowlist|Translation|Visual Search|Edge Gestures))\b'
+    $changePattern='(?i)\b(?:Allowed password changes|Enabled (?:Keep printed documents|Password Never Expires|User Cannot Change Password)|Updated (?:launcher|Zabbix) hostname|Startup set to (?:Automatic|Manual|Disabled)|Service (?:started|stopped|stop requested)|Crash recovery configured|Recovery actions (?:configured|set to Take No Action)|PrintService log enabled|Created (?:missing |the )?desktop shortcut|(?:Created|Updated) inbound TCP \d+ rule|Installed missing (?:Nmap|Zabbix Agent)|Performance counters rebuilt|Added (?:only --disable-pinch|Local Network Allowlist|Translation|Visual Search|Edge Gestures))\b'
     $hasRecordedChange=$note -match $changePattern
     $noChangeOnly=$true
     $hasNoChangeNote=$false
@@ -1675,6 +1678,7 @@ function Get-AccountReportView {
     $administrative=$Row.ItemTitle -match '^Administrative Account'
     $expectedName=if ($administrative) { 'Admin, Administrator' } else { 'SELISE or SELISE-KIOSK' }
     $expectedPrivilege='Standard or Administrator'
+    $hasKioskPasswordRequirement=$false
     $raw=[string]$Row.FoundStateHtml
     $missing=$raw -match '(?is)Account Status:</span>\s*Missing\s*</div>' -or $raw.Trim() -match '^Account Missing(?:\. Please create manually\.)?$'
     $identityParts=[Collections.Generic.List[string]]::new()
@@ -1702,7 +1706,9 @@ function Get-AccountReportView {
             $accountStatus=if ($stateMatch.Success) { [Net.WebUtility]::HtmlDecode(($stateMatch.Groups['Value'].Value -replace '<[^>]+>','').Trim()) } else { 'Not verified' }
             $accountStatus=switch ($accountStatus) { 'Enabled' { 'Active' }; 'Active' { 'Active' }; 'Disabled' { 'Disabled' }; default { 'Not verified' } }
             $findings=[ordered]@{ 'Account Name'=$name; 'Account Privilege'=$privilege; 'Account Status'=$accountStatus }
-            $findingLabels=@('Password Never Expires','User Cannot Change Password')
+            $administrativeAccount=$administrative -or $privilege -eq 'Administrator' -or $name -in @('Admin','Administrator')
+            $findingLabels=@('Password Never Expires')
+            if(-not $administrativeAccount){$findingLabels+='User Cannot Change Password';$hasKioskPasswordRequirement=$true}
             foreach ($label in $findingLabels) {
                 $match=[regex]::Match($chunk,'(?is)<div><span class=["'']kv-label["'']>'+[regex]::Escape($label)+':</span>\s*(?<Value>.*?)</div>')
                 $findings[$label]=if ($match.Success) { [Net.WebUtility]::HtmlDecode(($match.Groups['Value'].Value -replace '<[^>]+>','').Trim()) } else { 'Not verified' }
@@ -1711,7 +1717,7 @@ function Get-AccountReportView {
             $identityParts.Add($number+(ConvertTo-ReportDefinitionHtml $identity))
             $findingBody=ConvertTo-ReportDefinitionHtml $findings
             $findingParts.Add($number+$findingBody)
-            $records.Add([pscustomobject]@{AccountName=$name;HeadingHtml=$number;FindingsHtml=$findingBody})
+            $records.Add([pscustomobject]@{AccountName=$name;HeadingHtml=$number;FindingsHtml=$findingBody;AdministrativePolicy=[bool]$administrativeAccount})
         }
     } else {
         $identity=[ordered]@{ 'Account Name'=$expectedName; 'Account Privilege'=$expectedPrivilege }
@@ -1725,6 +1731,7 @@ function Get-AccountReportView {
         'Password Never Expires'='Enabled'
         'User Cannot Change Password'='Enabled'
     }
+    if($administrative -or ($accountNames.Count -gt 0 -and -not $hasKioskPasswordRequirement)){$expected.Remove('User Cannot Change Password')}
     [pscustomobject]@{ IdentityHtml=($identityParts -join '<hr>'); ExpectedHtml=(ConvertTo-ReportDefinitionHtml $expected); FindingsHtml=($findingParts -join '<hr>'); Records=$records.ToArray() }
 }
 
@@ -1914,7 +1921,8 @@ function Get-ReportRequirement {
         return ConvertTo-ReportDefinitionHtml ([ordered]@{ 'Service State'='Running'; 'Startup type'='Automatic'; 'First failure'='Restart the service'; 'Second failure'='Restart the service'; 'Subsequent failures'='Take No Action'; 'Host Name'=$(if ($Row.PSObject.Properties['ExpectedHostName']) {$Row.ExpectedHostName} else {'Not detected'}) })
     }
     $values = switch -Regex ($Row.ItemTitle) {
-        '^(KIOSK Account|Local Account:|Administrative Account|SELISE Local Accounts)' {
+        '^Administrative Account' { [ordered]@{ 'Account Status'='Active / Disabled'; 'Password Never Expires'='Enabled' }; break }
+        '^(KIOSK Account|Local Account:|SELISE Local Accounts)' {
             [ordered]@{ 'Account Status'='Active / Disabled'; 'Password Never Expires'='Enabled'; 'User Cannot Change Password'='Enabled' }; break
         }
         '^Kiosk Launch Architecture$' {
@@ -2536,14 +2544,14 @@ function New-AccountReportCommand {
 }
 
 function New-MissingAccountResult {
-    param ([Parameter(Mandatory = $true)][string]$RequestedName, [string]$Privilege = 'Not available')
+    param ([Parameter(Mandatory = $true)][string]$RequestedName, [string]$Privilege = 'Not available', [switch]$Administrative)
     $result = New-CheckResult 'Fail' "Account Missing. Please create manually: $RequestedName. No account was created." 'Account missing'
     $result | Add-Member -NotePropertyName AccountName -NotePropertyValue $RequestedName
     $result | Add-Member -NotePropertyName DetectedAccountNames -NotePropertyValue ([string[]]@())
     $result | Add-Member -NotePropertyName Shortcut -NotePropertyValue (New-AccountReportCommand -AccountNames @())
-    $result | Add-Member -NotePropertyName StateHtml -NotePropertyValue (
-        '<div class="kv-block"><div><span class="kv-label">Account Name:</span> {0}</div><div><span class="kv-label">Account Privilege:</span> {1}</div><div><span class="kv-label">Account Status:</span> Missing</div><div><span class="kv-label">Password Never Expires:</span> Not applicable</div><div><span class="kv-label">User Cannot Change Password:</span> Not applicable</div></div>' -f
-        ([Net.WebUtility]::HtmlEncode($RequestedName)), ([Net.WebUtility]::HtmlEncode($Privilege)))
+    $state=[ordered]@{'Account Name'=$RequestedName;'Account Privilege'=$Privilege;'Account Status'='Missing';'Password Never Expires'='Not applicable'}
+    if(-not $Administrative){$state['User Cannot Change Password']='Not applicable'}
+    $result | Add-Member -NotePropertyName StateHtml -NotePropertyValue (ConvertTo-ReportDefinitionHtml $state)
     return $result
 }
 
@@ -2554,39 +2562,47 @@ function Open-ThoroughLocalAccount {
 }
 
 function Enable-LocalAccountPasswordFlags {
-    param([Parameter(Mandatory=$true)][string]$UserName,[bool]$PasswordNeverExpires,[bool]$UserCannotChangePassword)
+    param([Parameter(Mandatory=$true)][string]$UserName,[bool]$PasswordNeverExpires,[bool]$UserCannotChangePassword,[switch]$AllowPasswordChange)
     if(-not (Test-CanApply)){throw 'Account changes are disabled outside Apply Fix.'}
-    # WinNT UserFlags: preserve every existing bit; OR only the approved flags.
+    if($UserCannotChangePassword -and $AllowPasswordChange){throw 'Conflicting password-change settings were requested.'}
+    # Change only approved UserFlags bits; keep identity, activation and unrelated flags intact.
     # https://learn.microsoft.com/windows/win32/adsi/modifying-user-cannot-change-password-winnt-provider
-    # https://learn.microsoft.com/windows/win32/adsi/winnt-password-never-expires
     $entry=Open-ThoroughLocalAccount $UserName
     $raw=$entry.InvokeGet('UserFlags')
     if($null -eq $raw){throw 'The existing account flags could not be read; nothing was changed.'}
-    $before=[int]$raw;$mask=0
-    if($PasswordNeverExpires){$mask=$mask -bor 0x10000}
-    if($UserCannotChangePassword){$mask=$mask -bor 0x40}
-    $target=$before -bor $mask
+    $before=[int]$raw;$setMask=0;$clearMask=0
+    if($PasswordNeverExpires){$setMask=$setMask -bor 0x10000}
+    if($UserCannotChangePassword){$setMask=$setMask -bor 0x40}
+    if($AllowPasswordChange){$clearMask=0x40}
+    $managedMask=$setMask -bor $clearMask
+    $target=($before -bor $setMask) -band (-bnot $clearMask)
     if($target -eq $before){return [pscustomobject]@{Changed=$false;BeforeFlags=$before;AfterFlags=$before}}
     $entry.Put('UserFlags',$target)
     $entry.SetInfo()
     $entry.RefreshCache(@('UserFlags'))
-    $after=[int]$entry.InvokeGet('UserFlags')
-    if(($after -band $mask) -ne $mask){throw 'The required password settings were not enabled after update.'}
-    if(($after -band (-bnot $mask)) -ne ($before -band (-bnot $mask))){throw 'An unrelated account flag changed; manual verification is required.'}
+    $readback=$entry.InvokeGet('UserFlags')
+    if($null -eq $readback){throw 'The password settings could not be read back after update.'}
+    $after=[int]$readback
+    if(($after -band $setMask) -ne $setMask -or ($after -band $clearMask) -ne 0){throw 'The requested password settings were not verified after update.'}
+    if(($after -band (-bnot $managedMask)) -ne ($before -band (-bnot $managedMask))){throw 'An unrelated account flag changed; manual verification is required.'}
     [pscustomobject]@{Changed=$true;BeforeFlags=$before;AfterFlags=$after}
 }
 
 function Invoke-ExistingAccountPolicy {
-    param([Parameter(Mandatory=$true)]$Account,[Parameter(Mandatory=$true)]$AdministratorSids,[switch]$ReportPrivilegeOnly)
+    param([Parameter(Mandatory=$true)]$Account,[Parameter(Mandatory=$true)]$AdministratorSids,[switch]$ReportPrivilegeOnly,[switch]$Administrative)
+    $privilege=Get-LocalAccountPrivilege -Account $Account -AdministratorSids $AdministratorSids
+    $administrativePolicy=$Administrative -or $privilege -eq 'Local Administrator' -or $Account.Name -in @('Admin','Administrator')
+    $requireCannot=-not $administrativePolicy
     $properties=Get-LocalAccountProperties -UserName $Account.Name
     if($null -eq $properties -or $null -eq $properties.PasswordNeverExpires -or $null -eq $properties.UserCannotChangePassword){throw 'Required account properties could not be verified; no changes made.'}
     $beforeNever=[bool]$properties.PasswordNeverExpires
     $beforeCannot=[bool]$properties.UserCannotChangePassword
     $changes=[Collections.Generic.List[string]]::new()
     $failure=$null;$write=$null
-    if($Account.Enabled -and (Test-CanApply) -and (-not $beforeNever -or -not $beforeCannot)){
+    $needsPasswordChange=if($administrativePolicy){$beforeCannot}else{-not $beforeCannot}
+    if($Account.Enabled -and (Test-CanApply) -and (-not $beforeNever -or $needsPasswordChange)){
         try {
-            $write=Enable-LocalAccountPasswordFlags -UserName $Account.Name -PasswordNeverExpires:(-not $beforeNever) -UserCannotChangePassword:(-not $beforeCannot)
+            $write=Enable-LocalAccountPasswordFlags -UserName $Account.Name -PasswordNeverExpires:(-not $beforeNever) -UserCannotChangePassword:($requireCannot -and -not $beforeCannot) -AllowPasswordChange:$administrativePolicy
         } catch {$failure=$_.Exception.Message}
         try {$properties=Get-LocalAccountProperties -UserName $Account.Name}
         catch {
@@ -2594,10 +2610,10 @@ function Invoke-ExistingAccountPolicy {
             $failure=(@($failure,'Password-setting readback could not be completed: '+$_.Exception.Message)|Where-Object {$_}) -join '; '
         }
         if(-not $beforeNever -and $properties.PasswordNeverExpires -eq $true){$changes.Add('Enabled Password Never Expires')}
-        if(-not $beforeCannot -and $properties.UserCannotChangePassword -eq $true){$changes.Add('Enabled User Cannot Change Password')}
+        if($requireCannot -and -not $beforeCannot -and $properties.UserCannotChangePassword -eq $true){$changes.Add('Enabled User Cannot Change Password')}
+        if($administrativePolicy -and $beforeCannot -and $properties.UserCannotChangePassword -eq $false){$changes.Add('Allowed password changes')}
     }
-    $privilege=Get-LocalAccountPrivilege -Account $Account -AdministratorSids $AdministratorSids
-    $verified=$properties.PasswordNeverExpires -eq $true -and $properties.UserCannotChangePassword -eq $true
+    $verified=$properties.PasswordNeverExpires -eq $true -and $(if($administrativePolicy){$properties.UserCannotChangePassword -eq $false}else{$properties.UserCannotChangePassword -eq $true})
     $status=if($verified -and -not $failure){'Pass'}else{'Fail'}
     if($failure){
         $action=(@(($changes -join '; '),('Password settings update could not be fully verified: '+$failure),'Manual action required')|Where-Object {$_}) -join '; '
@@ -2605,18 +2621,22 @@ function Invoke-ExistingAccountPolicy {
     elseif($changes.Count -and $verified){$action=($changes -join '; ')+'; readback verified'}
     elseif($verified){$action='Requested password settings are enabled; no changes needed'}
     elseif(Test-CanApply){$action='Required password settings were not verified after Apply; account identity, privilege and enabled state were preserved. Manual action required.'}
-    else {$action='Audit only: Password Never Expires and User Cannot Change Password must both be enabled'}
+    elseif($requireCannot){$action='Audit only: Password Never Expires and User Cannot Change Password must both be enabled'}
+    else {$action='Audit only: Password Never Expires must be enabled and password changes must be allowed'}
     $never=if($null -eq $properties.PasswordNeverExpires){'Not verified'}elseif($properties.PasswordNeverExpires){'Enabled'}else{'Disabled'}
-    $cannot=if($null -eq $properties.UserCannotChangePassword){'Not verified'}elseif($properties.UserCannotChangePassword){'Enabled'}else{'Disabled'}
+    $state=[ordered]@{
+        'Account Name'=[string]$Account.Name;'Account Privilege'=$privilege
+        'Account Status'=$(if($Account.Enabled){'Enabled'}else{'Disabled'})
+        'Password Never Expires'=$never
+    }
+    if($requireCannot){
+        $state['User Cannot Change Password']=if($null -eq $properties.UserCannotChangePassword){'Not verified'}elseif($properties.UserCannotChangePassword){'Enabled'}else{'Disabled'}
+    }
     $result=New-CheckResult $status $action 'Account present'
     $result|Add-Member NoteProperty AccountName ([string]$Account.Name)
     $result|Add-Member NoteProperty AccountPolicyChanged ([bool]($changes.Count -or ($write -and $write.Changed)))
     $result|Add-Member NoteProperty DetectedAccountNames @([string]$Account.Name)
-    $result|Add-Member NoteProperty StateHtml (ConvertTo-ReportDefinitionHtml ([ordered]@{
-        'Account Name'=[string]$Account.Name;'Account Privilege'=$privilege
-        'Account Status'=$(if($Account.Enabled){'Enabled'}else{'Disabled'})
-        'Password Never Expires'=$never;'User Cannot Change Password'=$cannot
-    }))
+    $result|Add-Member NoteProperty StateHtml (ConvertTo-ReportDefinitionHtml $state)
     return $result
 }
 
@@ -2723,7 +2743,7 @@ function Get-KioskAccountCheck {
 function Get-AdministrativeAccountCheck {
     $discovered = Get-AdministrativeLocalAccounts
     $results = @(foreach ($account in $discovered.Accounts) {
-        try { Invoke-ExistingAccountPolicy -Account $account -AdministratorSids $discovered.AdministratorSids }
+        try { Invoke-ExistingAccountPolicy -Account $account -AdministratorSids $discovered.AdministratorSids -Administrative }
         catch {
             $failed = New-CheckResult 'Fail' $_.Exception.Message ('Account properties could not be read: ' + $account.Name)
             $failed | Add-Member -NotePropertyName AccountName -NotePropertyValue $account.Name
@@ -2732,11 +2752,11 @@ function Get-AdministrativeAccountCheck {
                 'Account Privilege'=(Get-LocalAccountPrivilege -Account $account -AdministratorSids $discovered.AdministratorSids)
                 'Account Status'=$(if ($account.Enabled) {'Enabled'} else {'Disabled'})
                 'Password Never Expires'='Not verified'
-                'User Cannot Change Password'='Not verified'
             }))
             $failed
         }
     })
+    if(-not $results.Count){return New-MissingAccountResult -RequestedName 'Admin, Administrator' -Administrative}
     Join-AccountCheckResults -Results $results -MissingName 'Admin, Administrator'
 }
 

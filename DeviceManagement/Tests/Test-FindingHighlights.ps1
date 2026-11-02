@@ -214,7 +214,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
             (New-HighlightRow 3 'Core Background Services' 'Payment Gateway Middleware' 'Type: Payment Gateway Middleware' (ConvertTo-ServiceFindingHtml -ServiceName $paymentName -ServiceState 'Stopped' -StartupType 'Auto' -Recovery $recovery -Version '9.2.3.4') 'Fail'),
             (New-HighlightRow 5 'AppSettings Check' 'Payout Scheduler' 'appsettings.json' (ConvertTo-ReportDefinitionHtml ([ordered]@{'Provider'='SIX';'IsEnabled'='False'})) 'Pass'),
             (New-HighlightRow 4 'Security, Network & System Integrity' 'Nmap Diagnostic Tool' 'Type: Executable / Version Check' (ConvertTo-ReportDefinitionHtml ([ordered]@{'Tool State'='Installed';'Version'='7.992';'Executable Path'='C:\Program Files\Nmap\nmap.exe'})) 'Pass'),
-            (New-HighlightRow 4 'Security, Network & System Integrity' 'Administrative Accounts' 'Verified configuration' (ConvertTo-ReportDefinitionHtml ([ordered]@{'Account Name'='Administrator';'Account Privilege'='Local Administrator';'Account Status'='Active';'Password Never Expires'='Enabled';'User Cannot Change Password'='Not verified'})) 'Fail'),
+            (New-HighlightRow 4 'Security, Network & System Integrity' 'Administrative Accounts' 'Verified configuration' (ConvertTo-ReportDefinitionHtml ([ordered]@{'Account Name'='Administrator';'Account Privilege'='Local Administrator';'Account Status'='Active';'Password Never Expires'='Not verified'})) 'Fail'),
             (New-HighlightRow 4 'Security, Network & System Integrity' 'lodctr /R Performance Counter' 'Type: System Performance Rebuild' (ConvertTo-ReportDefinitionHtml $(if($isApply){[ordered]@{'Rebuild State'='Exit code: 0'}}else{[ordered]@{'Audit'='Not executed'}})) $(if($isApply){'Pass'}else{'Bypass'}))
         )
         $rows[6] | Add-Member NoteProperty ExpectedHtml (ConvertTo-ReportDefinitionHtml ([ordered]@{'Provider'='SIX, NETS, NEXIDE';'IsEnabled'='False / True'}))
@@ -252,7 +252,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
                 else{Assert-Highlight ($cells[3] -notmatch 'Keep printed documents:</span> Enabled') 'Fix repeats healthy retention values.'}
             }
             if($cells[0].Contains('>KIOSK Account</div>')){Assert-Highlight ($cells[3] -match '>Account 01<' -and $cells[3] -match '>Account 02<' -and $cells[3] -match 'finding-mismatch[^>]*><span class="kv-label">User Cannot Change Password:</span> Disabled') 'Multiple account values lost their independent highlights.'}
-            if($cells[0].Contains('>Administrative Accounts</div>')){Assert-Highlight ($cells[3] -match 'finding-unverified[^>]*><span class="kv-label">User Cannot Change Password:</span> Not verified') 'An unverified account flag lacks amber styling.'}
+            if($cells[0].Contains('>Administrative Accounts</div>')){Assert-Highlight ($cells[3] -match 'finding-unverified[^>]*><span class="kv-label">Password Never Expires:</span> Not verified') 'An unverified account flag lacks amber styling.'}
             if($cells[0].Contains('>Performance Counter</div>')){
                 if($isApply){Assert-Highlight ($cells[3] -match 'No further fix needed' -and $cells[3] -notmatch 'finding-unverified') 'Fix did not summarize the healthy counter result.'}
                 else{Assert-Highlight ($cells[3] -match 'finding-unverified[^>]*><span class="kv-label">Audit:</span> Not executed' -and $rows[-1].Status -eq 'Bypass') 'Audit counter observation is not amber or its recorded outcome changed.'}

@@ -220,7 +220,7 @@ no existing kiosk account can be identified, launcher, startup, auto-login and
 browser-policy checks are omitted. Discovery accepts SELISE/SELISE-KIOSK, an
 existing local user's registered launcher profile, or a configured local
 auto-login user. Ambiguous launcher profiles require manual review. Missing
-accounts are reported and never created. Kiosk account checks inspect Password
+accounts are reported and never created. Standard kiosk account checks inspect Password
 Never Expires and User Cannot Change Password. Apply enables each setting only
 when disabled and verifies readback; Audit never changes them. Privilege is
 recorded only, and passwords and account enabled/disabled state are preserved.
@@ -332,7 +332,7 @@ terminal/account headings use [Terminal 1], [Account 1], [Account 2], etc.
 Audit Findings contains observed state only. Reports omit overall-result summaries,
 sign-off records and Exceptions / Corrective Actions. AppSettings Expected retains
 the field labels without placeholder values.
-KIOSK Required Configuration contains the detected account name (or SELISE or
+Standard KIOSK Required Configuration contains the detected account name (or SELISE or
 SELISE-KIOSK when missing), Local user as the reference privilege, Account Status
 Active / Disabled,
 Password Never Expires Enabled and User Cannot Change Password Enabled.
@@ -340,10 +340,9 @@ For both KIOSK/local and administrative accounts, Required Configuration appears
 once per component and lists the discovered account names together. Numbered
 [Account 1], [Account 2], etc. blocks appear only in multiple-account Findings.
 Available KIOSK Findings records each account's name, actual privilege, Active/Disabled status
-and both password property values. Privilege
-is observed without enforcing a group change or affecting kiosk Pass status.
+and both password property values. Privilege is observed without changing group membership; administrative accounts use the administrative password policy.
 Missing-account Findings reads `Account Missing. Please create manually.` Administrative Findings includes
-each account's name, privilege, Active/Disabled status and the two password-property values.
+each account's name, privilege, Active/Disabled status and Password Never Expires. User Cannot Change Password is not an administrative requirement or reported field.
 The administrative-account name reference is always Admin, Administrator,
 independent of discovered account names. Findings and commands use the actual accounts.
 An unreadable activation status is reported as Not verified.
@@ -397,22 +396,20 @@ older-service restart recovery before stopping it and reads back actual state
 and recovery actions; Audit records these fields without changing them.
 
 The separate Administrative Accounts check enables only the required
-Password Never Expires and User Cannot Change Password settings when needed,
-then verifies readback. It also verifies the required Local Administrator
-privilege; a mismatch remains Fail for manual action. Both account components
+Password Never Expires setting when needed, then verifies readback. Apply also clears the existing password-change restriction and verifies that password changes are allowed. Both account components
 display Standard or Administrator as the privilege reference, with the actual
 observed privilege labelled Standard or Administrator in Findings. Unknown
 privileges remain unverified. These report labels do not change account discovery,
 membership, the underlying privilege checks or recorded results.
 An account's enabled state is not part of these administrative requirements.
-Kiosk account checks enable the same two required properties in Apply and verify
-readback, while treating privilege as observation only. Account availability and
+Standard kiosk account checks enable Password Never Expires and User Cannot Change Password in Apply and verify
+readback, with the administrative policy taking priority for any account also serving as an administrator. Account availability and
 actual identity/privilege are recorded; enabled state, passwords and group
 membership are preserved. No missing account is created.
 `Tests/Test-KioskAccountProperties.ps1` checks all combinations of both flags across
 clients/modes, aliases/custom users, observed privileges, disabled accounts,
 missing accounts, failed reads/writes/readback and repeated Apply with isolated
-in-memory accounts. It verifies only disabled properties are supplied to a write.
+in-memory accounts. It verifies that only missing password settings or an existing administrative restriction are supplied to a write.
 `Tests/Test-ApplyRequirements.ps1` verifies administrative and service boundaries,
 legacy service recovery, primary protection and recovery action selection with
 in-memory fixtures. Version 0.0.0.0 remains an example in both modes; Findings
@@ -494,3 +491,5 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Start-DeviceManagement
 ```
 
 The local launcher imports modules using `$PSScriptRoot`. The CDN build embeds its runtime dependencies in a single in-memory entry; see `Deployment/README.md`.
+
+`Tests/Test-AdministrativeAccountPolicy.ps1` verifies the Administrator-only password requirement across Audit/Apply, enabled/disabled accounts, readback failures, repeated runs, and all report modes. Apply clears existing administrative password-change restrictions. Standard kiosk accounts retain both password flags; a shared administrator/kiosk account follows the administrative policy, preventing repeated checks from reversing the permission change.

@@ -56,6 +56,8 @@ foreach ($file in $manifest.Files) {
 }
 Write-Output 'PASS: release bytes, manifest, current sources and all 19 runtime resources match.'
 $fixtures=@(
+    'Test-AdministrativeAccountPolicy.ps1',
+    'Test-AccountClassification.ps1',
     'Test-FullHostname.ps1',
     'Test-ChromeKioskInstallation.ps1',
     'Test-SaaSKioskInstallation.ps1',

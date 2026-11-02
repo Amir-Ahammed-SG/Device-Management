@@ -89,7 +89,7 @@ $auditRows.Add([pscustomobject]@{SectionNumber=1;SectionTitle='Fixture';ItemTitl
     # Use only a fake WinNT entry; test the real, narrowly scoped writer.
     function Open-ThoroughLocalAccount {
         param($UserName)
-        Assert-Approved ($UserName -ceq 'FixtureAdmin') 'Another account was targeted'
+        Assert-Approved ($UserName -ceq 'FixtureKiosk') 'Another account was targeted'
         $entry=[pscustomobject]@{Pending=$null}
         $entry|Add-Member ScriptMethod InvokeGet {
             param($Name)
@@ -108,8 +108,8 @@ $auditRows.Add([pscustomobject]@{SectionNumber=1;SectionTitle='Fixture';ItemTitl
         $entry|Add-Member ScriptMethod RefreshCache {param($Properties)}
         return ,$entry
     }
-    $account=[pscustomobject]@{Name='FixtureAdmin';Enabled=$true;SID=[pscustomobject]@{Value='FixtureSid'}}
-    $adminSids=[Collections.Generic.HashSet[string]]::new();[void]$adminSids.Add('FixtureSid')
+    $account=[pscustomobject]@{Name='FixtureKiosk';Enabled=$true;SID=[pscustomobject]@{Value='FixtureSid'}}
+    $adminSids=[Collections.Generic.HashSet[string]]::new()
     foreach($mode in @($false,$true)){
         foreach($mask in @(0,0x40,0x10000,0x10040)){
             $script:ApplyChanges=$mode;$script:rawFlags=0x220 -bor $mask
@@ -252,28 +252,28 @@ $auditRows.Add([pscustomobject]@{SectionNumber=1;SectionTitle='Fixture';ItemTitl
     Assert-Approved (Test-ThoroughAppSettingsReview $repeated) 'A later duplicate label masked an earlier missing value'
 
     # Account Findings remain the original disabled checkbox even if readback fails.
-    $good=ConvertTo-ReportDefinitionHtml ([ordered]@{'Account Name'='Administrator';'Account Privilege'='Local Administrator';'Account Status'='Enabled';'Password Never Expires'='Enabled';'User Cannot Change Password'='Enabled'})
-    $bad=ConvertTo-ReportDefinitionHtml ([ordered]@{'Account Name'='Admin';'Account Privilege'='Local Administrator';'Account Status'='Enabled';'Password Never Expires'='Enabled';'User Cannot Change Password'='Disabled'})
+    $good=ConvertTo-ReportDefinitionHtml ([ordered]@{'Account Name'='Administrator';'Account Privilege'='Local Administrator';'Account Status'='Enabled';'Password Never Expires'='Enabled'})
+    $bad=ConvertTo-ReportDefinitionHtml ([ordered]@{'Account Name'='Admin';'Account Privilege'='Local Administrator';'Account Status'='Enabled';'Password Never Expires'='Disabled'})
     $admin=New-ApprovedRow 4 'Security, Network & System Integrity' 'Administrative Accounts' ([ordered]@{})
     $admin.FoundStateHtml=$good+'<hr>'+$bad
     $adminAfter=$admin|Select-Object *
     $adminAfter.FoundStateHtml=$good+'<hr>'+($bad.Replace('Disabled','Enabled'))
-    $adminAfter.Status='Pass';$adminAfter.ActionTaken='Enabled User Cannot Change Password; readback verified'
+    $adminAfter.Status='Pass';$adminAfter.ActionTaken='Enabled Password Never Expires; readback verified'
     $adminAfter|Add-Member NoteProperty AccountResults @(
         [pscustomobject]@{AccountName='Administrator';Status='Pass';Action='Requested password settings are enabled; no changes needed';AccountPolicyChanged=$false}
-        [pscustomobject]@{AccountName='Admin';Status='Pass';Action='Enabled User Cannot Change Password; readback verified';AccountPolicyChanged=$true}
+        [pscustomobject]@{AccountName='Admin';Status='Pass';Action='Enabled Password Never Expires; readback verified';AccountPolicyChanged=$true}
     )
     $accountFix=New-ThoroughReportSnapshot -Rows @($adminAfter) -BeforeRows @($admin) -DisplayMode Fix -AfterApply $true
     $cells=@(Cells-Approved (Decode-Approved $accountFix) 'Administrative Accounts')
-    Assert-Approved ($cells[2].Contains('Account 02') -and -not $cells[2].Contains('Account 01') -and $cells[2].Contains('User Cannot Change Password:</span> Disabled') -and $cells[3].Contains('>Completed</strong>')) 'Account baseline or per-account filter failed'
+    Assert-Approved ($cells[2].Contains('Account 02') -and -not $cells[2].Contains('Account 01') -and $cells[2].Contains('Password Never Expires:</span> Disabled') -and $cells[3].Contains('>Completed</strong>')) 'Account baseline or per-account filter failed'
     $adminAfter.AccountResults[1].Status='Fail';$adminAfter.AccountResults[1].Action='Fixture write rejected. Manual action required.'
     $failedFix=New-ThoroughReportSnapshot -Rows @($adminAfter) -BeforeRows @($admin) -DisplayMode Fix -AfterApply $true
     $cells=@(Cells-Approved (Decode-Approved $failedFix) 'Administrative Accounts')
-    Assert-Approved ($cells[2].Contains('Password Never Expires') -eq $false -and $cells[2].Contains('User Cannot Change Password:</span> Disabled') -and -not $cells[2].Contains('Not verified') -and $cells[3].Contains('Fixture write rejected')) 'Account failure overwrote original Findings'
+    Assert-Approved (-not $cells[2].Contains('User Cannot Change Password') -and $cells[2].Contains('Password Never Expires:</span> Disabled') -and -not $cells[2].Contains('Not verified') -and $cells[3].Contains('Fixture write rejected')) 'Account failure overwrote original Findings'
 
     # Persist one self-contained preview; no production file is changed.
     $adminAfter.AccountResults[1].Status='Pass'
-    $adminAfter.AccountResults[1].Action='Enabled User Cannot Change Password; readback verified'
+    $adminAfter.AccountResults[1].Action='Enabled Password Never Expires; readback verified'
     $previewBefore=@($rowsBefore)+@($admin)
     $previewAfter=@($after)+@($adminAfter)
     $previewAudit=New-ThoroughReportSnapshot -Rows $previewBefore -DisplayMode Audit -Hostname 'DEVICE-01' -DeviceType KIOSK -LauncherKioskId 'Kiosk-1' -ClientLocation 'Sample branch'

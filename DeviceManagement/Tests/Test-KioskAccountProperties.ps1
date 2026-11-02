@@ -37,10 +37,11 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroug
     # Route the new narrow writer through this fixture's existing mock; never bind ADSI.
     function Open-ThoroughLocalAccount {throw 'Live Windows account access is forbidden in this fixture.'}
     function Enable-LocalAccountPasswordFlags {
-        param([string]$UserName,[bool]$PasswordNeverExpires,[bool]$UserCannotChangePassword)
+        param([string]$UserName,[bool]$PasswordNeverExpires,[bool]$UserCannotChangePassword,[switch]$AllowPasswordChange)
         $settings=@{Name=$UserName}
         if($PasswordNeverExpires){$settings.PasswordNeverExpires=$true}
         if($UserCannotChangePassword){$settings.UserMayChangePassword=$false}
+        if($AllowPasswordChange -and $script:flags.UserCannotChangePassword){$settings.UserMayChangePassword=$true}
         Set-LocalUser @settings
         [pscustomobject]@{Changed=$true}
     }
@@ -59,10 +60,11 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroug
                     $script:autoUser=if ($name -like 'Custom*') {$name} else {$null}
                     $script:isAdmin=$admin
                     $script:flags=[pscustomobject]@{PasswordNeverExpires=$initialFlags[0];UserCannotChangePassword=$initialFlags[1]}
-                    $script:expectedKeys=@($(if (-not $initialFlags[0]) {'PasswordNeverExpires'});$(if (-not $initialFlags[1]) {'UserMayChangePassword'})) | Where-Object {$_} | Sort-Object
+                    $needsPermissionChange=if($admin){$initialFlags[1]}else{-not $initialFlags[1]}
+                    $script:expectedKeys=@($(if (-not $initialFlags[0]) {'PasswordNeverExpires'});$(if ($needsPermissionChange) {'UserMayChangePassword'})) | Where-Object {$_} | Sort-Object
                     $script:writes=0;$script:reads=0;$script:readDenied=$false;$script:readbackDenied=$false;$script:writeDenied=$false;$script:noEffect=$false
                     $check=Get-KioskAccountCheck
-                    $compliant=$mode -or ($initialFlags[0] -and $initialFlags[1])
+                    $compliant=$mode -or ($initialFlags[0] -and ($initialFlags[1] -eq (-not $admin)))
                     Assert-KioskProperty (($check.Result.Status -eq 'Pass') -eq $compliant) 'Kiosk status does not reflect required flags independently of privilege'
                     $expectedWrites=if ($mode -and $script:expectedKeys.Count) {1} else {0}
                     Assert-KioskProperty ($script:writes -eq $expectedWrites -and $script:users[0].Enabled -and $script:users[0].SID.Value -ceq 'FixtureSid') 'Write count or preserved account state incorrect'
@@ -71,7 +73,10 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroug
                     Assert-KioskProperty ($view.ExpectedHtml -match 'Account Privilege:</span> Standard or Administrator' -and $view.FindingsHtml.Contains('Account Privilege:</span> '+$expectedPrivilege)) 'Privilege reference or actual finding incorrect'
                     Assert-KioskProperty ($view.ExpectedHtml.Contains('Account Name:</span> '+$name) -and $view.FindingsHtml.Contains('Account Name:</span> '+$name)) 'Account name lost from Required Configuration or Findings'
                     Assert-KioskProperty ($view.ExpectedHtml.Contains('Account Status:</span> Active / Disabled') -and $view.FindingsHtml.Contains('Account Status:</span> Active')) 'Actual account activation status was lost'
-                    foreach ($pair in @(@('Password Never Expires',$script:flags.PasswordNeverExpires),@('User Cannot Change Password',$script:flags.UserCannotChangePassword))) {
+                    $pairs=@(,@('Password Never Expires',$script:flags.PasswordNeverExpires))
+                    if(-not $admin){$pairs+=,@('User Cannot Change Password',$script:flags.UserCannotChangePassword)}
+                    else {Assert-KioskProperty (-not ($view.ExpectedHtml+$view.FindingsHtml).Contains('User Cannot Change Password')) 'Administrative kiosk role still requires the removed flag'}
+                    foreach ($pair in $pairs) {
                         $actual=if ($pair[1]) {'Enabled'} else {'Disabled'}
                         Assert-KioskProperty ($view.ExpectedHtml.Contains($pair[0]+':</span> Enabled') -and $view.FindingsHtml.Contains($pair[0]+':</span> '+$actual)) 'Required or actual property missing from report'
                     }

@@ -2,7 +2,7 @@
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
 $sourceRoot=Split-Path $projectRoot -Parent
-$previewRoot=Join-Path $projectRoot 'output\account-previews'
+$previewRoot=Join-Path $projectRoot ('output\account-previews\run-'+[guid]::NewGuid().ToString('N'))
 $profile=Join-Path $previewRoot 'fixture-profile'
 $script:fixtureProfilePath=$profile
 [void][IO.Directory]::CreateDirectory((Join-Path $profile 'Scripts'))
@@ -13,6 +13,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
     Assert-AccountPreview ($errors.Count -eq 0) 'Client parse failed.'
     . ([scriptblock]::Create(($ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
+    . (Join-Path $PSScriptRoot 'ReportRenderTestSupport.ps1')
     $finalizer=$ast.FindAll({param($node) $node -is [Management.Automation.Language.TryStatementAst] -and $node.Finally -and $node.Finally.Extent.Text -match 'Writing HTML report'},$true) | Select-Object -Last 1
     $render=[scriptblock]::Create(($finalizer.Finally.Statements | ForEach-Object {$_.Extent.Text}) -join "`r`n")
     function Read-AuditReportChoice {return $true}
@@ -37,10 +38,11 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     # Route the new narrow writer through this fixture's existing mock; never bind ADSI.
     function Open-ThoroughLocalAccount {throw 'Live Windows account access is forbidden in this fixture.'}
     function Enable-LocalAccountPasswordFlags {
-        param([string]$UserName,[bool]$PasswordNeverExpires,[bool]$UserCannotChangePassword)
+        param([string]$UserName,[bool]$PasswordNeverExpires,[bool]$UserCannotChangePassword,[switch]$AllowPasswordChange)
         $settings=@{Name=$UserName}
         if($PasswordNeverExpires){$settings.PasswordNeverExpires=$true}
         if($UserCannotChangePassword){$settings.UserMayChangePassword=$false}
+        if($AllowPasswordChange){$settings.UserMayChangePassword=$true}
         Set-LocalUser @settings
         [pscustomobject]@{Changed=$true}
     }
@@ -77,7 +79,9 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
                 Assert-AccountPreview ($html -notmatch 'Account Status:</span> Disabled|Account Name:</span> Admin</div>|Account Name:</span> SELISE</div>') 'An inactive alternative remains in the report.'
             }
             if($case -eq 'disabled-only'){
-                Assert-AccountPreview ([regex]::Matches($html,'Account Status:</span> Disabled').Count -eq 4) 'Disabled-only accounts were lost.'
+                $accountNames=[regex]::Matches($html,'<span class="kv-label">Account Name:</span> (?:SELISE|SELISE-KIOSK|Admin|Administrator)</div>')
+                Assert-AccountPreview ($accountNames.Count -eq 4) 'Disabled-only account identities were lost.'
+                if($mode -eq 'Audit'){Assert-AccountPreview ([regex]::Matches($html,'Account Status:</span> Disabled').Count -eq 4) 'Audit lost disabled-account status.'}
             }
             foreach($user in @($script:fixtureUsers | Where-Object {-not $_.Enabled})){
                 Assert-AccountPreview (-not $script:fixtureFlags[$user.Name].PasswordNeverExpires -and -not $script:fixtureFlags[$user.Name].UserCannotChangePassword) 'A disabled account property changed.'

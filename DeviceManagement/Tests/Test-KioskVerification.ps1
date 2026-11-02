@@ -24,10 +24,11 @@ foreach ($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck
     # Route the new narrow writer through this fixture's existing mock; never bind ADSI.
     function Open-ThoroughLocalAccount {throw 'Live Windows account access is forbidden in this fixture.'}
     function Enable-LocalAccountPasswordFlags {
-        param([string]$UserName,[bool]$PasswordNeverExpires,[bool]$UserCannotChangePassword)
+        param([string]$UserName,[bool]$PasswordNeverExpires,[bool]$UserCannotChangePassword,[switch]$AllowPasswordChange)
         $settings=@{Name=$UserName}
         if($PasswordNeverExpires){$settings.PasswordNeverExpires=$true}
         if($UserCannotChangePassword){$settings.UserMayChangePassword=$false}
+        if($AllowPasswordChange){$settings.UserMayChangePassword=$true}
         Set-LocalUser @settings
         [pscustomobject]@{Changed=$true}
     }

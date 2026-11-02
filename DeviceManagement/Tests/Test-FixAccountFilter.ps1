@@ -47,8 +47,10 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     $identity=[pscustomobject]@{ReportId='OMK-230031';GeneratedAt='23 Oct 2026, 4:15 PM BST'}
     function New-FixAccountEntry {
         param([string]$Name,[string]$Status='Pass',[string]$CannotChange='Enabled',[string]$Action='Requested password settings are enabled; no changes needed',[string]$Privilege='Local Administrator',[switch]$OmitPasswordField,[Nullable[bool]]$PolicyChanged=$null)
+        if($script:passwordLabel -eq 'User Cannot Change Password' -and -not $PSBoundParameters.ContainsKey('Privilege')){$Privilege='Standard Local User'}
         $values=[ordered]@{'Account Name'=$Name;'Account Privilege'=$Privilege;'Account Status'='Enabled';'Password Never Expires'='Enabled';'User Cannot Change Password'=$CannotChange}
-        if($OmitPasswordField){$values.Remove('User Cannot Change Password')}
+        if($script:passwordLabel -eq 'Password Never Expires'){$values['Password Never Expires']=$CannotChange;$values.Remove('User Cannot Change Password')}
+        if($OmitPasswordField){$values.Remove($script:passwordLabel)}
         $entry=[pscustomobject]@{AccountName=$Name;Status=$Status;Action=$Action;StateHtml=(ConvertTo-ReportDefinitionHtml $values)}
         if($null -ne $PolicyChanged){$entry | Add-Member NoteProperty AccountPolicyChanged ([bool]$PolicyChanged)}
         $entry
@@ -68,6 +70,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         $row
     }
     foreach($title in @('KIOSK Account','Administrative Accounts')){
+        $script:passwordLabel=if($title -eq 'Administrative Accounts'){'Password Never Expires'}else{'User Cannot Change Password'}
         $nameA=if($title -eq 'KIOSK Account'){'SELISE'}else{'Administrator'}
         $nameB=if($title -eq 'KIOSK Account'){'SELISE-KIOSK'}else{'Admin'}
         $healthy=New-FixAccountEntry $nameA -PolicyChanged $false
@@ -92,7 +95,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         $cells=@(Get-FixAccountCells (Read-FixAccountSnapshot $fix) $title)
         Assert-FixAccount ($cells.Count -eq 4) 'Mixed account component missing from Fix.'
         Assert-FixAccount ($cells[2] -notmatch '>Account 01</div>|No change needed for these values' -and $cells[2].Contains('>Account 02</div>')) 'A healthy sibling account is still shown or the retained ordinal changed.'
-        Assert-FixAccount ($cells[2].Contains('Account Name:</span> '+$nameB) -and $cells[2] -match 'finding-mismatch[^>]*><span class="kv-label">User Cannot Change Password:</span> Disabled') 'Fix lost the failing account identity or requirement.'
+        Assert-FixAccount ($cells[2].Contains('Account Name:</span> '+$nameB) -and $cells[2] -match ('finding-mismatch[^>]*><span class="kv-label">'+[regex]::Escape($script:passwordLabel)+':</span> Disabled')) 'Fix lost the failing account identity or requirement.'
         Assert-FixAccount ($cells[1].Contains('net user &quot;'+$nameB+'&quot;') -and -not $cells[1].Contains('net user &quot;'+$nameA+'&quot;')) 'Fix commands include a healthy omitted account or omit the retained account.'
         Assert-FixAccount ($cells[3] -notmatch 'Completed' -and $cells[3] -match 'Not Applied') 'Audit-derived Fix fabricated an applied repair.'
         Assert-FixAccountDivider $cells[2] 0
@@ -130,7 +133,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
                 if(-not $afterApply){$parameters.AuditSource=$identity}
                 $view=New-ThoroughReportSnapshot @parameters
                 $cells=@(Get-FixAccountCells (Read-FixAccountSnapshot $view) $title)
-                Assert-FixAccount ($cells.Count -eq 4 -and $cells[2].Contains('Account Name:</span> '+$nameA) -and $cells[2] -notmatch '>Account 02</div>') 'A manual or unverified action note was hidden by account Status Pass.'
+                Assert-FixAccount ($cells.Count -eq 4 -and $cells[2].Contains('Account Name:</span> '+$nameA) -and $cells[2] -notmatch '>Account 02</div>') ('A manual or unverified action note was hidden: '+$client+'/'+$title+'/AfterApply='+$afterApply+'/'+$manualAction+'; cells='+$cells.Count)
                 Assert-FixAccount ($cells[2] -notmatch 'No (?:further fix|change) needed' -and (Convert-ReportHtmlToTerminalText ($cells[2]+$cells[3])) -match '(?i)not verified|manual action required') 'An account requiring manual review was displayed as a healthy no-op.'
             }
         }
@@ -192,7 +195,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         $historicalMismatch=New-FixAccountRow $title @((New-FixAccountEntry $nameA),(New-FixAccountEntry $nameB Fail Disabled 'Required password property remains disabled. Manual action required.')) -WithoutMetadata
         $view=New-ThoroughReportSnapshot -Rows @($historicalMismatch) -DisplayMode Fix -AfterApply $true
         $cells=@(Get-FixAccountCells (Read-FixAccountSnapshot $view) $title)
-        Assert-FixAccount ($cells.Count -eq 4 -and $cells[2] -match 'finding-mismatch[^>]*><span class="kv-label">User Cannot Change Password:</span> Disabled' -and $cells[2].Contains('Required: Enabled')) 'Missing action metadata discarded a known account mismatch or its required value.'
+        Assert-FixAccount ($cells.Count -eq 4 -and $cells[2] -match ('finding-mismatch[^>]*><span class="kv-label">'+[regex]::Escape($script:passwordLabel)+':</span> Disabled') -and $cells[2].Contains('Required: Enabled')) 'Missing action metadata discarded a known account mismatch or its required value.'
         Assert-FixAccount ($cells[2] -match 'finding-unverified' -and $cells[3] -match '>Not Verified</strong>') 'Missing action metadata did not retain a verification warning alongside known mismatch fields.'
         $ambiguous=New-FixAccountRow $title @((New-FixAccountEntry $nameA),$repaired)
         $ambiguous.AccountResults=@($ambiguous.AccountResults)+@((New-FixAccountEntry $nameA Pass Enabled 'Enabled User Cannot Change Password; readback verified'))
@@ -210,6 +213,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         Assert-FixAccount (-not (Test-CanApply)) 'Account presentation filtering enabled repairs.'
     }
     # Match metadata case-insensitively while preserving escaped device-reported names.
+    $script:passwordLabel='User Cannot Change Password'
     $escaped=New-FixAccountEntry 'Desk & O''Brien <East>' Fail 'Not verified' 'Manual verification required'
     $escaped.AccountName='DESK & O''BRIEN <EAST>'
     $row=New-FixAccountRow 'KIOSK Account' @((New-FixAccountEntry 'SELISE'),$escaped)
@@ -217,6 +221,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     $cells=@(Get-FixAccountCells (Read-FixAccountSnapshot $view) 'KIOSK Account')
     Assert-FixAccount ($cells.Count -eq 4 -and $cells[2].Contains('Desk &amp; O&#39;Brien &lt;East&gt;') -and $cells[2] -notmatch '>Account 01</div>') 'Escaping or case-insensitive account metadata matching failed.'
 
+    $script:passwordLabel='Password Never Expires'
     $sampleRow=New-FixAccountRow 'Administrative Accounts' @((New-FixAccountEntry 'Administrator'),(New-FixAccountEntry 'Admin' Fail 'Not verified' 'Manual verification required'))
     $reports=[pscustomobject]@{
         Audit=(New-ThoroughReportSnapshot -Rows @($sampleRow) -DisplayMode Audit -AuditSource $identity -ClientLocation 'Sample branch' -DeviceType KIOSK -Hostname 'SAMPLE-DEVICE')
