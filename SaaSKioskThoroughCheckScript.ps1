@@ -720,7 +720,8 @@ function Get-ThoroughAuditColumnStyle {
     .audit-report .audit-record-heading { background:#edf1f6; color:#253b53; padding-top:11px; padding-bottom:11px; }
     .audit-report .audit-record-heading .config-item-title,
     .audit-report .audit-record-heading .config-group-title { margin:0; padding:0; border:0; background:transparent; font-weight:700; }
-    .audit-report .audit-observed { overflow-wrap:anywhere; }
+    .audit-report .checks td { white-space:normal; word-break:normal; overflow-wrap:anywhere; }
+    .audit-report .audit-observed { display:inline-block; max-width:100%; white-space:normal; overflow-wrap:anywhere; vertical-align:top; }
     .audit-report .audit-observed.finding-mismatch { padding:1px 4px; border-radius:2px; background:#fdecec; color:#9b1c1c; }
     .audit-report .audit-observed.finding-unverified,
     .audit-report .finding-value.finding-unverified { padding:1px 4px; border:1px solid #d3a83e; border-radius:2px; background:#ffe3a0; color:#593900; }
