@@ -96,12 +96,12 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1', 'SubwayKioskThorou
         . $render
         $html = [IO.File]::ReadAllText($reportPath)
         $expectedTitle=if ($mode -eq 'Audit') { 'Thorough Check Audit Report' } else { 'Thorough Check Report' }
-        foreach ($required in @(('<h1>'+$expectedTitle.ToUpperInvariant()+'</h1>'), ('<title>'+$expectedTitle+'</title>'), '<h2>REPORT DETAILS</h2>', '<h2>CONFIGURATION CHECK</h2>', ('<td>' + $client + '</td>'), '<th>Findings</th>', '<th>Branch</th>', '<th>Hostname</th>', '<th>Device type</th><td>KIOSK-01</td>', 'badge-fail', '192.0.2.10', 'Sample site &lt;fixture&gt;', 'Execution &lt;fixture&gt;', 'Partial run', '@media print')) {
+        foreach ($required in @(('<h1>'+$expectedTitle.ToUpperInvariant()+'</h1>'), ('<title>'+$expectedTitle+'</title>'), '<h2>CLIENT DETAILS</h2>', '<h2>CONFIGURATION CHECK</h2>', ('<td>' + $client + '</td>'), '<th>Findings</th>', '<th>Branch</th>', '<th>Hostname</th>', '<th>Device</th><td>Kiosk-1</td>', 'badge-fail', '192.0.2.10', 'Sample site &lt;fixture&gt;', 'Execution &lt;fixture&gt;', 'Partial run', '@media print')) {
             if (-not $html.Contains($required)) { throw "Missing report content '$required' in $reportPath" }
         }
         if ($html -match 'Overall result|VERIFICATION RECORD|summary-grid|stat-card|EXCEPTIONS / CORRECTIVE ACTIONS|class="exceptions"|Value from appsettings.json|Only when PaymentService is NETS / Nexi|Report mode:|<th>Report mode</th>|<th>Computer name</th>|<th>Client / Site</th>|class="brand"|IT OPERATIONS|<strong>SELISE</strong>') { throw 'Removed report content is still present' }
-        if ($html -notmatch '<th>Report ID</th><td>OMK-[0-9]{6}</td>') { throw 'Report ID does not match OMK-000000' }
-        if ($html -notmatch '<th>Generated Time</th><td>\d{2} [A-Za-z]{3} \d{4}, \d{1,2}:\d{2} (?:AM|PM) BST</td>') { throw 'Generated Time is not compact Bangladesh time' }
+        if ($html -notmatch '<th>Restaurant ID</th><td>Not detected</td>') { throw 'Unavailable Restaurant ID was not shown explicitly' }
+        if ($html -notmatch '<strong>Generated Time:</strong> \d{2} [A-Za-z]{3} \d{4}, \d{1,2}:\d{2} (?:AM|PM) BST</span>') { throw 'Generated Time is not compact Bangladesh time' }
         if ($totalCount -ne 12 -or $passCount -ne 8 -or $failCount -ne 3 -or $skipCount -ne 1) { throw 'Result accounting changed' }
         if ($html.Contains('Old middleware (Offline)')) { throw 'Expected stopped legacy service incorrectly listed as an exception' }
         $expectedHeaders = if ($mode -eq 'Audit') { '<th>Component</th><th>Shortcut / Command</th><th>Required Configuration</th><th>Findings</th>' } else { '<th>Component</th><th>Shortcut / Command</th><th>Findings</th><th>Applied</th>' }

@@ -26,7 +26,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     function Set-LocalUser {throw 'Renderer attempted an account change.'}
     function Start-Process {throw 'Renderer started a process.'}
     $outputFolder=Join-Path $fixtureRoot $client;[void][IO.Directory]::CreateDirectory($outputFolder)
-    $deviceType='KIOSK';$reportKioskId='Kiosk-1';$KioskId=$null;$kioskUser='SELISE-KIOSK';$runId='COMBINED-FIXTURE'
+    $reportRestaurantId='R-INTEGRATION';$deviceType='KIOSK';$reportKioskId='Kiosk-1';$KioskId=$null;$kioskUser='SELISE-KIOSK';$runId='COMBINED-FIXTURE'
     $script:GenerateFixtureReport=$true;$auditSnapshot=$null;$fixSnapshot=$null
     foreach($mode in @('Audit','Fix','Final')){
         $script:ApplyChanges=$mode -eq 'Fix';$FinalReport=$mode -eq 'Final'

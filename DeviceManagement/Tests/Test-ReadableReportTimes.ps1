@@ -93,7 +93,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
         $generatedInstant=[datetimeoffset]::new($generatedDate,[TimeSpan]::FromHours(6))
         Assert-Readable ($generatedInstant -ge $before -and $generatedInstant -le [DateTimeOffset]::UtcNow) 'Snapshot Generated Time is not the current BST instant.'
         $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
-        Assert-Readable ($html.Contains('<th>Generated Time</th><td>'+$snapshot.GeneratedAt+'</td>')) 'Report and snapshot Generated Time disagree.'
+        Assert-Readable ($html.Contains('<span class="report-generated-at"><strong>Generated Time:</strong> '+$snapshot.GeneratedAt+'</span>')) 'Report and snapshot Generated Time disagree.'
     }
     Write-Output ('PASS: '+$name+' compact dates, BST-only generation, device-local task times, date rollovers, daylight saving, locale independence, interval/failure details, unchanged raw values and safe HTML.')
 }

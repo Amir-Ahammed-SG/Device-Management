@@ -89,7 +89,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     Assert-Final (($auditRows.ToArray() | ConvertTo-Json -Depth 8 -Compress) -ceq $before) 'Rendering changed recorded observations.'
     $html=[IO.File]::ReadAllText($reportPath)
     Assert-Final ($html.Contains('<h1>THOROUGH CHECK REPORT</h1>')) 'Final title is incorrect.'
-    Assert-Final ($html -match 'OMK-\d{6}' -and $html -notmatch '<th>Required Configuration</th>|<th>Findings</th>') 'Final metadata or columns are incorrect.'
+    Assert-Final ($html -match '<th>Restaurant ID</th><td>Not detected</td>' -and $html -notmatch '<th>Required Configuration</th>|<th>Findings</th>') 'Final metadata or columns are incorrect.'
     Assert-Final ($html -notmatch 'class="finding-value finding-|#(?:e8f5e9|fdecec|fff8e1)|Green =|Red =|Amber =') 'Final retains comparison colors or their legend.'
     Assert-Final ($html.Contains('Ports:</span> 5009') -and -not $html.Contains('<th>Shortcut / Command</th>') -and -not $html.Contains('class="command-copy"')) 'Final lost its check target or retained the removed command column.'
     $tables=@([regex]::Matches($html,'(?is)<table class="checks"[^>]*>.*?</table>'))

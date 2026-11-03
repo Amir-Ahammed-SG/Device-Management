@@ -45,11 +45,31 @@ preserved above the navigation footer.
 
 ## Current implementation
 
-SaaS and Subway KIOSK Installation offer Microsoft Edge and Google Chrome from the operation menu. Each prompts
+SaaS and Subway KIOSK Installation offer Microsoft Edge from the browser menu.
+Google Chrome is temporarily marked **Not available**; selecting it keeps the
+operator on the browser menu without starting setup. Chrome setup sources are
+retained for future use. Each setup script prompts
 for an existing kiosk account, Restaurant ID, Kiosk ID and Hostname before running
 the supplied setup actions. Account and hostname suggestions can be confirmed
-with Enter or changed manually. Hostname suggestions use the full Windows DNS hostname, preserving names longer than 15 characters; unavailable detection requires manual entry. Both browser setups are included in the release bundle.
+with Enter or changed manually. When a detected value is available, a separate gray hint appears above the input prompt; the bracketed value is the default and is not prefilled input. Hostname suggestions use the full Windows DNS hostname, preserving names longer than 15 characters; unavailable detection requires manual entry. Both browser setups are included in the release bundle.
 See the [SaaS](Installations/KIOSK/SaaS/README.md) and [Subway](Installations/KIOSK/Subway/README.md) setup guides.
+
+Kiosk ID input follows the same rules in all four SaaS/Subway Edge/Chrome
+installation scripts: it is required and accepts only ASCII letters (`A-Z`,
+`a-z`), numbers (`0-9`), dots (`.`), underscores (`_`), tildes (`~`) and
+hyphens (`-`), matching `^[A-Za-z0-9._~-]+$`. Leading and trailing whitespace
+is trimmed. Internal spaces, Bengali letters and other special characters
+such as `&`, `/` or `#` are rejected. There is no explicit maximum length or
+numeric range restriction. Examples accepted by input validation include `1`,
+`01`, `Kiosk-1` and `KIOSK_02`.
+
+Thorough Check reads the existing launcher's URL `kioskId` value without
+enforcing the installation input character pattern. Missing, empty or duplicate
+`kioskId` parameters are reported as issues. CLIENT DETAILS combines the device
+type and identifier into **Device**: `1`, `01` and `Kiosk-1` all display as
+`Kiosk-1`. This formatting does not change the configured ID. The launcher ID
+takes precedence over a supplied `-KioskId`; if neither is available, Device
+displays `Kiosk (number not verified)`. Non-numeric IDs retain their text.
 
 SaaS and Subway KIOSK Thorough Check are Ready for Audit and Apply. Hostname display and launcher/monitoring comparisons use the full Windows DNS hostname; unavailable detection remains unverified. Final is a report tab generated from their observations. The shared
 KIOSK dispatcher selects the client-isolated source: `SaaSKioskThoroughCheckScript.ps1`
@@ -85,12 +105,34 @@ desktop padding and 12px padding on small screens.
 The 1000px limit applies only to screen media. Printing retains its existing
 A4 portrait size, 12mm page margins, fonts and table spacing.
 
-Audit and Apply report modes highlight individual Findings values: light green
-for a matched requirement or collected information, light red for a mismatch or
-missing value, and light amber #FFF8E1 for unverified values or manual review.
-AppSettings uses collected-value colors and remains read-only. A legend explains
-the colors. Component statuses retain
-the actual check results independently of these display styles.
+Audit uses five columns: **Component**, **Shortcut / Command**, **Setting**,
+**Required** and **Findings**. Setting has a light gray background, Required
+light blue and Findings light cream, with vertical separators. Record titles
+are bold on a separate band; field labels use a lighter weight. Component and
+copy commands span their setting rows, preserving the existing shared-command
+deduplication and multiple-printer/account/service/terminal grouping.
+Borders remain thin and plain. Hovering or focusing a copy command highlights
+the entire component across all five columns and all of its record rows.
+Moving away restores the column colors. Hover styles do not affect printing,
+and reduced-motion preferences disable the transition.
+
+Audit shows only the actual finding text: no extra Mismatch or Not verified
+badge is appended. Values that meet requirements or record information remain
+plain. Mismatches retain light red highlighting; unverified values use a clearer
+amber background (#FFE3A0), dark text and a thin amber border. A real finding
+of Not detected remains Not detected; a real Not verified value remains Not
+verified. Existing comparisons and recorded outcomes are unchanged.
+AppSettings remains a read-only configuration record, including False, zero
+and empty values. Required fields without a corresponding observation use a
+neutral dash rather than an invented finding. Opaque notes remain visible.
+
+Fix retains its existing four-column layout and finding highlights. Final
+retains its neutral layout. Rendering any view never reruns device checks or
+applies configuration changes. New reports use the selected column colors
+directly; the preview appearance controls are not part of production reports.
+`Tests/Test-AuditColumnLayout.ps1` covers the real renderer for both clients,
+including grouping, aliases, escaping, commands, account-role requirements,
+observation preservation and saved-report round-trips.
 
 Each client/computer now keeps one self-contained HTML file under Desktop →
 Thorough Check: `Thorough Check Reports - <Client> - <Computer>.html`. The file
@@ -140,7 +182,7 @@ Running Audit again refreshes the Audit-derived views until real Fix results
 exist. Saved actual Fix/Final observations retain precedence over an Audit-derived
 view. Existing separate report files are preserved.
 
-Audit columns remain Component, Shortcut / Command, Required Configuration and
+Audit columns are Component, Shortcut / Command, Setting, Required and
 Findings. Fix columns are Component, Shortcut / Command, Findings and Applied;
 Applied records actual action notes or No change needed. After Apply, Findings
 preserves the saved Audit or pre-fix observations. Final columns are
@@ -198,20 +240,20 @@ Both SaaS and Subway Thorough Check HTML reports use a plain device configuratio
 verification layout in Audit and Apply Fix modes. Reports contain device/run
 details and per-check findings. Titles are Thorough Check Audit Report and
 Thorough Check Report for the respective modes, shared with console
-headers. HTML uses Report Details above metadata and Configuration Check
+headers. HTML uses Client Details above metadata and Configuration Check
 above component tables. The report title sits above a divider; the HTML header
 omits SELISE and IT OPERATIONS branding. Audit columns are Component, Shortcut /
-Command, Required Configuration and Findings. Apply Fix adds Status, containing
-Pass or Fail, to verification sections. AppSettings Check retains the same four
-columns as Audit because it records values. Collection failures remain visible
+Command, Setting, Required and Findings. Fix uses Component, Shortcut / Command,
+Findings and Applied. Final uses Component, Final Configuration and Status;
+AppSettings Final omits Status because it records values. Collection failures remain visible
 in Findings and retain their internal outcome. Skipped/unverified checks map to Fail; verified
 expected stopped legacy services map to Pass. The original recorded status is
 retained in the status tooltip. Component contains only the check name.
 Shortcut / Command contains one clickable box per command. Clicking a box or
 pressing Enter/Space when it is focused copies the exact command and shows Copied.
 The report includes a clipboard fallback for local HTML and shows a failure
-message if the browser blocks both methods. No command is executed. Reference,
-Applied and Result columns are omitted. Print output retains command text and
+message if the browser blocks both methods. No command is executed. Audit omits
+Applied and Result columns. Print output retains command text and
 hides copy feedback. `Tests/Test-ReportClipboard.ps1` tests browser interactions for all
 four client/mode combinations using clipboard doubles; the OS clipboard is untouched.
 Accounts are grouped
@@ -231,8 +273,9 @@ disabled, with readback. It does not resume printer queues. Required Configurati
 shows Printer Name: BIXOLON or EPSON, Printer status: Active / Idle / Error,
 and Keep printed documents: Enabled.
 Findings shows Printer Name, the observed status and Enabled/Disabled retention.
-Required Configuration appears once for all printers, without numbered headings.
-For multiple printers, Findings uses [Printer 1], [Printer 2], etc. blocks.
+Audit aligns Required and Findings per setting within each printer record;
+multiple printers retain numbered record headings. Other report modes retain
+their existing grouped presentation.
 Actual names remain in Findings under Printer Name. Shared copy commands appear once and each printer's own
 command is retained. The grouped Apply result passes only if every printer is
 verified Pass; partial discovery and unknown results remain Fail. Unhealthy
@@ -336,9 +379,11 @@ Standard KIOSK Required Configuration contains the detected account name (or SEL
 SELISE-KIOSK when missing), Local user as the reference privilege, Account Status
 Active / Disabled,
 Password Never Expires Enabled and User Cannot Change Password Enabled.
-For both KIOSK/local and administrative accounts, Required Configuration appears
-once per component and lists the discovered account names together. Numbered
-[Account 1], [Account 2], etc. blocks appear only in multiple-account Findings.
+For KIOSK/local and administrative accounts, the name reference lists the
+discovered names or the administrative reference as appropriate. Audit aligns
+requirements per setting inside numbered account records. Administrative
+records omit User Cannot Change Password even when grouped with standard
+kiosk accounts. Fix and Final retain their existing account presentation.
 Available KIOSK Findings records each account's name, actual privilege, Active/Disabled status
 and both password property values. Privilege is observed without changing group membership; administrative accounts use the administrative password policy.
 Missing-account Findings reads `Account Missing. Please create manually.` Administrative Findings includes
@@ -453,7 +498,25 @@ and real report rendering across both clients and modes.
 hostname configuration sources, read-only Audit and verified Apply outcomes using
 in-memory service fixtures.
 `Tests/Test-ReportMetadata.ps1` checks display ID length, device-number formatting,
-unknown-number handling and kiosk ID capture independent of hostname discovery.
+unknown-number handling, launcher Restaurant ID capture, safe metadata rendering,
+snapshot round-trips and inconsistent saved metadata rejection.
+
+CLIENT DETAILS retains its original bordered table with three rows:
+Client Type / Branch, Restaurant ID / Hostname, and Device / Prepared by.
+Device combines the type and identifier (for example, Kiosk-1); there is no
+separate Device Number field. Prepared by uses the same Agent Name as the
+report footer. Restaurant ID comes
+from the kiosk launcher's URL restaurantId parameter, or Not detected when
+unavailable. The internal report identity remains
+available for saved-report validation; older reports with a visible Report ID
+remain readable. Generated Time appears in the report footer alongside
+Prepared by, using dd MMM yyyy, h:mm tt BST in Bangladesh time (UTC+06:00).
+It no longer occupies a header field. Older boxed metadata reports remain
+readable, including recovery of their saved Branch values. Branch Name rejects empty/whitespace-only input but has no
+additional character or length restriction; it is HTML-encoded for display.
+The header Hostname always records the detected Windows DNS hostname. During
+Apply Fix, a valid operator-entered hostname takes precedence for the launcher
+host parameter. Zabbix uses the detected Windows hostname. Neither input nor the launcher update renames Windows.
 
 Both clients use the same compact progress log for Audit and Apply Fix: one
 client/device/mode header, numbered aligned status lines and short explanations

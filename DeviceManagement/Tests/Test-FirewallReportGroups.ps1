@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 # Fixtures only: do not contact Windows Firewall or change live rules.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -57,6 +58,16 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
             $runId='FIREWALL-FIXTURE';$clientLocation='Firewall preview';$deviceType='KIOSK';$reportKioskId='Kiosk-1';$KioskId=$null;$kioskUser='SELISE-KIOSK';$reportHostname='SAMPLE-KIOSK01'
             . $render
             $html=[IO.File]::ReadAllText($reportPath)
+            if($mode -eq 'Audit'){
+                $auditView=Get-AuditRenderedComponent $html 'Firewall Inbound Port'
+                Assert-FirewallReport ($auditView.Count -eq 1 -and $auditView.Fields.Count -eq 5) 'Audit lost or duplicated actual firewall fields.'
+                foreach($spec in @(@('Ports',($ports -join ', ')),@('Direction','Inbound'),@('Protocol','TCP'),@('Enabled','Yes'),@('Action','Allow'))){
+                    Assert-FirewallReport (@($auditView.Fields|Where-Object {$_.Setting -eq $spec[0] -and $_.Found -eq $spec[1]}).Count -eq 1) 'Actual Audit firewall rule value changed.'
+                }
+                Assert-FirewallReport ($auditView.Commands.Count -eq 1 -and $auditView.Commands[0] -ceq 'wf.msc') 'Grouped Audit firewall command changed.'
+                Assert-FirewallReport ($auditView.Html -notmatch 'finding-mismatch|finding-unverified') 'Healthy firewall values became warning values.'
+                continue
+            }
             $displayRows=@([regex]::Matches($html,'(?is)<tr\b[^>]*>.*?</tr>') | Where-Object {$_.Value.Contains('class="device-title">Firewall Inbound Port</div>')})
             if($mode -eq 'Apply'){
                 Assert-FirewallReport ($displayRows.Count -eq 0 -and $html.Contains('No fixes required.')) 'Healthy unchanged firewall component remains in Fix.'

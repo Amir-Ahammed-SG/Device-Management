@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 # Render actual account-selection results with fixture APIs only.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -74,11 +75,19 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
             $runId='ACCOUNT-SELECTION-PREVIEW';$clientLocation='Sample branch';$deviceType='KIOSK';$reportHostname='SAMPLE-KIOSK-01';$reportKioskId='Kiosk-1';$KioskId=$null
             . $render
             $html=[IO.File]::ReadAllText($reportPath)
+            if($mode -eq 'Audit'){
+                $kioskAudit=Get-AuditRenderedComponent $html 'KIOSK Account'
+                $adminAudit=Get-AuditRenderedComponent $html 'Administrative Accounts'
+                $actualKiosk=@($kioskAudit.Fields|Where-Object Setting -EQ 'Account Name'|ForEach-Object {$_.Found})
+                $actualAdmin=@($adminAudit.Fields|Where-Object Setting -EQ 'Account Name'|ForEach-Object {$_.Found})
+                Assert-AccountPreview (($actualKiosk -join '|') -ceq ($expectedKiosk -join '|') -and ($actualAdmin -join '|') -ceq ($expectedAdmin -join '|')) 'Audit lost the selected account identities.'
+                if($case -eq 'disabled-only'){Assert-AccountPreview (@(@($kioskAudit.Fields)+@($adminAudit.Fields)|Where-Object {$_.Setting -eq 'Account Status' -and $_.Found -eq 'Disabled'}).Count -eq 4) 'Audit lost disabled-account status.'}
+            }
             Assert-AccountPreview ($html -notmatch 'Account:</span> Present|or local administrator') 'Removed account labels remain.'
             if($case -eq 'active-preferred'){
                 Assert-AccountPreview ($html -notmatch 'Account Status:</span> Disabled|Account Name:</span> Admin</div>|Account Name:</span> SELISE</div>') 'An inactive alternative remains in the report.'
             }
-            if($case -eq 'disabled-only'){
+            if($case -eq 'disabled-only' -and $mode -ne 'Audit'){
                 $accountNames=[regex]::Matches($html,'<span class="kv-label">Account Name:</span> (?:SELISE|SELISE-KIOSK|Admin|Administrator)</div>')
                 Assert-AccountPreview ($accountNames.Count -eq 4) 'Disabled-only account identities were lost.'
                 if($mode -eq 'Audit'){Assert-AccountPreview ([regex]::Matches($html,'Account Status:</span> Disabled').Count -eq 4) 'Audit lost disabled-account status.'}

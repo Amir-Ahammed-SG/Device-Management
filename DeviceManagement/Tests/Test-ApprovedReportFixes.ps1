@@ -8,6 +8,7 @@ $output=Join-Path $projectRoot 'output\approved-report-fixes-20261024'
 $fixtureRoot=Join-Path $output ('fixtures-'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($fixtureRoot)
 $utf8=[Text.UTF8Encoding]::new($false)
+. (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 function Assert-Approved {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
 function Decode-Approved {param($Snapshot) [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Snapshot.HtmlBase64))}
 function Cells-Approved {
@@ -212,12 +213,15 @@ $auditRows.Add([pscustomobject]@{SectionNumber=1;SectionTitle='Fixture';ItemTitl
     $audit=New-ThoroughReportSnapshot -Rows @($windows,$launcherRow,$agent,$app) -DisplayMode Audit -Hostname 'DEVICE-01'
     $auditHtml=Decode-Approved $audit
     foreach($name in @('Kiosk Launch Script','Zabbix Agent')){
-        $cells=@(Cells-Approved $auditHtml $name)
-        Assert-Approved ($cells[3] -match 'finding-unverified[^>]*><span class="kv-label">Host [Nn]ame:</span> OLD-DEVICE') 'Wrong hostname was green or uncolored'
+        $component=Get-AuditRenderedComponent $auditHtml $name
+        $hostField=@($component.Fields|Where-Object {$_.Setting -match '^Host [Nn]ame$'})
+        Assert-Approved ($component.Count -eq 1 -and $hostField.Count -eq 1 -and $hostField[0].Found -ceq 'OLD-DEVICE' -and $hostField[0].Html -match 'finding-unverified') 'Wrong hostname was green or uncolored'
     }
-    $appCells=@(Cells-Approved $auditHtml 'WebApp/Shop Print')
-    Assert-Approved ($appCells[3] -match 'finding-unverified[^>]*><span class="kv-label">IsKioskPrintingEnabled:</span> Not configured' -and $appCells[3] -notmatch 'finding-mismatch') 'Missing AppSettings values were red'
-    Assert-Approved ($appCells[3] -match 'finding-match[^>]*><span class="kv-label">IsEnabled:</span> False') 'False AppSettings value was treated as missing'
+    $appComponent=Get-AuditRenderedComponent $auditHtml 'WebApp/Shop Print'
+    $missingField=@($appComponent.Fields|Where-Object Setting -EQ 'IsKioskPrintingEnabled')[0]
+    Assert-Approved ($missingField.Found -ceq 'Not configured' -and $missingField.Html -match 'finding-unverified' -and $missingField.Html -notmatch 'finding-mismatch') 'Missing AppSettings values were red'
+    $falseField=@($appComponent.Fields|Where-Object Setting -EQ 'IsEnabled')[0]
+    Assert-Approved ($falseField.Found -ceq 'False' -and $falseField.Html -notmatch 'finding-unverified|finding-mismatch') 'False AppSettings value was treated as missing'
     $rowsBefore=@(Get-ThoroughSnapshotObservations $audit)
     $private=$windows|Select-Object *
     $private|Add-Member NoteProperty ConfigurationSnapshot ([pscustomobject]@{ApiKey='DO-NOT-PERSIST-SECRET';Password='DO-NOT-PERSIST-PASSWORD'})
@@ -243,7 +247,12 @@ $auditRows.Add([pscustomobject]@{SectionNumber=1;SectionTitle='Fixture';ItemTitl
     Assert-Approved ($cells[3].Contains('Expected values are not configured. Please check manually.')) 'Missing AppSettings Applied warning missing'
     Assert-Approved ((ConvertTo-Json -InputObject $rowsBefore -Depth 24 -Compress) -ceq $beforeJson) 'Rendering mutated baseline observations'
     # The exact earlier HTML format remains usable without structured observations.
-    $historical=$audit|Select-Object * -ExcludeProperty Observations
+    $legacyFixture=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Fixtures\AccountFixLegacyRenderer.json') -Raw | ConvertFrom-Json
+    $legacyRenderer=@(@($legacyFixture.Clients|Where-Object FileName -EQ $sourceName)[0].Changes|Where-Object Name -EQ 'New-ThoroughReportSnapshot')[0]
+    Assert-Approved (-not [string]::IsNullOrWhiteSpace($legacyRenderer.Before)) 'Historical renderer fixture missing'
+    $legacyDefinition=[scriptblock]::Create($legacyRenderer.Before)
+    $historical=& { . $legacyDefinition; New-ThoroughReportSnapshot -Rows @($windows,$launcherRow,$agent,$app) -DisplayMode Audit -Hostname 'DEVICE-01' }
+    $historical=$historical|Select-Object * -ExcludeProperty Observations
     $historicalRows=@(Get-ThoroughSnapshotObservations $historical)
     $oldFix=New-ThoroughReportSnapshot -Rows $after -BeforeRows $historicalRows -DisplayMode Fix -AfterApply $true
     Assert-Approved ((Decode-Approved $oldFix).Contains('Startup type:</span> Manual')) 'Older saved Audit HTML could not supply original Findings'

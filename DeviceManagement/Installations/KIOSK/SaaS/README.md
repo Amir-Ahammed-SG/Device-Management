@@ -36,7 +36,7 @@ and supplied setup source; other client/device installations stay pending.
 
 ## Browser selection
 
-KIOSK Installation first offers **Microsoft Edge** and **Google Chrome**. Choose the browser before entering the kiosk account and onboarding values. Back and Exit at the browser menu make no setup changes. The Edge behavior described above is retained; Chrome uses `Kiosk_Mode_Setup_Chrome.ps1`, which can also run directly.
+KIOSK Installation offers **Microsoft Edge**. **Google Chrome (Not available)** is temporarily disabled in the browser menu; selecting it keeps you on that menu without starting setup. Back and Exit make no setup changes. The Chrome source `Kiosk_Mode_Setup_Chrome.ps1` is retained for future use.
 See [Chrome kiosk setup](../Chrome-README.md) for commands,
 behavior, verification, and the remaining Edge-only Thorough Check limits.
 

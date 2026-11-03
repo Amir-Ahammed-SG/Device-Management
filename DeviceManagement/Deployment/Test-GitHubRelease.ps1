@@ -68,6 +68,8 @@ $fixtures=@(
     'Test-AuditClientInput.ps1',
     'Test-ReportAgentName.ps1',
     'Test-FindingHighlights.ps1',
+    'Test-AuditColumnLayout.ps1',
+    'Test-ClientDetailsHeader.ps1',
     'Test-LauncherInspection.ps1',
     'Test-KioskAccountProperties.ps1'
 )

@@ -9,7 +9,7 @@ Run in 64-bit Windows PowerShell 5.1 as Administrator when performing checks:
 irm 'https://cdn-ito.selisesme.com/script/DeviceManagement.ps1' -EA Stop | iex
 ```
 
-Publication history is in [GitHub Actions](https://github.com/Amir-Ahammed/Device-Management-Script/actions/workflows/device-management.yml). The entry includes Edge and Chrome browser choices for the [SaaS](../Installations/KIOSK/SaaS/README.md) and [Subway](../Installations/KIOSK/Subway/README.md) KIOSK setups with prompted inputs. Pushes and merges to `main` build, test and deploy through GitHub Actions.
+Publication history is in [GitHub Actions](https://github.com/Amir-Ahammed/Device-Management-Script/actions/workflows/device-management.yml). The entry includes Edge and Chrome browser choices for the [SaaS](../Installations/KIOSK/SaaS/README.md) and [Subway](../Installations/KIOSK/Subway/README.md) KIOSK setups with prompted inputs. Chrome is temporarily unavailable in the browser menu; Edge remains available. Pushes and merges to `main` build, test and deploy through GitHub Actions.
 
 `/script/DeviceManagement.ps1` is the standard CDN entry for the shared device
 and tool menu. The previous `/device-management/Start-DeviceManagement.ps1` and
@@ -17,7 +17,7 @@ and tool menu. The previous `/device-management/Start-DeviceManagement.ps1` and
 for existing commands; new releases use `/script/DeviceManagement.ps1`.
 
 Thorough Check asks mandatory **Agent Name:** before **Branch Name:** in Audit.
-The agent appears as **Prepared by:** at the bottom right of Audit, Fix and
+The agent appears as **Prepared by:** in the bordered Client Details table and at the bottom right of Audit, Fix and
 Final, including Print. Apply Fix reuses those inputs or
 validated metadata from the same client/device's saved Audit without prompting
 again. Legacy reports without Agent Name remain supported and show **Not provided**

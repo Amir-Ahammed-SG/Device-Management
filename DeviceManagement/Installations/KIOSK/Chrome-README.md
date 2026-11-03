@@ -19,6 +19,8 @@ Run the appropriate command from the DeviceManagement folder in **Administrator,
 
 An existing enabled local account and initialized `C:\Users\<account>` profile are required. Install Chrome first: setup searches 64-bit Program Files, 32-bit Program Files, then the selected kiosk account's per-user Chrome installation. It does not download a browser or create an account.
 
+Chrome is temporarily marked **Not available** in the SaaS and Subway browser menus. Selecting it does not start setup; the implementation below is retained for future use.
+
 The account, Restaurant ID, Kiosk ID, and Hostname prompts match the Edge copies. The hostname suggestion comes from Windows DNSHostName and retains names longer than 15 characters, such as OM-DHK-PAN-KIOSK. If detection is unavailable, the full name must be entered manually. The confirmed hostname is passed unchanged to the onboarding URL; Windows is not renamed. `-WhatIf` prints an overview without prompting or writing.
 
 ## Changes on the kiosk PC

@@ -20,7 +20,10 @@ function Read-ChromeKioskUser {
     }
     if(-not $users.Count) { throw 'No existing local account could be found. Create the kiosk account before running setup.' }
     while($true) {
-        $prompt=if($suggestion) { 'Kiosk User ['+$suggestion+']' } else { 'Kiosk User' }
+        $prompt=if($suggestion) {
+            Write-Host 'Press Enter to keep it, or type another existing Windows username.' -ForegroundColor Gray
+            'Kiosk User ['+$suggestion+']'
+        } else { 'Kiosk User' }
         $answer=([string](Read-Host $prompt)).Trim()
         if(-not $answer) { $answer=$suggestion }
         $match=@($users | Where-Object { $_.Name -ieq $answer })
@@ -64,7 +67,10 @@ function Read-ChromeKioskHostName {
     catch { Write-Host 'Full Windows hostname could not be detected. Enter the full hostname manually.' -ForegroundColor Yellow }
     if(-not (Test-ChromeKioskHostName $suggestion)) { $suggestion=$null }
     while($true) {
-        $prompt=if($suggestion) { 'Hostname ['+$suggestion+']' } else { 'Hostname' }
+        $prompt=if($suggestion) {
+            Write-Host 'Press Enter to keep it, or type a different hostname.' -ForegroundColor Gray
+            'Hostname ['+$suggestion+']'
+        } else { 'Hostname' }
         $answer=([string](Read-Host $prompt)).Trim()
         if(-not $answer) { $answer=$suggestion }
         if(Test-ChromeKioskHostName $answer) { return $answer }
@@ -105,7 +111,7 @@ if(-not [Environment]::Is64BitProcess -or $PSVersionTable.PSEdition -ne 'Desktop
 if(-not (Test-ChromeKioskAdministrator)) { throw 'Run setup from an Administrator terminal.' }
 $KioskUser=Read-ChromeKioskUser
 $restaurantId=Read-ChromeKioskRequiredId -Label 'Restaurant ID'
-$kioskId=Read-ChromeKioskRequiredId -Label 'Kiosk ID'
+$kioskId=Read-ChromeKioskRequiredId -Label 'Kiosk ID [e.g. KIOSK-01]'
 $HostName=Read-ChromeKioskHostName
 $ProfilePath='C:\Users\'+$KioskUser
 if(-not (Test-Path -LiteralPath $ProfilePath -PathType Container)) { throw ('Sign in to '+$KioskUser+' once first. The required profile is missing: '+$ProfilePath) }

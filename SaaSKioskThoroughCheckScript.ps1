@@ -55,6 +55,7 @@ $script:AuditStepTimer = $null
 $script:ApplyChanges = $false
 $reportHostname = Get-ThoroughDeviceHostname
 $reportKioskId = $null
+$reportRestaurantId = 'Not detected'
 if (-not $Apply -and -not $AuditOnly -and -not $FinalReport -and -not $WhatIfPreference) {
     Write-Host "`n  SELISE | KIOSK SYSTEM CHECK" -ForegroundColor Cyan
     Write-Host '  --------------------------------------------------------' -ForegroundColor DarkGray
@@ -394,7 +395,7 @@ function Get-ThoroughAuditClientLocation {
             $audit=$state.Reports.Audit
             if($null -eq $audit){continue}
             $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($audit.HtmlBase64))
-            $match=[regex]::Match($html,'(?is)<th>\s*Branch\s*</th>\s*<td\b[^>]*>(?<Branch>.*?)</td>')
+            $match=[regex]::Match($html,'(?is)(?:<th>\s*Branch\s*</th>\s*<td\b[^>]*>(?<Branch>.*?)</td>|<dt>\s*Branch\s*</dt>\s*<dd\b[^>]*>(?<Branch>.*?)</dd>)')
             if(-not $match.Success){continue}
             $branch=[Net.WebUtility]::HtmlDecode(($match.Groups['Branch'].Value -replace '<[^>]+>',''))
             if([string]::IsNullOrWhiteSpace($branch) -or $branch.Trim() -in @('Not provided','Not verified')){continue}
@@ -490,20 +491,254 @@ function Get-ThoroughFixAccountReportView {
     [pscustomobject]@{RetainedCount=$findings.Count;FindingsHtml=($findings -join '<hr class="block-divider">');AppliedHtml=($applied -join '<hr class="block-divider">');CommandHtml=(ConvertTo-ReportCommandBoxes (New-AccountReportCommand -AccountNames $names.ToArray()))}
 }
 
+function Read-ThoroughAuditFields {
+    param([AllowEmptyString()][string]$Html)
+    # Parse only the renderer's escaped HTML. DTDs and external resources are disabled.
+    $events=[Collections.Generic.List[object]]::new()
+    if([string]::IsNullOrWhiteSpace($Html)){return}
+    $xml=[regex]::Replace($Html,'(?i)<(br|hr)(\b[^>]*?)(?<!/)>','<$1$2/>')
+    $xml=[regex]::Replace($xml,'&(?!(?:amp|lt|gt|quot|apos);)[A-Za-z][A-Za-z0-9]+;',[Text.RegularExpressions.MatchEvaluator]{param($m) [Net.WebUtility]::HtmlEncode([Net.WebUtility]::HtmlDecode($m.Value))})
+    $settings=[Xml.XmlReaderSettings]::new();$settings.DtdProcessing=[Xml.DtdProcessing]::Prohibit;$settings.XmlResolver=$null
+    $reader=$null;$inputText=[IO.StringReader]::new('<root>'+$xml+'</root>')
+    try{
+        $reader=[Xml.XmlReader]::Create($inputText,$settings)
+        $document=[Xml.XmlDocument]::new();$document.XmlResolver=$null;$document.Load($reader)
+    }catch{
+        # Preserve opaque/malformed legacy findings rather than dropping any evidence.
+        $plain=Convert-ReportHtmlToTerminalText $Html
+        [pscustomobject]@{Kind='Text';Label='Details';Html=[Net.WebUtility]::HtmlEncode($plain);Text=$plain;State='';Description='';Group='';Record=''}
+        return
+    }finally{if($reader){$reader.Dispose()};$inputText.Dispose()}
+    $context=[pscustomobject]@{Group='';Record=''}
+    $walk={
+        param([Xml.XmlNode]$Node)
+        if($Node.NodeType -eq [Xml.XmlNodeType]::Text){
+            if(-not [string]::IsNullOrWhiteSpace($Node.Value)){$events.Add([pscustomobject]@{Kind='Text';Label='Details';Html=$Node.OuterXml;Text=$Node.Value;State='';Description='';Group=$context.Group;Record=$context.Record})}
+            return
+        }
+        if($Node.NodeType -ne [Xml.XmlNodeType]::Element -or $Node.Name -in @('hr','br')){return}
+        $class=[string]$Node.GetAttribute('class')
+        if($class -match '(?:^|\s)config-(group|item)-title(?:\s|$)'){
+            $kind=if($Matches[1] -eq 'group'){'Group'}else{'Record'}
+            if($kind -eq 'Group'){$context.Group=$Node.InnerText.Trim();$context.Record=''}else{$context.Record=$Node.InnerText.Trim()}
+            $events.Add([pscustomobject]@{Kind=$kind;Label=$Node.InnerText.Trim();Html=$Node.OuterXml;Text=$Node.InnerText.Trim();State='';Description='';Group=$context.Group;Record=$context.Record})
+            return
+        }
+        $label=$Node.SelectSingleNode('./span[contains(concat(" ",normalize-space(@class)," ")," kv-label ")]')
+        $state='';$description='';$ancestor=$Node
+        while($ancestor -and $ancestor.NodeType -eq [Xml.XmlNodeType]::Element){
+            if(([string]$ancestor.GetAttribute('class')) -match '(?:^|\s)finding-(match|mismatch|unverified)(?:\s|$)'){
+                $state=$Matches[1];$description=[string]$ancestor.GetAttribute('title');break
+            }
+            $ancestor=$ancestor.ParentNode
+        }
+        if($label){
+            $valueNodes=@($Node.ChildNodes | Where-Object {-not [object]::ReferenceEquals($_,$label)})
+            $events.Add([pscustomobject]@{Kind='Field';Label=$label.InnerText.Trim().TrimEnd(':');Html=(($valueNodes | ForEach-Object {$_.OuterXml}) -join '').Trim();Text=(($valueNodes | ForEach-Object {$_.InnerText}) -join '').Trim();State=$state;Description=$description;Group=$context.Group;Record=$context.Record})
+            return
+        }
+        $structured=$Node.SelectNodes('.//*[contains(concat(" ",normalize-space(@class)," ")," kv-label ") or contains(concat(" ",normalize-space(@class)," ")," config-group-title ") or contains(concat(" ",normalize-space(@class)," ")," config-item-title ")]').Count -gt 0
+        if(-not $structured -and $Node.Name -ne 'root'){
+            if(-not [string]::IsNullOrWhiteSpace($Node.InnerText)){$events.Add([pscustomobject]@{Kind='Text';Label='Details';Html=$Node.OuterXml;Text=$Node.InnerText.Trim();State=$state;Description=$description;Group=$context.Group;Record=$context.Record})}
+            return
+        }
+        foreach($child in $Node.ChildNodes){& $walk $child}
+    }
+    & $walk $document.DocumentElement
+    $events.ToArray()
+}
+
+function ConvertTo-ThoroughAuditRows {
+    param($Row,[string]$ComponentHtml,[string]$CommandHtml,[string]$RequirementHtml,[string]$FindingsHtml,$AccountView)
+    $required=@(Read-ThoroughAuditFields $RequirementHtml)
+    $observed=@(Read-ThoroughAuditFields $FindingsHtml)
+    $specs=[Collections.Generic.List[object]]::new()
+    $segments=[Collections.Generic.List[object]]::new()
+    $current=[pscustomobject]@{Heading=$null;Group='';Record='';Fields=[Collections.Generic.List[object]]::new()}
+    foreach($entry in $observed){
+        if($entry.Kind -in @('Group','Record')){
+            if($current.Heading -or $current.Fields.Count){$segments.Add($current)}
+            $current=[pscustomobject]@{Heading=$entry;Group=$entry.Group;Record=$entry.Record;Fields=[Collections.Generic.List[object]]::new()}
+        }else{$current.Fields.Add($entry)}
+    }
+    if($current.Heading -or $current.Fields.Count){$segments.Add($current)}
+    $used=[Collections.Generic.HashSet[int]]::new()
+    $aliases=@{'Launcher Path'='Launch Script';'File Path'='Directory';'Service Name'='Expected Names'}
+    foreach($segment in $segments){
+        if($segment.Heading){
+            $headingHtml=$segment.Heading.Html
+            $identity=@($segment.Fields | Where-Object {$_.Kind -eq 'Field' -and $_.Label -in @('Printer Name','Account Name')})
+            if($segment.Heading.Kind -eq 'Record' -and $identity.Count -eq 1 -and $segment.Heading.Text -match '^(?:Printer|Account)\s+\d+$'){
+                $headingHtml='<div class="config-item-title">'+[Net.WebUtility]::HtmlEncode($segment.Heading.Text+' - '+$identity[0].Text)+'</div>'
+            }
+            $specs.Add([pscustomobject]@{Kind='Heading';Html=$headingHtml})
+        }
+        $fields=@($segment.Fields | Where-Object Kind -eq 'Field')
+        if(-not $fields.Count -and $segment.Fields.Count){
+            $specs.Add([pscustomobject]@{Kind='Value';Label='Details';Required=$(if(-not $used.Count){$RequirementHtml}else{'&#8212;'});Found=(($segment.Fields | ForEach-Object {$_.Html}) -join '<br>');State='';Description=''})
+            foreach($index in 0..($required.Count-1)){if($index -ge 0 -and $index -lt $required.Count){[void]$used.Add($index)}}
+            continue
+        }
+        $administrativePolicy=$false
+        if($AccountView -and $AccountView.PSObject.Properties['Records']){
+            $name=@($fields | Where-Object Label -eq 'Account Name')
+            if($name.Count -eq 1){
+                $account=@($AccountView.Records | Where-Object AccountName -IEQ $name[0].Text)
+                if($account.Count -eq 1){$administrativePolicy=[bool]$account[0].AdministrativePolicy}
+            }
+        }
+        foreach($entry in $segment.Fields){
+            $requiredHtml='&#8212;'
+            if($entry.Kind -eq 'Field'){
+                $key=if($aliases.ContainsKey($entry.Label)){$aliases[$entry.Label]}else{$entry.Label}
+                $matchesForField=@(@(for($index=0;$index -lt $required.Count;$index++){
+                    $candidate=$required[$index]
+                    if($candidate.Kind -eq 'Field' -and $candidate.Label -ieq $key -and ($candidate.Group -eq '' -or $candidate.Group -eq $segment.Group) -and ($candidate.Record -eq '' -or $candidate.Record -eq $segment.Record)){
+                        [pscustomobject]@{Index=$index;Field=$candidate;Specificity=([int]($candidate.Group -ne '')+[int]($candidate.Record -ne ''))}
+                    }
+                }) | Sort-Object Specificity -Descending)
+                if($matchesForField.Count){
+                    $best=$matchesForField[0];$requiredHtml=$best.Field.Html
+                    [void]$used.Add([int]$best.Index)
+                }
+            }
+            $specs.Add([pscustomobject]@{Kind='Value';Label=$entry.Label;Required=$requiredHtml;Found=$entry.Html;State=$entry.State;Description=$entry.Description})
+        }
+        # Apply only requirements relevant to this record; administrator records
+        # deliberately omit the standard kiosk password-change restriction.
+        foreach($index in 0..($required.Count-1)){
+            if($index -lt 0 -or $index -ge $required.Count){continue}
+            $candidate=$required[$index]
+            if($candidate.Kind -ne 'Field' -or ($candidate.Group -and $candidate.Group -ne $segment.Group) -or ($candidate.Record -and $candidate.Record -ne $segment.Record)){continue}
+            if($administrativePolicy -and $candidate.Label -eq 'User Cannot Change Password'){continue}
+            $observedLabels=@($candidate.Label)+@($aliases.Keys | Where-Object {$aliases[$_] -ieq $candidate.Label})
+            if(@($fields | Where-Object {$observedLabels -icontains $_.Label}).Count){continue}
+            $specs.Add([pscustomobject]@{Kind='Value';Label=$candidate.Label;Required=$candidate.Html;Found='&#8212;';State='';Description='No corresponding field was recorded in this record.'})
+            [void]$used.Add($index)
+        }
+    }
+    # Keep unmatched requirement groups and opaque requirement notes visible too.
+    for($index=0;$index -lt $required.Count;$index++){
+        $entry=$required[$index]
+        if($used.Contains($index) -or $entry.Kind -in @('Group','Record')){continue}
+        if($entry.Kind -eq 'Field' -and $entry.Label -eq 'User Cannot Change Password' -and $AccountView -and @($AccountView.Records).Count -gt 0 -and -not @($AccountView.Records | Where-Object {-not $_.AdministrativePolicy}).Count){continue}
+        if($entry.Kind -eq 'Text'){
+            $specs.Add([pscustomobject]@{Kind='Value';Label='Required configuration';Required=$entry.Html;Found='&#8212;';State='';Description=''})
+        }else{
+            $specs.Add([pscustomobject]@{Kind='Value';Label=$entry.Label;Required=$entry.Html;Found='&#8212;';State='';Description='No corresponding field was recorded.'})
+        }
+    }
+    if(-not $specs.Count){$specs.Add([pscustomobject]@{Kind='Value';Label='Details';Required=$RequirementHtml;Found=$(if($FindingsHtml){$FindingsHtml}else{'Not recorded'});State='unverified';Description='No structured observations were available.'})}
+    $rows=[Collections.Generic.List[string]]::new()
+    for($index=0;$index -lt $specs.Count;$index++){
+        $entry=$specs[$index]
+        $identity=if($index -eq 0){'<td class="audit-component" rowspan="'+$specs.Count+'">'+$ComponentHtml+'</td><td class="audit-commands" rowspan="'+$specs.Count+'">'+$CommandHtml+'</td>'}else{''}
+        if($entry.Kind -eq 'Heading'){
+            $rows.Add('<tr class="audit-record-row">'+$identity+'<td class="audit-record-heading" colspan="3">'+$entry.Html+'</td></tr>')
+        }else{
+            $class=if($entry.State -in @('mismatch','unverified')){' finding-'+$entry.State}else{''}
+            $title=if($entry.Description){' title="'+[Net.WebUtility]::HtmlEncode($entry.Description)+'"'}else{''}
+            $rows.Add('<tr class="audit-setting-row">'+$identity+'<td class="audit-setting">'+[Net.WebUtility]::HtmlEncode($entry.Label)+'</td><td class="audit-required">'+$entry.Required+'</td><td class="audit-findings"><span class="audit-observed'+$class+'"'+$title+'>'+$entry.Found+'</span></td></tr>')
+        }
+    }
+    $rows -join "`n"
+}
+
+function Get-ThoroughAuditColumnStyle {
+    @'
+    .audit-report .audit-setting { background:#f6f7f9; color:#343e49; font-weight:500; }
+    .audit-report .audit-required { background:#edf4fb; color:#4b5561; }
+    .audit-report .audit-findings { background:#fffbf0; }
+    .audit-report .checks thead tr:last-child th:nth-child(3) { background:#e9ecf0; }
+    .audit-report .checks thead tr:last-child th:nth-child(4) { background:#dfeaf7; }
+    .audit-report .checks thead tr:last-child th:nth-child(5) { background:#f7efd8; }
+    .audit-report .audit-record-heading { background:#edf1f6; color:#253b53; padding-top:11px; padding-bottom:11px; }
+    .audit-report .audit-record-heading .config-item-title,
+    .audit-report .audit-record-heading .config-group-title { margin:0; padding:0; border:0; background:transparent; font-weight:700; }
+    .audit-report .audit-observed { overflow-wrap:anywhere; }
+    .audit-report .audit-observed.finding-mismatch { padding:1px 4px; border-radius:2px; background:#fdecec; color:#9b1c1c; }
+    .audit-report .audit-observed.finding-unverified,
+    .audit-report .finding-value.finding-unverified { padding:1px 4px; border:1px solid #d3a83e; border-radius:2px; background:#ffe3a0; color:#593900; }
+    .audit-report .finding-match { background:transparent; color:inherit; }
+    .audit-report .audit-record-row td { border-bottom-color:#e4e7eb; }
+    .audit-report .audit-setting-row td { border-top-color:#e4e7eb; border-bottom-color:#e4e7eb; }
+    @media screen { .audit-report .table-scroll { overflow-x:auto; } .audit-report .checks { min-width:960px; } }
+@media screen {
+    .audit-report .checks tbody td { transition: background-color 120ms ease; }
+    .audit-report .checks tbody tr.audit-component-hover > td.audit-component { background: #e9eff6; }
+    .audit-report .checks tbody tr.audit-component-hover > td.audit-commands { background: #f0f4f9; }
+    .audit-report .checks tbody tr.audit-component-hover > td.audit-setting { background: #e9edf3; }
+    .audit-report .checks tbody tr.audit-component-hover > td.audit-required { background: #e0ebf8; }
+    .audit-report .checks tbody tr.audit-component-hover > td.audit-findings { background: #fff2d3; }
+    .audit-report .checks tbody tr.audit-component-hover > td.audit-record-heading { background: #dfe7f1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .audit-report .checks tbody td { transition: none; }
+}
+
+    @media print { .audit-report .audit-setting,.audit-report .audit-required,.audit-report .audit-findings,.audit-report .audit-record-heading,.audit-report .audit-observed { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+'@
+}
+
+function Get-ThoroughAuditHoverScript {
+    @'
+<script>
+(function () {
+    document.querySelectorAll('.audit-report table.checks').forEach(function (table) {
+        var groups = [], current = null, active = null;
+        Array.from(table.querySelectorAll('tbody tr')).forEach(function (row) {
+            if (Array.from(row.cells).some(function (cell) { return cell.classList.contains('audit-component'); })) {
+                current = [];
+                groups.push(current);
+            }
+            if (!current) return;
+            row.dataset.auditComponentGroup = String(groups.length - 1);
+            current.push(row);
+        });
+        function groupFor(target) {
+            var row = target && target.closest ? target.closest('tr[data-audit-component-group]') : null;
+            return row && row.closest('table') === table ? groups[Number(row.dataset.auditComponentGroup)] : null;
+        }
+        function highlight(group) {
+            if (active === group) return;
+            if (active) active.forEach(function (row) { row.classList.remove('audit-component-hover'); });
+            active = group;
+            if (active) active.forEach(function (row) { row.classList.add('audit-component-hover'); });
+        }
+        table.addEventListener('pointerover', function (event) { highlight(groupFor(event.target)); });
+        table.addEventListener('pointerleave', function () { highlight(groupFor(document.activeElement)); });
+        table.addEventListener('focusin', function (event) { highlight(groupFor(event.target)); });
+        table.addEventListener('focusout', function (event) { highlight(groupFor(event.relatedTarget)); });
+    });
+}());
+</script>
+'@
+}
+
 function New-ThoroughReportSnapshot {
     param([Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Rows,
         [Parameter(Mandatory=$true)][ValidateSet('Audit','Fix','Final')][string]$DisplayMode,
         [string]$ClientLocation,[string]$DeviceType,[string]$Hostname,[string]$LauncherKioskId,
-        [string]$RequestedKioskId,[string]$KioskUserName,[bool]$AfterApply=$false,$AuditSource=$null,[AllowEmptyCollection()][object[]]$BeforeRows=@(),[string]$AgentName)
+        [string]$RequestedKioskId,[string]$KioskUserName,[bool]$AfterApply=$false,$AuditSource=$null,[AllowEmptyCollection()][object[]]$BeforeRows=@(),[string]$AgentName,[string]$LauncherRestaurantId)
     # Presentation flags are separate from the execution gate. Rendering another
     # view never enables repairs or reruns a component check.
     $isApplyReport=$DisplayMode -eq 'Fix';$isFinalReport=$DisplayMode -eq 'Final'
+    $isAuditReport=$DisplayMode -eq 'Audit'
     $reportHostname=$Hostname;$reportKioskId=$LauncherKioskId;$KioskId=$RequestedKioskId;$kioskUser=$KioskUserName
     if([string]::IsNullOrWhiteSpace($AgentName) -and $AuditSource -and $AuditSource.PSObject.Properties['AgentName']){$AgentName=[string]$AuditSource.AgentName}
     $preparedBy=if([string]::IsNullOrWhiteSpace($AgentName) -or $AgentName -eq 'Not provided'){'Not provided'}else{$AgentName.Trim()}
     $generatedAt=if($AuditSource){$AuditSource.GeneratedAt}else{Format-ThoroughReportDateTime -Value ([DateTimeOffset]::UtcNow) -TimeZone BST}
 $reportId = if($AuditSource){$AuditSource.ReportId}else{New-ThoroughReportId}
 $reportDeviceLabel = Get-ThoroughReportDeviceLabel -DeviceType $deviceType -LauncherKioskId $reportKioskId -RequestedKioskId $KioskId
+$reportRestaurantId=if([string]::IsNullOrWhiteSpace($LauncherRestaurantId)){'Not detected'}else{$LauncherRestaurantId.Trim()}
+$reportDeviceType=$deviceType.ToUpperInvariant()
+$deviceDisplayName=[Globalization.CultureInfo]::InvariantCulture.TextInfo.ToTitleCase($deviceType.ToLowerInvariant())
+$reportDevice=if([string]::IsNullOrWhiteSpace($deviceDisplayName)){'Not verified'}
+elseif($reportDeviceLabel -match ('^'+[regex]::Escape($reportDeviceType)+'-(\d+)$')){
+    $deviceDisplayName+'-'+([uint32]$Matches[1]).ToString([Globalization.CultureInfo]::InvariantCulture)
+}elseif($reportDeviceLabel.StartsWith($reportDeviceType+' - ')){
+    $deviceDisplayName+' - '+$reportDeviceLabel.Substring($reportDeviceType.Length+3)
+}else{$deviceDisplayName+' (number not verified)'}
 $reportTitle = Get-ThoroughReportTitle -IsApply $isApplyReport -IsFinal ([bool]$isFinalReport)
 $htmlHeader = @"
 <!DOCTYPE html>
@@ -577,11 +812,11 @@ $htmlHeader = @"
 <body>
 <main class="report">
 <h1>$($reportTitle.ToUpperInvariant())</h1>
-<h2>REPORT DETAILS</h2>
-<table class="metadata" aria-label="Device and report details">
-    <tr><th>Report ID</th><td>$([Net.WebUtility]::HtmlEncode($reportId))</td><th>Generated Time</th><td>$generatedAt</td></tr>
-    <tr><th>Client</th><td>SaaS</td><th>Branch</th><td>$([Net.WebUtility]::HtmlEncode($clientLocation))</td></tr>
-    <tr><th>Device type</th><td>$([Net.WebUtility]::HtmlEncode($reportDeviceLabel))</td><th>Hostname</th><td>$([Net.WebUtility]::HtmlEncode($reportHostname))</td></tr>
+<h2>CLIENT DETAILS</h2>
+<table class="metadata" aria-label="Client and device details">
+    <tr><th>Client Type</th><td>SaaS</td><th>Branch</th><td>$([Net.WebUtility]::HtmlEncode($clientLocation))</td></tr>
+    <tr><th>Restaurant ID</th><td>$([Net.WebUtility]::HtmlEncode($reportRestaurantId))</td><th>Hostname</th><td>$([Net.WebUtility]::HtmlEncode($reportHostname))</td></tr>
+    <tr><th>Device</th><td>$([Net.WebUtility]::HtmlEncode($reportDevice))</td><th>Prepared by</th><td>$([Net.WebUtility]::HtmlEncode($preparedBy))</td></tr>
 </table>
 <h2>CONFIGURATION CHECK</h2>
 "@
@@ -627,7 +862,9 @@ $htmlSections = foreach ($group in $groupedSections) {
         $statusClass=if ($statusPassed) { 'badge-pass' } else { 'badge-fail' }
         $statusDescription=[Net.WebUtility]::HtmlEncode(('Recorded result: '+$row.Status))
         $statusHtml='<span class="badge {0}" title="{1}">{2}</span>' -f $statusClass,$statusDescription,$statusLabel
-        if ($isApplyReport) {
+        if($isAuditReport){
+            ConvertTo-ThoroughAuditRows -Row $row -ComponentHtml $checkHtml -CommandHtml $commandHtml -RequirementHtml $requirementHtml -FindingsHtml $stateHtml -AccountView $accountView
+        } elseif ($isApplyReport) {
             $accountFix=if($hasBeforeRow){
                 Get-ThoroughFixAccountBeforeView -Row $row -BeforeView $accountView -AfterView (Get-AccountReportView $row) -RequirementHtml $requirementHtml
             }else{
@@ -656,6 +893,11 @@ $htmlSections = foreach ($group in $groupedSections) {
         $columnWidths='<col style="width:18%"><col style="width:22%"><col style="width:38%"><col style="width:22%">'
         $columnHeaders='<th>Component</th><th>Shortcut / Command</th><th>Findings</th><th>Applied</th>'
     } elseif ($sectionHasStatus) { $columnHeaders += '<th>Status</th>' }
+    if($isAuditReport){
+        $columnCount=5
+        $columnWidths='<col style="width:17%"><col style="width:23%"><col style="width:21%"><col style="width:18%"><col style="width:21%">'
+        $columnHeaders='<th scope="col">Component</th><th scope="col">Shortcut / Command</th><th scope="col">Setting</th><th scope="col">Required</th><th scope="col">Findings</th>'
+    }
     @"
 <div class="table-scroll">
 <table class="checks" aria-label="$secName">
@@ -674,7 +916,7 @@ if($isApplyReport -and -not @($htmlSections).Count){$message=if($reportRows.Coun
 
 $htmlFooter = @"
 <p class="legend">Green = Matched requirement or collected value; Red = Mismatched requirement or missing value; Amber = Not verified; Uncolored = Informational only. AppSettings values are a configuration record, not confirmation of the site assignment.</p>
-<footer class="report-footer"><span>Retain with the device configuration records.</span><span class="report-prepared-by"><strong>Prepared by:</strong> $([Net.WebUtility]::HtmlEncode($preparedBy))</span></footer>
+<footer class="report-footer"><span>Retain with the device configuration records.<br><span class="report-generated-at"><strong>Generated Time:</strong> $([Net.WebUtility]::HtmlEncode($generatedAt))</span></span><span class="report-prepared-by"><strong>Prepared by:</strong> $([Net.WebUtility]::HtmlEncode($preparedBy))</span></footer>
 $(Get-ThoroughReportCopyScript)
 $(Get-ThoroughReportBlockAlignmentScript)
 </main>
@@ -683,6 +925,11 @@ $(Get-ThoroughReportBlockAlignmentScript)
 "@
 
 $finalHtml = $htmlHeader + ($htmlSections -join "`n") + $htmlFooter
+if($isAuditReport){
+    $finalHtml=$finalHtml.Replace('<body>','<body class="audit-report">').Replace('</style>',(Get-ThoroughAuditColumnStyle)+"`n</style>")
+    $finalHtml=$finalHtml.Replace('Green = Matched requirement or collected value; Red = Mismatched requirement or missing value; Amber = Not verified; Uncolored = Informational only.','Red = Requirement not met or missing value; Amber = Not verified; Plain values = Matched, collected or informational values.')
+    $finalHtml=$finalHtml.Replace('</main>',(Get-ThoroughAuditHoverScript)+"`n</main>")
+}
 if ($isFinalReport) { $finalHtml = ConvertTo-ThoroughFinalReportHtml $finalHtml }
     if($isFinalReport -and $AfterApply){
         $finalHtml=$finalHtml.Replace('This report records the observed configuration without applying repairs.','This report records the actual post-fix configuration observed during Apply Fix. No additional repairs were run to generate this view.')
@@ -690,7 +937,7 @@ if ($isFinalReport) { $finalHtml = ConvertTo-ThoroughFinalReportHtml $finalHtml 
     $hostLabel=if($Hostname -and $Hostname -notin @('Not verified','Not detected')){$Hostname}else{'Unknown'}
     $hostLabel=($hostLabel -replace '[<>:"/\\|?*\x00-\x1F]','_').Trim().TrimEnd('.')
     if(-not $hostLabel){$hostLabel='Unknown'};if($hostLabel.Length -gt 60){$hostLabel=$hostLabel.Substring(0,60)}
-    [pscustomobject]@{Mode=$DisplayMode;ReportId=$reportId;GeneratedAt=$generatedAt;AgentName=$preparedBy;
+    [pscustomobject]@{Mode=$DisplayMode;ReportId=$reportId;RestaurantId=$reportRestaurantId;GeneratedAt=$generatedAt;AgentName=$preparedBy;
         Origin=$(if($AuditSource){'Audit observations'}elseif($AfterApply){'Apply Fix readback'}elseif($DisplayMode -eq 'Final'){'Read-only verification'}else{$DisplayMode});
         HtmlBase64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($finalHtml));
         Observations=$(if($DisplayMode -eq 'Audit'){@(Copy-ThoroughObservationRows $reportRows)}else{$null});
@@ -776,7 +1023,7 @@ function update(){
   document.querySelectorAll('[data-mode]').forEach(function(button){var selected=button.dataset.mode===mode;button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;});
   frame.setAttribute('aria-labelledby','tab-'+mode);frame.title=active.ClientType+' '+labels[mode];
   document.getElementById('final-actions').hidden=mode!=='Final'||!snapshot;
-  document.getElementById('bundle-description').textContent=descriptions[mode]+(snapshot?(snapshot.Origin==='Audit observations'?' Based on Audit.':'')+' Saved: '+snapshot.GeneratedAt+' | Report ID: '+snapshot.ReportId:' Not run.');
+  document.getElementById('bundle-description').textContent=descriptions[mode]+(snapshot?(snapshot.Origin==='Audit observations'?' Based on Audit.':'')+' Saved: '+snapshot.GeneratedAt+' | Restaurant ID: '+(snapshot.RestaurantId||'Not detected'):' Not run.');
   if(snapshot){frame.srcdoc=decode(snapshot.HtmlBase64);}
   else{var empty=document.implementation.createHTMLDocument(labels[mode]);var main=empty.createElement('main');main.style.cssText='font:14px/1.5 Arial,sans-serif;color:#253b53;padding:32px';var title=empty.createElement('h2');title.textContent=labels[mode]+' has not been run';var note=empty.createElement('p');note.textContent='Run this mode in Device Management to add its results to this file.';main.append(title,note);empty.body.appendChild(main);frame.srcdoc='<!doctype html>'+empty.documentElement.outerHTML;}
   preparePrint();
@@ -812,8 +1059,13 @@ function Read-ThoroughReportBundleState {
         $snapshot=$property.Value
         if($null -eq $snapshot){continue}
         if($snapshot.Mode -cne $property.Name -or $snapshot.ReportId -notmatch '^OMK-\d{6}$'){throw 'A saved report snapshot has invalid mode or identity.'}
+        $metadataCell=if($snapshot.PSObject.Properties['RestaurantId']){'<th>Restaurant ID</th><td>'+[Net.WebUtility]::HtmlEncode([string]$snapshot.RestaurantId)+'</td>'}else{'<th>Report ID</th><td>'+$snapshot.ReportId+'</td>'}
         $document=$utf8.GetString([Convert]::FromBase64String([string]$snapshot.HtmlBase64))
-        if($document -notmatch '(?is)<!doctype html>.*<main class="report">' -or -not $document.Contains(('<th>Report ID</th><td>'+$snapshot.ReportId+'</td>')) -or $document -notmatch '(?is)</body>\s*</html>\s*$'){throw 'A saved report snapshot is incomplete or inconsistent.'}
+        $metadataValid=$document.Contains($metadataCell)
+        if(-not $metadataValid -and $snapshot.PSObject.Properties['RestaurantId']){
+            $metadataValid=$document.Contains('<dt>Restaurant ID</dt><dd>'+[Net.WebUtility]::HtmlEncode([string]$snapshot.RestaurantId)+'</dd>')
+        }
+        if($document -notmatch '(?is)<!doctype html>.*<main class="report">' -or -not $metadataValid -or $document -notmatch '(?is)</body>\s*</html>\s*$'){throw 'A saved report snapshot is incomplete or inconsistent.'}
     }
     $state
 }
@@ -1998,7 +2250,10 @@ function Read-ThoroughFixHostname {
         return $name
     }
     do {
-        $prompt=if(Test-ThoroughHostname $SuggestedName){'Hostname ['+$SuggestedName+']'}else{'Hostname'}
+        $prompt=if(Test-ThoroughHostname $SuggestedName){
+            Write-Host 'Press Enter to keep it, or type a different hostname.' -ForegroundColor Gray
+            'Hostname ['+$SuggestedName+']'
+        }else{'Hostname'}
         $name=([string](Read-Host $prompt)).Trim()
         if(-not $name -and (Test-ThoroughHostname $SuggestedName)){$name=$SuggestedName}
         if(Test-ThoroughHostname $name){return $name}
@@ -3245,6 +3500,7 @@ if ($null -ne $kioskAccount) {
 try {
     Start-AuditStep 4 'Kiosk profile and launcher'
     $result = Invoke-KioskLauncherConfiguration -UserName $kioskUser -Restaurant $RestaurantId -Kiosk $KioskId -Hostname $KioskHostname
+    if ($result.PSObject.Properties['LauncherValues'] -and -not [string]::IsNullOrWhiteSpace([string]$result.LauncherValues['Restaurant ID'])) { $reportRestaurantId = [string]$result.LauncherValues['Restaurant ID'] }
     if ($result.PSObject.Properties['LauncherValues'] -and $result.LauncherValues['KIOSK ID'] -notin @($null,'','Not detected')) { $reportKioskId = [string]$result.LauncherValues['KIOSK ID'] }
     Add-ResultEntry $sec2Num $sec2Title 'Kiosk Launch Architecture' $result
     $auditRows[-1]|Add-Member NoteProperty ExpectedHostName $(if(Test-CanApply){$KioskHostname}else{Get-ThoroughDeviceHostname})
@@ -4802,7 +5058,7 @@ Add-AuditEntry -SectionNumber $sec4Num -SectionTitle $sec4Title -ItemTitle 'lodc
 $snapshotModes=if($script:ApplyChanges){@('Fix','Final')}elseif($FinalReport){@('Final')}else{@('Audit','Fix','Final')}
 $auditSource=$null
 $snapshots=@(foreach($snapshotMode in $snapshotModes){
-    $snapshot=New-ThoroughReportSnapshot -Rows $auditRows.ToArray() -DisplayMode $snapshotMode -ClientLocation $clientLocation -AgentName $AgentName -DeviceType $deviceType -Hostname $reportHostname -LauncherKioskId $reportKioskId -RequestedKioskId $KioskId -KioskUserName $kioskUser -AfterApply:([bool]$script:ApplyChanges) -AuditSource $auditSource -BeforeRows $(if($script:ApplyChanges){if($savedBeforeRows.Count){$savedBeforeRows}else{$beforeApplyRows}}else{@()})
+    $snapshot=New-ThoroughReportSnapshot -Rows $auditRows.ToArray() -DisplayMode $snapshotMode -ClientLocation $clientLocation -AgentName $AgentName -DeviceType $deviceType -Hostname $reportHostname -LauncherKioskId $reportKioskId -LauncherRestaurantId $reportRestaurantId -RequestedKioskId $KioskId -KioskUserName $kioskUser -AfterApply:([bool]$script:ApplyChanges) -AuditSource $auditSource -BeforeRows $(if($script:ApplyChanges){if($savedBeforeRows.Count){$savedBeforeRows}else{$beforeApplyRows}}else{@()})
     if($snapshotMode -eq 'Audit'){$auditSource=$snapshot}
     $snapshot
 })

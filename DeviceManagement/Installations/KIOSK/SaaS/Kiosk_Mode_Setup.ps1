@@ -19,7 +19,10 @@ function Read-SaaSKioskUser {
     }
     if(-not $users.Count) { throw 'No existing local account could be found. Create the kiosk account before running setup.' }
     while($true) {
-        $prompt=if($suggestion) { 'Kiosk User ['+$suggestion+']' } else { 'Kiosk User' }
+        $prompt=if($suggestion) {
+            Write-Host 'Press Enter to keep it, or type another existing Windows username.' -ForegroundColor Gray
+            'Kiosk User ['+$suggestion+']'
+        } else { 'Kiosk User' }
         $answer=([string](Read-Host $prompt)).Trim()
         if(-not $answer) { $answer=$suggestion }
         $match=@($users | Where-Object { $_.Name -ieq $answer })
@@ -63,7 +66,10 @@ function Read-SaaSKioskHostName {
     catch { Write-Host 'Full Windows hostname could not be detected. Enter the full hostname manually.' -ForegroundColor Yellow }
     if(-not (Test-SaaSKioskHostName $suggestion)) { $suggestion=$null }
     while($true) {
-        $prompt=if($suggestion) { 'Hostname ['+$suggestion+']' } else { 'Hostname' }
+        $prompt=if($suggestion) {
+            Write-Host 'Press Enter to keep it, or type a different hostname.' -ForegroundColor Gray
+            'Hostname ['+$suggestion+']'
+        } else { 'Hostname' }
         $answer=([string](Read-Host $prompt)).Trim()
         if(-not $answer) { $answer=$suggestion }
         if(Test-SaaSKioskHostName $answer) { return $answer }
@@ -83,7 +89,7 @@ function Assert-SaaSKioskSetupInputs {
 
 $KioskUser = Read-SaaSKioskUser
 $restaurantId = Read-SaaSKioskRequiredId -Label 'Restaurant ID'
-$kioskId = Read-SaaSKioskRequiredId -Label 'Kiosk ID'
+$kioskId = Read-SaaSKioskRequiredId -Label 'Kiosk ID [e.g. KIOSK-01]'
 $HostName = Read-SaaSKioskHostName
 Assert-SaaSKioskSetupInputs -UserName $KioskUser
 $URL = "https://kiosk.ordermonkey.com/#/onboarding/login?restaurantId=$restaurantId&kioskId=$kioskId&host=$HostName" # only change if SaaS Url installation is needed (https://kiosk.ordermonkey.com)

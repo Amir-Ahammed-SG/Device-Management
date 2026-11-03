@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 # Functions and synthetic observations only. No device checks or repairs run here.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -49,6 +50,14 @@ foreach($file in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
         foreach($mode in @('Audit','Fix','Final')){
             $snapshot=New-ThoroughReportSnapshot -Rows $raw -DisplayMode $mode -ClientLocation 'Sample' -DeviceType KIOSK -Hostname SAMPLE -KioskUserName SELISE-KIOSK
             $html=$utf8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
+            if($mode -eq 'Audit'){
+                $auditView=Get-AuditRenderedComponent $html 'Legacy Payment Services'
+                Assert-LegacyReport ($auditView.Count -eq 1 -and $auditView.Headings.Count -eq $services.Count) 'Audit lost grouped service identities.'
+                Assert-LegacyReport ($auditView.Headings -contains 'SubwayLocal') 'The first legacy service identity was lost.'
+                if($case -eq 'mixed'){Assert-LegacyReport (@($auditView.Fields|Where-Object {$_.Setting -eq 'Service State' -and $_.Found -eq 'Running' -and $_.Html -match 'finding-mismatch'}).Count -eq 1) 'A failed legacy service state was hidden.'}
+                [IO.File]::WriteAllText((Join-Path $outputRoot ($file.Replace('.ps1','')+'-'+$mode+'-'+$case+'.html')),$html,$utf8)
+                continue
+            }
             $rows=@([regex]::Matches($html,'(?is)<tr\b[^>]*>.*?</tr>') | Where-Object {$_.Value.Contains('class="device-title">Legacy Payment Services</div>')})
             if($mode -eq 'Fix' -and $case -in @('single','multiple')){
                 Assert-LegacyReport ($rows.Count -eq 0) 'Healthy unchanged legacy services remain in Fix.'

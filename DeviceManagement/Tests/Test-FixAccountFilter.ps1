@@ -7,17 +7,9 @@ $outputRoot=Join-Path $projectRoot 'output\fix-account-records'
 $restorePath=Join-Path $PSScriptRoot 'Fixtures\AccountFixLegacyRenderer.json'
 $restorePoint=Get-Content -LiteralPath $restorePath -Raw | ConvertFrom-Json
 $utf8=New-Object Text.UTF8Encoding($false)
+. (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 function Assert-FixAccount {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
 function Read-FixAccountSnapshot {param($Snapshot) [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Snapshot.HtmlBase64))}
-function Get-FixAccountBaselineHtml {
-    param($Snapshot)
-    # Agent attribution intentionally adds footer markup/styles. Keep comparing
-    # every other byte with the original account-filter renderer fixture.
-    $html=Read-FixAccountSnapshot $Snapshot
-    $html=[regex]::Replace($html,'(?s)<footer class="report-footer">.*?</footer>','')
-    $html=[regex]::Replace($html,'(?m)^    \.report-(?:footer|prepared-by) \{[^\r\n]*\}\r?\n','')
-    $html
-}
 function Get-FixAccountCells {
     param([string]$Html,[string]$Title)
     $titlePattern='<div class="device-title">'+[regex]::Escape($Title)+'</div>'
@@ -84,13 +76,25 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         . ([scriptblock]::Create($savedRenderer.Before))
         $oldAudit=New-ThoroughReportSnapshot -Rows @($row) -DisplayMode Audit -AuditSource $identity
         $oldFinal=New-ThoroughReportSnapshot -Rows @($row) -DisplayMode Final -AuditSource $identity
-        Assert-FixAccount ((Get-FixAccountBaselineHtml $oldAudit) -ceq (Get-FixAccountBaselineHtml $audit) -and (Get-FixAccountBaselineHtml $oldFinal) -ceq (Get-FixAccountBaselineHtml $final)) 'Account Fix filtering changed Audit or Final output outside agent attribution.'
+        # Header metadata and the five-column Audit presentation are approved changes.
+        # Keep the historical Final configuration parity check and verify Audit data independently.
+        $configPattern='(?is)<h2>CONFIGURATION CHECK</h2>(.*?)<p class="legend">'
+        $oldConfig=[regex]::Match((Read-FixAccountSnapshot $oldFinal),$configPattern).Groups[1].Value
+        $newConfig=[regex]::Match((Read-FixAccountSnapshot $final),$configPattern).Groups[1].Value
+        Assert-FixAccount ($oldConfig.Length -gt 0 -and $oldConfig -ceq $newConfig) 'Account Fix filtering changed Final configuration output.'
         . ([scriptblock]::Create(($definitions | Where-Object Name -EQ 'New-ThoroughReportSnapshot').Extent.Text))
-        foreach($view in @($audit,$final)){
-            $html=Read-FixAccountSnapshot $view
-            Assert-FixAccount ($html.Contains('>Account 01</div>') -and $html.Contains('>Account 02</div>')) 'Audit or Final lost an account record.'
-            Assert-FixAccount ($html.Contains('Account Name:</span> '+$nameA) -and $html.Contains('Account Name:</span> '+$nameB)) 'Audit or Final lost account identities.'
-        }
+        $component=Get-AuditRenderedComponent (Read-FixAccountSnapshot $audit) $title
+        $accountNames=@($component.Fields|Where-Object Setting -EQ 'Account Name'|ForEach-Object {$_.Found})
+        $legacyCells=@(Get-FixAccountCells (Read-FixAccountSnapshot $oldAudit) $title)
+        $legacyFields=@([regex]::Matches($legacyCells[3],'(?is)<span class="kv-label">(?<Label>[^<]+):</span>\s*(?<Value>.*?)</div>')|ForEach-Object {
+            ([Net.WebUtility]::HtmlDecode($_.Groups['Label'].Value).Trim())+'='+([Net.WebUtility]::HtmlDecode(([regex]::Replace($_.Groups['Value'].Value,'<[^>]*>',''))).Trim())
+        })
+        $currentFields=@($component.Fields|ForEach-Object {$_.Setting+'='+$_.Found})
+        Assert-FixAccount ($legacyFields.Count -gt 0 -and ($legacyFields -join '|') -ceq ($currentFields -join '|')) 'Audit account fields changed during account Fix filtering.'
+        Assert-FixAccount ($component.Count -eq 1 -and $component.Headings.Count -eq 2 -and $accountNames.Count -eq 2 -and $accountNames[0] -ceq $nameA -and $accountNames[1] -ceq $nameB) 'Audit lost an account record or identity.'
+        $html=Read-FixAccountSnapshot $final
+        Assert-FixAccount ($html.Contains('>Account 01</div>') -and $html.Contains('>Account 02</div>')) 'Final lost an account record.'
+        Assert-FixAccount ($html.Contains('Account Name:</span> '+$nameA) -and $html.Contains('Account Name:</span> '+$nameB)) 'Final lost account identities.'
         $fix=New-ThoroughReportSnapshot -Rows @($row) -DisplayMode Fix -AuditSource $identity
         $cells=@(Get-FixAccountCells (Read-FixAccountSnapshot $fix) $title)
         Assert-FixAccount ($cells.Count -eq 4) 'Mixed account component missing from Fix.'
@@ -230,5 +234,5 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     }
     $bundle=[pscustomobject]@{Version=1;TestOnly=$true;ClientType=$client;ComputerName='SAMPLE-DEVICE';BundleId='OMK-230032';CreatedAt=$identity.GeneratedAt;UpdatedAt=$identity.GeneratedAt;LatestMode='Fix';Reports=$reports}
     [IO.File]::WriteAllText((Join-Path $outputRoot ($client+'-Fix-Account-Preview.html')),(New-ThoroughReportBundleHtml $bundle),$utf8)
-    Write-Output ('PASS: '+$client+' account records filtered independently; unresolved and actual repairs retained; original ordinals, commands/dividers/grouping, escaped identities and conservative history handling; Audit/Final unchanged outside agent footer; observations and repair gate unchanged.')
+    Write-Output ('PASS: '+$client+' account records filtered independently; unresolved and actual repairs retained; original ordinals, commands/dividers/grouping, escaped identities and conservative history handling; Audit values and Final configuration preserved; observations and repair gate unchanged.')
 }

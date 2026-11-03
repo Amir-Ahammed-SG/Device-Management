@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 # Functions and recorded fixtures only; never query or change Windows services.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -44,6 +45,19 @@ foreach($file in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
         foreach($mode in @('Audit','Fix','Final')){
             $snapshot=New-ThoroughReportSnapshot -Rows @($row) -DisplayMode $mode -DeviceType KIOSK -Hostname SAMPLE
             $html=$utf8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
+            if($mode -eq 'Audit'){
+                $componentName=if($row.ItemSub -eq 'Type: Old Payment Service'){'Legacy Payment Services'}else{Get-ThoroughReportComponentName $row.ItemTitle}
+                $auditView=Get-AuditRenderedComponent $html $componentName
+                Assert-Recovery ($auditView.Fields.Setting -notcontains 'Recovery') 'Final recovery summary leaked into Audit.'
+                if($case.Name -ne 'missing-fields'){
+                    $observed=Get-ThoroughReportHighlightFields (Format-ReportState $row.ItemTitle $row.FoundStateHtml)
+                    foreach($label in @('First failure','Second failure','Subsequent failures')){
+                        Assert-Recovery (@($auditView.Fields|Where-Object {$_.Setting -eq $label -and $_.Found -eq $observed[$label]}).Count -eq 1) ('Audit lost detailed recovery observations: '+$case.Name+' / '+$label)
+                    }
+                }else{Assert-Recovery ($auditView.Text -match 'Not verified') 'Audit lost unavailable service evidence.'}
+                [IO.File]::WriteAllText((Join-Path $outputRoot ($file.Replace('.ps1','')+'-'+$mode+'-'+$case.Name+'.html')),$html,$utf8)
+                continue
+            }
             $serviceRow=@([regex]::Matches($html,'(?is)<tr\b[^>]*>.*?</tr>') | Where-Object {$_.Value -match 'class="device-title"'})[0].Value
             $cells=@([regex]::Matches($serviceRow,'(?is)<td\b[^>]*>(.*?)</td>'))
             $finding=$cells[$(if($mode -eq 'Final'){1}elseif($mode -eq 'Fix'){2}else{3})].Groups[1].Value

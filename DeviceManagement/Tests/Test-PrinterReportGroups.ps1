@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 # Render the real finalizer with fixture printers. Never contact printer APIs.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -82,6 +83,18 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
             $expectedApplied=Get-ThoroughReportAppliedHtml -Row $group
             . $render
             $html=[IO.File]::ReadAllText($reportPath)
+            if(-not $isApply){
+                $auditView=Get-AuditRenderedComponent $html 'Printer'
+                Assert-PrinterReport ($auditView.Count -eq 1) 'Audit duplicated the grouped printer component.'
+                Assert-PrinterReport (($auditView.Commands -join "`n") -ceq ($copyCommands -join "`n")) 'Audit copy commands changed.'
+                Assert-PrinterReport ($auditView.Headings.Count -eq $(if($printers.Count -gt 1){$printers.Count}else{0})) 'Audit lost per-printer records.'
+                foreach($printer in @($printers|Where-Object ItemSub -EQ 'Type: Receipt / POS Printer')){
+                    Assert-PrinterReport (@($auditView.Fields|Where-Object {$_.Setting -eq 'Printer Name' -and $_.Found -ceq $printer.ItemTitle}).Count -eq 1) 'An actual printer identity was lost.'
+                }
+                if($case -in @('missing','partial')){Assert-PrinterReport ($auditView.Text -match 'Not verified') 'Missing-printer evidence was hidden.'}
+                if($case -eq 'disabled'){Assert-PrinterReport (@($auditView.Fields|Where-Object {$_.Setting -eq 'Keep printed documents' -and $_.Found -eq 'Disabled' -and $_.Html -match 'finding-mismatch'}).Count -eq 1) 'A failed printer retention value was hidden.'}
+                continue
+            }
             $printerRows=@([regex]::Matches($html,'(?is)<tr\b[^>]*>.*?</tr>') | Where-Object {$_.Value -match '<div class="device-title">Printer</div>'})
             if($isApply -and $case -eq 'single'){
                 Assert-PrinterReport ($printerRows.Count -eq 0 -and $html.Contains('No fixes required.')) 'Healthy unchanged printer was retained in Fix.'

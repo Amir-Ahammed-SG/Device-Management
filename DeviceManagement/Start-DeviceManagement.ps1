@@ -365,8 +365,13 @@ function Update-ThoroughCheckHtmlReport {
             if($property.Name -notin @('Audit','Fix','Final')){throw 'The combined report contains an unsupported mode.'}
             $snapshot=$property.Value;if($null -eq $snapshot){continue};$count++
             if($snapshot.Mode -cne $property.Name -or $snapshot.ReportId -notmatch '^OMK-\d{6}$'){throw 'An embedded report has an invalid identity.'}
+            $metadataCell=if($snapshot.PSObject.Properties['RestaurantId']){'<th>Restaurant ID</th><td>'+[Net.WebUtility]::HtmlEncode([string]$snapshot.RestaurantId)+'</td>'}else{'<th>Report ID</th><td>'+$snapshot.ReportId+'</td>'}
             $document=$encoding.GetString([Convert]::FromBase64String([string]$snapshot.HtmlBase64))
-            if(-not $document.Contains(('<th>Report ID</th><td>'+$snapshot.ReportId+'</td>')) -or $document -notmatch '(?is)<main class="report">.*</main>\s*</body>\s*</html>\s*$'){throw 'An embedded report is incomplete.'}
+            $metadataValid=$document.Contains($metadataCell)
+            if(-not $metadataValid -and $snapshot.PSObject.Properties['RestaurantId']){
+                $metadataValid=$document.Contains('<dt>Restaurant ID</dt><dd>'+[Net.WebUtility]::HtmlEncode([string]$snapshot.RestaurantId)+'</dd>')
+            }
+            if(-not $metadataValid -or $document -notmatch '(?is)<main class="report">.*</main>\s*</body>\s*</html>\s*$'){throw 'An embedded report is incomplete.'}
         }
         if(-not $count){throw 'The combined report contains no completed report snapshots.'}
         return
@@ -379,9 +384,9 @@ function Update-ThoroughCheckHtmlReport {
         $requiredStructure = @(
             '(?is)<!DOCTYPE html>.*<html\b',
             '(?is)<main\s+class=["'']report["'']>',
-            '(?is)<table\s+class=["'']metadata["''][^>]*>.*?</table>',
-            '(?is)<th>Report ID</th>\s*<td>(?:OMK-\d{6}|\d{8})</td>',
-            '(?is)<th>Branch</th>\s*<td>.*?</td>',
+            '(?is)(?:<table\s+class=["'']metadata["''][^>]*>.*?</table>|<dl\s+class=["'']client-details["''][^>]*>.*?</dl>)',
+            '(?is)(?:<dt>Restaurant ID</dt>\s*<dd>[^<]+</dd>|<th>Restaurant ID</th>\s*<td>[^<]+</td>|<th>Report ID</th>\s*<td>(?:OMK-\d{6}|\d{8})</td>)',
+            '(?is)(?:<th>Branch</th>\s*<td>.*?</td>|<dt>Branch</dt>\s*<dd>.*?</dd>)',
             '(?is)<h2>(?:CONFIGURATION CHECK(?: RESULTS)?|CONFIGURATION VERIFICATION)</h2>',
             '(?is)<footer\s+class=["'']report-footer["'']>.*?</footer>',
             '(?is)</main>\s*</body>\s*</html>\s*$'
@@ -563,7 +568,7 @@ while (-not $exitRequested) {
             Show-DeviceManagementHeader -Title 'Select Kiosk Browser' -Breadcrumb ("{0} > {1} > KIOSK Installation" -f $selectedClient.DisplayName, $selectedDevice)
             $browsers = @(
                 [pscustomobject]@{ Id = 'Edge'; DisplayName = 'Microsoft Edge'; Description = '' },
-                [pscustomobject]@{ Id = 'Chrome'; DisplayName = 'Google Chrome'; Description = '' }
+                [pscustomobject]@{ Id = 'Chrome'; DisplayName = 'Google Chrome'; Description = ''; ImplementationState = 'Pending' }
             )
             $selection = Read-NumberedSelection -Items $browsers -AllowBack -AllowExit -Prompt 'Select option'
             if ($selection -eq '__BACK__') { $screen = 'Operation'; break }

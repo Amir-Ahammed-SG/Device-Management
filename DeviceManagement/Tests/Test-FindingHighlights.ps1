@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 # Compare and render fixtures only. Never run a device check or repair.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -231,6 +232,22 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         $expectedHeadings='1. Hardware & Peripherals|2. Kiosk Application & Policies|3. Core Background Services|4. Security, Network & System Integrity'+$(if(-not $isApply){'|5. AppSettings Check'})
         Assert-Highlight (($headings -join '|') -ceq $expectedHeadings) 'Applicable rendered sections are not in the requested numbered order.'
         Assert-Highlight ($html.Contains('#e8f5e9') -and $html.Contains('#fdecec') -and $html.Contains('#fff8e1') -and $html.Contains('#7a5a00') -and $html.Contains('Amber = Not verified;') -and $html -notmatch 'finding-recorded') 'Highlight styling or legend is missing.'
+        if(-not $isApply){
+            $payment=Get-AuditRenderedComponent $html 'Payment Gateway'
+            Assert-Highlight (@($payment.Fields|Where-Object {$_.Setting -eq 'Service State' -and $_.Found -eq 'Stopped' -and $_.Html -match 'finding-mismatch'}).Count -eq 1) 'Audit hid the failed service state.'
+            Assert-Highlight (@($payment.Fields|Where-Object {$_.Setting -eq 'Version' -and $_.Found -eq '9.2.3.4' -and $_.Html -notmatch 'finding-mismatch|finding-unverified'}).Count -eq 1) 'Audit lost the collected service version.'
+            $printer=Get-AuditRenderedComponent $html 'Printer'
+            Assert-Highlight ($printer.Headings.Count -eq 2 -and @($printer.Fields|Where-Object {$_.Setting -eq 'Keep printed documents' -and $_.Found -eq 'Disabled' -and $_.Html -match 'finding-mismatch'}).Count -eq 1) 'Audit lost printer identity or mismatch.'
+            $account=Get-AuditRenderedComponent $html 'KIOSK Account'
+            Assert-Highlight ($account.Headings.Count -eq 2 -and @($account.Fields|Where-Object {$_.Setting -eq 'User Cannot Change Password' -and $_.Found -eq 'Disabled' -and $_.Html -match 'finding-mismatch'}).Count -eq 1) 'Audit lost independent account warnings.'
+            $admin=Get-AuditRenderedComponent $html 'Administrative Accounts'
+            Assert-Highlight (@($admin.Fields|Where-Object {$_.Setting -eq 'Password Never Expires' -and $_.Found -eq 'Not verified' -and $_.Html -match 'finding-unverified'}).Count -eq 1) 'Audit lost the unreadable administrative flag.'
+            $counter=Get-AuditRenderedComponent $html 'Performance Counter'
+            Assert-Highlight (@($counter.Fields|Where-Object {$_.Setting -eq 'Audit' -and $_.Found -eq 'Not executed' -and $_.Html -match 'finding-unverified'}).Count -eq 1 -and $rows[-1].Status -eq 'Bypass') 'Audit counter warning or recorded outcome changed.'
+            $payout=Get-AuditRenderedComponent $html 'Payout Scheduler'
+            Assert-Highlight (@($payout.Fields|Where-Object {$_.Setting -eq 'IsEnabled' -and $_.Found -eq 'False' -and $_.Html -notmatch 'finding-mismatch|finding-unverified'}).Count -eq 1) 'Audit treated a collected False value as missing.'
+            continue
+        }
         foreach($row in [regex]::Matches($html,'(?is)<tr\b[^>]*>.*?</tr>')){
             if($row.Value -notmatch 'class="device-title"'){continue}
             $cells=@([regex]::Matches($row.Value,'(?is)<td\b[^>]*>(.*?)</td>') | ForEach-Object {$_.Groups[1].Value})
