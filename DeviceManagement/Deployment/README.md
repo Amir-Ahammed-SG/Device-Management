@@ -33,6 +33,12 @@ Fix lists unresolved/manual checks and repairs recorded during Apply, omitting
 healthy unchanged components and empty sections. A clean observed state shows
 No fixes required. Audit and Final retain all components.
 
+Fix uses Component, Shortcut / Command, Setting, Findings and Applied. Applied
+contains recorded post-fix property values; pending/read-only values are Not applied
+and unavailable readback is Not verified. Final uses Component, Setting and Status,
+where Status is the latest recorded property value. Both retain the approved column
+colors, thin borders, record grouping and component hover. Repair rules are unchanged.
+
 The CDN serves one self-contained script containing the current project modules,
 configuration and both client check sources. PowerShell loads these resources
 into memory and verifies their embedded checksums before opening the menu.

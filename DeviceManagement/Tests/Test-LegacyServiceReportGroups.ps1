@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 # Functions and synthetic observations only. No device checks or repairs run here.
 $ErrorActionPreference='Stop'
@@ -15,6 +16,7 @@ foreach($file in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     Assert-LegacyReport (-not $errors.Count) 'Client source does not parse.'
     $functions=$ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($functions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
+    Use-SettingLayoutRuleAssertions -SourceName $file
     function New-LegacyFixture([string]$Name,[string]$Status='Offline',[string]$Note='No change needed; verified Stopped / Manual; all recovery actions: Take No Action',[string]$State='Stopped'){
         $recovery=[pscustomobject]@{Verified=$true;First='Take No Action';Second='Take No Action';Subsequent='Take No Action'}
         [pscustomobject]@{SectionNumber=3;SectionTitle='Core Background Services';ItemTitle=($Name+' (Legacy)');ItemSub='Type: Old Payment Service';Shortcut=(New-ReportCommand @('services.msc'));FoundStateHtml=(ConvertTo-ServiceFindingHtml -ServiceState $State -StartupType Manual -Recovery $recovery);Status=$Status;ActionTaken=[Net.WebUtility]::HtmlEncode($Note)}

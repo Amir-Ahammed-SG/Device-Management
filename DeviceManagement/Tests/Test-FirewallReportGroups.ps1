@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 # Fixtures only: do not contact Windows Firewall or change live rules.
 $ErrorActionPreference='Stop'
@@ -12,6 +13,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     Assert-FirewallReport ($errors.Count -eq 0) 'Source parse failed.'
     $definitions=$ast.FindAll({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($definitions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
+    Use-SettingLayoutRuleAssertions -SourceName $sourceName
     . (Join-Path $PSScriptRoot 'ReportRenderTestSupport.ps1')
     function Write-ThoroughConsoleEntry {param($Row,$Number)}
     function Read-AuditReportChoice {return $true}

@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 # Render synthetic account observations only. Never execute device checks.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -29,6 +30,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     Assert-FixAccount ($errors.Count -eq 0) 'Client source failed parsing.'
     $definitions=@($ast.FindAll({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst]},$true))
     . ([scriptblock]::Create(($definitions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
+    Use-SettingLayoutRuleAssertions -SourceName $sourceName
     function Get-LocalUser {throw 'Report fixture queried accounts.'}
     function Get-CimInstance {throw 'Report fixture queried the device.'}
     function Set-LocalUser {throw 'Report fixture changed an account.'}
@@ -83,6 +85,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         $newConfig=[regex]::Match((Read-FixAccountSnapshot $final),$configPattern).Groups[1].Value
         Assert-FixAccount ($oldConfig.Length -gt 0 -and $oldConfig -ceq $newConfig) 'Account Fix filtering changed Final configuration output.'
         . ([scriptblock]::Create(($definitions | Where-Object Name -EQ 'New-ThoroughReportSnapshot').Extent.Text))
+        Use-SettingLayoutRuleAssertions -SourceName $sourceName
         $component=Get-AuditRenderedComponent (Read-FixAccountSnapshot $audit) $title
         $accountNames=@($component.Fields|Where-Object Setting -EQ 'Account Name'|ForEach-Object {$_.Found})
         $legacyCells=@(Get-FixAccountCells (Read-FixAccountSnapshot $oldAudit) $title)

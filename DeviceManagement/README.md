@@ -126,13 +126,21 @@ AppSettings remains a read-only configuration record, including False, zero
 and empty values. Required fields without a corresponding observation use a
 neutral dash rather than an invented finding. Opaque notes remain visible.
 
-Fix retains its existing four-column layout and finding highlights. Final
-retains its neutral layout. Rendering any view never reruns device checks or
-applies configuration changes. New reports use the selected column colors
-directly; the preview appearance controls are not part of production reports.
+Fix uses **Component**, **Shortcut / Command**, **Setting**, **Findings** and
+**Applied**. Final uses **Component**, **Setting** and **Status** in every section,
+including AppSettings. Both share Audit's thin borders, record bands, column
+colors and whole-component hover/focus highlight. In Fix the Findings column is
+light blue and Applied light cream; Final Status is light cream.
+Rendering any view never reruns device checks or applies configuration changes.
+The preview appearance controls are not part of production reports.
 `Tests/Test-AuditColumnLayout.ps1` covers the real renderer for both clients,
 including grouping, aliases, escaping, commands, account-role requirements,
 observation preservation and saved-report round-trips.
+`Tests/Test-FixFinalSettingLayout.ps1` verifies actual new HTML, identity-based
+before/after values, failed readback, missing/ambiguous records and historical
+selection parity. Legacy business-rule fixtures execute both renderers and compare
+current component/property/command selection before asserting the captured older
+presentation; they do not substitute for the direct new-layout checks.
 
 Each client/computer now keeps one self-contained HTML file under Desktop →
 Thorough Check: `Thorough Check Reports - <Client> - <Computer>.html`. The file
@@ -143,8 +151,9 @@ Audit records its actual findings when report generation is selected. It also
 renders the unrun Fix and Final views from those same observations, retaining
 the Audit report ID/time and identifying their Audit source. Fix Findings shows
 only mismatched or unverified fields with the relevant identity and required
-value; healthy values become No change needed. Its Applied column records Not
-Applied for pending items and never claims an Audit performed a repair.
+value (available in the finding tooltip); healthy values are omitted or retain
+their existing context note. Its Applied column records Not applied for pending
+items and never claims an Audit performed a repair.
 Fix omits components that are healthy and unchanged. Failed, skipped, unverified
 or manually actionable components remain, as do repairs recorded during this
 Apply run. Sections with no remaining components are omitted. If observed checks
@@ -152,7 +161,7 @@ need no fixes, the view says No fixes required. Missing observations instead ask
 the operator to run Audit. Audit and Final retain complete configuration data.
 Healthy collected-only AppSettings components are omitted from Fix. Missing,
 empty or unverified configuration is amber and stays visible with
-Expected values are not configured. Please check manually. in Applied.
+Not applied in Applied; the original manual-review instructions remain in its tooltip.
 Within account components, Fix also omits individual healthy unchanged accounts
 and their commands. Unresolved accounts and accounts changed during that Apply
 run retain their original account numbers and matching Findings/Applied blocks.
@@ -183,17 +192,24 @@ exist. Saved actual Fix/Final observations retain precedence over an Audit-deriv
 view. Existing separate report files are preserved.
 
 Audit columns are Component, Shortcut / Command, Setting, Required and
-Findings. Fix columns are Component, Shortcut / Command, Findings and Applied;
-Applied records actual action notes or No change needed. After Apply, Findings
-preserves the saved Audit or pre-fix observations. Final columns are
-Component, Final Configuration and Status. AppSettings only records values:
-Fix shows manual review for missing values and Read Only for collected values;
-Final omits Status. Final remains neutral with
-no green, red or amber findings or status colors.
+Findings. Fix adds Setting between Shortcut / Command and Findings. Findings
+preserves the selected pre-fix observations. Applied shows the corresponding
+recorded post-fix value per setting, with original action notes in its tooltip.
+An unrun Fix or read-only AppSettings field shows Not applied; an unavailable,
+ambiguous or failed readback shows Not verified. No before-state is invented when
+an older or partial run has no baseline: Findings then shows Not recorded.
+Matching uses record identity and property name, rather than sibling positions.
+
+Final columns are Component, Setting and Status. Status contains the latest
+recorded value of that property, such as Idle, Enabled, a path, zero or False.
+It does not display a component Pass/Fail badge. Audit-derived Final shows the
+Audit observations; Apply updates it from the actual recorded readback.
+Unverified and Not detected values remain explicit. Existing internal check
+outcomes, account policies, repair eligibility and Fix filters are unchanged.
 
 Final is available and printable after Audit, and Apply updates it from actual
 post-fix readback. There is no separate Final option in the terminal menu.
-Unverified/skipped observations remain Fail; generating a view does not perform
+Unverified/skipped internal outcomes remain unchanged; generating a view does not perform
 checks or repairs. The legacy explicit `-FinalReport` switch remains compatible
 for existing callers but is not needed for this reporting flow.
 
@@ -244,8 +260,8 @@ headers. HTML uses Client Details above metadata and Configuration Check
 above component tables. The report title sits above a divider; the HTML header
 omits SELISE and IT OPERATIONS branding. Audit columns are Component, Shortcut /
 Command, Setting, Required and Findings. Fix uses Component, Shortcut / Command,
-Findings and Applied. Final uses Component, Final Configuration and Status;
-AppSettings Final omits Status because it records values. Collection failures remain visible
+Setting, Findings and Applied. Final uses Component, Setting and Status for
+all sections. Collection failures remain visible
 in Findings and retain their internal outcome. Skipped/unverified checks map to Fail; verified
 expected stopped legacy services map to Pass. The original recorded status is
 retained in the status tooltip. Component contains only the check name.

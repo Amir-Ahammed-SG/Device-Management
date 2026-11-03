@@ -89,14 +89,9 @@ foreach($client in @('SaaS','Subway')){
         $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
         [IO.File]::WriteAllText((Join-Path $previewRoot ($client+'-'+$mode+'.html')),$html,[Text.UTF8Encoding]::new($false))
         if($mode -ne 'Audit'){
-            if($beforeRenderer){
-                $old=& $beforeRenderer @parameters -DisplayMode $mode
-                $configPattern='(?is)<h2>CONFIGURATION CHECK</h2>(.*?)<p class="legend">'
-                $currentBody=[regex]::Match($html,$configPattern).Groups[1].Value
-                $oldBody=[regex]::Match([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($old.HtmlBase64)),$configPattern).Groups[1].Value
-                Assert-AuditColumns ($currentBody -ceq $oldBody) ($mode+' configuration changed while implementing the header.')
-            }
-            Assert-AuditColumns (-not $html.Contains('class="audit-setting"')) ($mode+' inherited the Audit layout.')
+            $expected=if($mode -eq 'Fix'){'<th scope="col">Setting</th><th scope="col">Findings</th><th scope="col">Applied</th>'}else{'<th scope="col">Component</th><th scope="col">Setting</th><th scope="col">Status</th>'}
+            Assert-AuditColumns ($html.Contains($expected) -and $html.Contains('setting-report')) ($mode+' is missing the approved setting layout.')
+            Assert-AuditColumns (-not $html.Contains('class="audit-setting"')) ($mode+' inherited Audit requirement cells.')
             continue
         }
         Assert-AuditColumns ($html.Contains('<th scope="col">Setting</th><th scope="col">Required</th><th scope="col">Findings</th>')) 'Audit has incorrect columns.'
@@ -131,21 +126,11 @@ foreach($client in @('SaaS','Subway')){
         $notes=@(Read-AuditComponent $html 'Opaque evidence')
         Assert-AuditColumns ((($notes|ForEach-Object {$_.InnerText}) -join '').Contains('Read failed & access denied') -and (($notes|ForEach-Object {$_.InnerText}) -join '').Contains('Retry manually.')) 'Unstructured evidence was dropped.'
     }
-    if($beforeRenderer){
-        foreach($mode in @('Fix','Final')){
-            $post=New-ThoroughReportSnapshot @parameters -DisplayMode $mode -AfterApply $true -BeforeRows $rows.ToArray()
-            $oldPost=& $beforeRenderer @parameters -DisplayMode $mode -AfterApply $true -BeforeRows $rows.ToArray()
-            $configPattern='(?is)<h2>CONFIGURATION CHECK</h2>(.*?)<p class="legend">'
-            $postBody=[regex]::Match([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($post.HtmlBase64)),$configPattern).Groups[1].Value
-            $oldPostBody=[regex]::Match([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($oldPost.HtmlBase64)),$configPattern).Groups[1].Value
-            Assert-AuditColumns ($postBody -ceq $oldPostBody) ('Post-Apply '+$mode+' configuration changed while implementing the header.')
-        }
-    }
     Assert-AuditColumns (($rows.ToArray() | ConvertTo-Json -Depth 18 -Compress) -ceq $before) 'Audit presentation changed raw observations.'
     $state=[pscustomobject]@{Version=1;ClientType=$client;ComputerName='FIXTURE-PC';BundleId='OMK-123456';LatestMode='Audit';Reports=[pscustomobject]$reports}
     $bundle=New-ThoroughReportBundleHtml $state
     $saved=Read-ThoroughReportBundleState $bundle
     Assert-AuditColumns ($saved.Reports.Audit.HtmlBase64 -ceq $reports.Audit.HtmlBase64) 'Saved Audit did not round-trip.'
     [IO.File]::WriteAllText((Join-Path $previewRoot ($client+'-Combined.html')),$bundle,[Text.UTF8Encoding]::new($false))
-    Write-Output ('PASS: '+$client+' five Audit columns, grouping, source values/commands, role-specific requirements, safe warnings, unchanged observations and Fix/Final output.')
+    Write-Output ('PASS: '+$client+' five Audit columns, grouping, source values/commands, role-specific requirements, safe warnings, unchanged observations and shared Fix/Final theme.')
 }

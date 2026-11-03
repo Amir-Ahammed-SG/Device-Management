@@ -85,9 +85,9 @@ One HTML file contains all three views:
 
 | Tab | What it shows |
 | --- | --- |
-| **Audit** | Required Configuration and the observations saved during Audit. |
-| **Fix** | Original problems in Findings; actual repair outcomes in Applied. Healthy, unchanged components are omitted. |
-| **Final** | Final Configuration and Status, using Audit observations initially and verified post-fix observations after Apply. |
+| **Audit** | Component, Shortcut / Command, Setting, Required and Findings. |
+| **Fix** | Component, Shortcut / Command, Setting, Findings and Applied. Findings preserves pre-fix values; Applied shows recorded post-fix values. Healthy, unchanged components are omitted. |
+| **Final** | Component, Setting and Status. Status is each setting's latest recorded value, using Audit observations initially and verified readback after Apply; it is not a component Pass/Fail badge. |
 
 Within an account component, Fix shows only accounts requiring attention or changed during that Apply run, with their corresponding commands. Healthy unchanged accounts are omitted; Audit and Final retain all accounts. Original account numbers are preserved, so a filtered Fix view may show Account 02 without Account 01.
 
@@ -95,9 +95,9 @@ Apply updates **Fix** and **Final** and preserves the saved Audit. There is no s
 
 Fix Findings retain the saved Audit observations. When no Audit exists, Apply captures the current configuration read-only before repairs. Successful repairs and failed readbacks update Applied and Final; they do not replace the original problem in Findings.
 
-Account repairs update only **Password Never Expires** and **User Cannot Change Password** when needed, followed by readback. Existing account names, passwords, privilege and active/disabled status are preserved. Disabled accounts retain the existing manual-review behavior.
+Standard kiosk account repairs update **Password Never Expires** and **User Cannot Change Password** when needed, followed by readback. Administrative accounts keep non-expiring passwords and allow password changes under the existing policy. Existing account names, passwords, privilege and active/disabled status are preserved. Disabled accounts retain the existing manual-review behavior.
 
-AppSettings is a collection of values. Present values, including `False` and `0`, are green in Audit/Fix; missing, empty or unverified values are amber. Incomplete components show **Expected values are not configured. Please check manually.** in Applied. The JSON files are not edited.
+AppSettings is a read-only collection of values. Present values, including `False` and `0`, remain visible without green fill; unavailable values remain explicit. Fix shows **Not applied** in Applied, with the original manual-review details in the tooltip. Final Status contains the recorded property values. The JSON files are not edited.
 
 Check each tab's **Generated Time** and source note. If a file already contains actual Fix/Final results, a later Audit preserves those earlier results while updating Audit. Do not assume every tab was generated together. The report file is updated across runs; copy it before another run if you need a historical record.
 
@@ -105,17 +105,26 @@ Check each tab's **Generated Time** and source note. If a file already contains 
 
 ### Reading colors and action notes
 
-Audit and Fix use:
+All tabs use the same thin borders, record bands and component hover highlight.
+Setting has a light gray background; Required (Audit) or Findings (Fix) is light
+blue; Findings (Audit), Applied (Fix) and Status (Final) are light cream.
 
-| Appearance | Meaning |
+| Value appearance | Meaning |
 | --- | --- |
-| Light green | A matched requirement or information successfully collected. |
+| Plain | A matched requirement, collected information or context. |
 | Light red | A mismatch or missing information. |
-| Light amber (`#FFF8E1`) | Not verified or manual action required. |
+| Amber (`#FFE3A0`) | Not verified; the actual warning text remains visible. |
 
-The Final tab uses no result colors. Read its **Status** and configuration values.
+**Applied** shows the recorded post-fix value of each setting. An unrun fix or
+read-only field shows **Not applied**; missing, failed or ambiguous readback
+shows **Not verified**. Original action details are available by hovering the
+Applied value. If an older/partial run has no pre-fix baseline, Findings shows
+**Not recorded** instead of guessing the old value.
 
-**Applied** records the action outcome, such as **Completed**, **Not Applied**, **Manual Action Required**, **Not Verified** or **Read Only**. Some failed or unverified items need manual work even after Apply. **AppSettings Check** records values only and has no Pass/Fail status; a green collected value does not certify that the business configuration is correct.
+**Final Status** shows values such as **Idle**, **Enabled**, paths, `False` or `0`.
+A failed readback stays **Not verified**. These views do not rerun checks or
+change repair rules. Collected AppSettings values do not certify that the
+business configuration is correct.
 
 ## 6. Print the Final report
 

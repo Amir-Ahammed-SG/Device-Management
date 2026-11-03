@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 # Render the real finalizer with fixture printers. Never contact printer APIs.
 $ErrorActionPreference='Stop'
@@ -13,6 +14,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     Assert-PrinterReport ($errors.Count -eq 0) 'Client source parse failed.'
     $functions=$ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($functions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
+    Use-SettingLayoutRuleAssertions -SourceName $sourceName
     . (Join-Path $PSScriptRoot 'ReportRenderTestSupport.ps1')
     $finalizer=$ast.FindAll({param($node) $node -is [Management.Automation.Language.TryStatementAst] -and $node.Finally -and $node.Finally.Extent.Text -match 'Writing HTML report'},$true) | Select-Object -Last 1
     $render=[scriptblock]::Create(($finalizer.Finally.Statements | ForEach-Object {$_.Extent.Text}) -join "`r`n")

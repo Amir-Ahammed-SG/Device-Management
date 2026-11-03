@@ -9,6 +9,7 @@ $fixtureRoot=Join-Path $output ('fixtures-'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($fixtureRoot)
 $utf8=[Text.UTF8Encoding]::new($false)
 . (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
+. (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 function Assert-Approved {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
 function Decode-Approved {param($Snapshot) [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Snapshot.HtmlBase64))}
 function Cells-Approved {
@@ -23,6 +24,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     Assert-Approved ($errors.Count -eq 0) 'Client parse failed'
     $definitions=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true))
     . ([scriptblock]::Create(($definitions|ForEach-Object {$_.Extent.Text}) -join [Environment]::NewLine))
+    Use-SettingLayoutRuleAssertions -SourceName $sourceName
     $client=if($sourceName -like 'Subway*'){'Subway'}else{'SaaS'}
     $script:fixtureClient=$client
     $script:root=Join-Path $fixtureRoot $client

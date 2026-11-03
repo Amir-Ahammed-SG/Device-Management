@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 # Read definitions and render fixtures only. Never execute device checks.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -90,25 +91,23 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     $html=[IO.File]::ReadAllText($reportPath)
     Assert-Final ($html.Contains('<h1>THOROUGH CHECK REPORT</h1>')) 'Final title is incorrect.'
     Assert-Final ($html -match '<th>Restaurant ID</th><td>Not detected</td>' -and $html -notmatch '<th>Required Configuration</th>|<th>Findings</th>') 'Final metadata or columns are incorrect.'
-    Assert-Final ($html -notmatch 'class="finding-value finding-|#(?:e8f5e9|fdecec|fff8e1)|Green =|Red =|Amber =') 'Final retains comparison colors or their legend.'
-    Assert-Final ($html.Contains('Ports:</span> 5009') -and -not $html.Contains('<th>Shortcut / Command</th>') -and -not $html.Contains('class="command-copy"')) 'Final lost its check target or retained the removed command column.'
-    $tables=@([regex]::Matches($html,'(?is)<table class="checks"[^>]*>.*?</table>'))
-    foreach($table in $tables){
-        $app=$table.Value.Contains('aria-label="AppSettings Check"')
-        Assert-Final ($table.Value.Contains('<th>Status</th>') -ne $app) 'AppSettings has Status or verification lacks it.'
-        $headers='<th>Component</th><th>Final Configuration</th>'+$(if(-not $app){'<th>Status</th>'})
-        Assert-Final ($table.Value.Contains($headers)) 'Final column order is incorrect.'
-        foreach($r in [regex]::Matches([regex]::Match($table.Value,'(?is)<tbody>(.*?)</tbody>').Groups[1].Value,'(?is)<tr.*?</tr>')){Assert-Final ([regex]::Matches($r.Value,'<td>').Count -eq $(if($app){2}else{3})) 'Final row has the wrong cell count.'}
+    Assert-Final ($html.Contains('final-report setting-report') -and $html.Contains('background:#fffbf0')) 'Final is missing the approved column theme.'
+    Assert-Final (-not $html.Contains('class="command-copy"') -and $html -notmatch '<span class="badge') 'Final contains command boxes or Pass/Fail badges.'
+    $firewall=Get-SettingRenderedComponent $html 'Firewall Inbound Port'
+    Assert-Final (@($firewall.Fields|Where-Object {$_.Setting -eq 'Ports' -and $_.Value -eq '5009'}).Count -eq 1) 'Final lost its actual firewall target.'
+    foreach($table in [regex]::Matches($html,'(?is)<table class="checks"[^>]*>.*?</table>')){
+        Assert-Final ($table.Value.Contains('<th scope="col">Component</th><th scope="col">Setting</th><th scope="col">Status</th>') -and [regex]::Matches($table.Value,'<col\b').Count -eq 3) 'Final columns are incorrect, including AppSettings.'
     }
-    $legacyRow=[regex]::Match($html,'(?s)<tr><td><div class="device-title">Legacy Payment Services</div>.*?</tr>').Value
-    Assert-Final ($html -match 'Recorded result: Bypass">Fail</span>' -and $legacyRow -match 'Recorded result: Pass">Pass</span>') 'Skipped or expected stopped checks were misreported.'
-    Assert-Final ($html.Contains('Not executed (read-only verification)') -and -not $html.Contains('<span class="kv-label">Audit:</span>')) 'Final counter observation is labelled as an Audit report.'
-    Assert-Final ($html -match 'Account Missing. Please create manually.' -and $html -match 'Recorded result: Fail">Fail</span>') 'Missing account became Pass.'
+    $counter=Get-SettingRenderedComponent $html 'Performance Counter'
+    Assert-Final (@($counter.Fields|Where-Object {$_.Setting -eq 'Rebuild State' -and $_.Value -eq 'Not executed (read-only verification)'}).Count -eq 1) 'Final counter state was inferred from an earlier Apply.'
+    Assert-Final ((Get-SettingRenderedComponent $html 'KIOSK Account').Text -match 'Account Missing. Please create manually.') 'Final hid a missing account.'
+    $legacyView=Get-SettingRenderedComponent $html 'Legacy Payment Services'
+    Assert-Final ($legacyView.Text -match 'Stopped' -and $legacyView.Html -notmatch 'class="badge') 'Final replaced observed legacy values with a verification badge.'
     $finalPath=Get-KioskReportPath -Folder $previewRoot -Client '..\Branch' -Computer 'HOST' -IsApply $false -IsFinal $true -RunId $runId
     Assert-Final ((Split-Path $finalPath -Parent) -eq $previewRoot -and (Split-Path $finalPath -Leaf) -like 'Thorough Check Reports -*') 'Final filename escaped its directory or used the Audit prefix.'
     $applyPath=Get-KioskReportPath -Folder $previewRoot -Client '..\Branch' -Computer HOST -IsApply $true -RunId $runId
     Assert-Final ($applyPath -ceq $finalPath) 'Modes no longer use the same combined report path.'
-    Write-Output ('PASS: '+$client+' Final is read-only, saves neutral current values, preserves failed/skipped/legacy outcomes, and omits command boxes.')
+    Write-Output ('PASS: '+$client+' Final is read-only, saves per-setting current values, preserves failed/skipped/legacy outcomes, and omits command boxes.')
     $FinalReport=$false;$script:ApplyChanges=$false;$reportPath=Join-Path $previewRoot ($client+'-Declined-'+[guid]::NewGuid().ToString('N')+'.html')
     . $render
     Assert-Final (-not $generateReport -and -not (Test-Path -LiteralPath $reportPath)) 'Audit report decline changed.'

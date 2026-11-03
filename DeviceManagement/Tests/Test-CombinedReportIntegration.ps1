@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 # Run only definitions and the actual report finalizer. Never run device-check bodies.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -53,10 +54,10 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
             $finalHtml=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($state.Reports.Final.HtmlBase64))
             if($mode -eq 'Fix'){
                 $fixSnapshot=$state.Reports.Fix.HtmlBase64
-                Assert-Combined ($state.Reports.Final.Origin -eq 'Apply Fix readback' -and $finalHtml.Contains('actual post-fix configuration observed during Apply Fix') -and $finalHtml.Contains('Rebuild State:</span> Exit code: 0')) 'Apply did not generate Final from its actual post-fix observations.'
+                Assert-Combined ($state.Reports.Final.Origin -eq 'Apply Fix readback' -and $finalHtml.Contains('actual post-fix configuration observed during Apply Fix') -and @((Get-SettingRenderedComponent $finalHtml 'Performance Counter').Fields|Where-Object {$_.Setting -eq 'Rebuild State' -and $_.Value -eq 'Exit code: 0'}).Count -eq 1) 'Apply did not generate Final from its actual post-fix observations.'
             }else{
                 Assert-Combined ($state.Reports.Fix.HtmlBase64 -ceq $fixSnapshot) 'Read-only Final changed the saved Fix.'
-                Assert-Combined ($state.Reports.Final.Origin -eq 'Read-only verification' -and $finalHtml.Contains('Not executed (read-only verification)') -and $finalHtml.Contains('Recorded result: Bypass">Fail</span>')) 'Fresh Final reused an old rebuild Pass or ran a repair.'
+                Assert-Combined ($state.Reports.Final.Origin -eq 'Read-only verification' -and $finalHtml.Contains('Not executed (read-only verification)') -and ($finalHtml -notmatch '<span class="badge')) 'Fresh Final reused an old rebuild Pass or ran a repair.'
             }
         }
         $hash=(Get-FileHash -LiteralPath $reportPath -Algorithm SHA256).Hash

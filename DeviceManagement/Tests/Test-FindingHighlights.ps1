@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 # Compare and render fixtures only. Never run a device check or repair.
 $ErrorActionPreference='Stop'
@@ -105,6 +106,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     }
     $definitions=$ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($definitions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
+    Use-SettingLayoutRuleAssertions -SourceName $sourceName
     . (Join-Path $PSScriptRoot 'ReportRenderTestSupport.ps1')
     $formatters=@($definitions | Where-Object {$_.Name -in @('Get-ThoroughReportHighlightFields','Get-ThoroughReportCollectedValueState','Get-ThoroughReportFindingComparison','Format-ThoroughReportFindingHighlights','Test-ThoroughHostname')})
     foreach($formatter in $formatters){

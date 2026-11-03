@@ -101,7 +101,7 @@ foreach($file in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
  $clearRow=[pscustomobject]@{SectionNumber=4;SectionTitle='Security';ItemTitle='Administrative Accounts';ItemSub='Verified configuration';Shortcut='';FoundStateHtml=$cleared.StateHtml;Status=$cleared.Status;ActionTaken=$cleared.Action;AccountResults=$cleared.AccountResults}
  $clearSnapshot=New-ThoroughReportSnapshot -Rows @($clearRow) -DisplayMode Fix -AfterApply $true -Hostname 'TEST-HOST'
  $clearHtml=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($clearSnapshot.HtmlBase64))
- Assert-AdminPolicy ($clearHtml.Contains('Allowed password changes') -and $clearHtml.Contains('>Completed</strong>')) 'Completed permission cleanup was missing or unverified in the Fix report.'
+ Assert-AdminPolicy ($clearHtml.Contains('Allowed password changes') -and $clearHtml.Contains('class="setting-current"')) 'Completed permission cleanup was missing or unverified in the Fix report.'
  $standardRecord=$kiosk | Select-Object *
  $standardRecord.Action='Requested password settings are enabled; no changes needed';$standardRecord.AccountPolicyChanged=$false
  $adminRecord=$shared | Select-Object *

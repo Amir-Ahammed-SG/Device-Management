@@ -1,3 +1,4 @@
+. (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 # Real renderer and report persistence, disposable data only. No device checks.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -10,6 +11,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $name),[ref]$tokens,[ref]$errors)
     Assert-AuditView ($errors.Count -eq 0) 'Source failed parsing.'
     . ([scriptblock]::Create((($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | ForEach-Object {$_.Extent.Text}) -join "`r`n")))
+    Use-SettingLayoutRuleAssertions -SourceName $name
     $client=if($name -like 'Subway*'){'Subway'}else{'SaaS'}
     $path=Join-Path $fixtureRoot ($client+'.html')
     function Set-Service {throw 'Report attempted a service mutation.'}

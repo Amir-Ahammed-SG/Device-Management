@@ -715,6 +715,158 @@ function Get-ThoroughAuditHoverScript {
 '@
 }
 
+function Get-ThoroughSettingRecords {
+    param([AllowEmptyString()][string]$Html)
+    # The existing Fix filter has already selected the records and properties.
+    # Required hints remain available through comparison/action tooltips.
+    $html=[regex]::Replace($Html,'(?is)(<div class="finding-value[^"\r\n]*" title=")([^"\r\n]*)(">(?:(?!</?div\b).)*</div>)<div class="fix-required">(?<Required>.*?)</div>',[Text.RegularExpressions.MatchEvaluator]{
+        param($match)
+        $match.Groups[1].Value+$match.Groups[2].Value+'; '+[Net.WebUtility]::HtmlEncode([Net.WebUtility]::HtmlDecode($match.Groups['Required'].Value))+$match.Groups[3].Value
+    })
+    $html=[regex]::Replace($html,'(?is)<div class="fix-required">.*?</div>','')
+    # Legacy Fix fragments can leave an outer stack div open after filtering.
+    # Browsers close it at the cell boundary; close that wrapper for XML parsing.
+    $unclosed=[regex]::Matches($html,'(?i)<div(?:\s[^>]*)?>').Count-[regex]::Matches($html,'(?i)</div\s*>').Count
+    if($unclosed -gt 0){$html+=('</div>'*$unclosed)}
+    $records=[Collections.Generic.List[object]]::new()
+    $current=[pscustomobject]@{Heading=$null;Group='';Record='';Fields=[Collections.Generic.List[object]]::new();Identity=$null;Key=''}
+    foreach($entry in @(Read-ThoroughAuditFields $html)){
+        if($entry.Kind -in @('Group','Record')){
+            if($current.Heading -or $current.Fields.Count){$records.Add($current)}
+            $current=[pscustomobject]@{Heading=$entry;Group=$entry.Group;Record=$entry.Record;Fields=[Collections.Generic.List[object]]::new();Identity=$null;Key=''}
+        }else{$current.Fields.Add($entry)}
+    }
+    if($current.Heading -or $current.Fields.Count){$records.Add($current)}
+    foreach($record in $records){
+        foreach($label in @('Account Name','Printer Name','Service Name','Task Name','Terminal ID','TerminalId','POS ID','PosId','Ports')){
+            $identity=@($record.Fields|Where-Object {$_.Kind -eq 'Field' -and $_.Label -ieq $label -and -not [string]::IsNullOrWhiteSpace($_.Text) -and $_.Text -notmatch '(?i)^(?:not verified|not detected|unknown|missing|not found)'})
+            if($identity.Count -eq 1){$record.Identity=$identity[0];break}
+        }
+        $key=if($record.Identity){$record.Identity.Label+[char]31+$record.Identity.Text}else{$record.Record}
+        $record.Key=$record.Group+[char]31+$key
+    }
+    $records.ToArray()
+}
+
+function ConvertTo-ThoroughSettingValue {
+    param([AllowEmptyString()][string]$Html,[string]$State,[string]$Description)
+    $plain=Convert-ReportHtmlToTerminalText $Html
+    if($plain -match '(?i)\bnot\s+verified\b|^(?:not detected|not recorded|not applied|unknown|unavailable|not executed)(?:[.\s(]|$)'){$State='unverified'}
+    $class=if($State -in @('mismatch','unverified')){' finding-'+$State}else{''}
+    $title=if($Description){' title="'+[Net.WebUtility]::HtmlEncode($Description)+'"'}else{''}
+    '<span class="setting-observed'+$class+'"'+$title+'>'+$Html+'</span>'
+}
+
+function ConvertTo-ThoroughSettingRows {
+    param($Row,[ValidateSet('Fix','Final')][string]$Mode,[string]$ComponentHtml,[string]$CommandHtml,
+        [string]$FindingsHtml,[string]$CurrentHtml,[string]$AppliedHtml,[bool]$AfterApply=$false,[bool]$HasBeforeRow=$false)
+    $records=@(Get-ThoroughSettingRecords $FindingsHtml)
+    $currentRecords=@(Get-ThoroughSettingRecords $CurrentHtml)
+    $noBaseline=$Mode -eq 'Fix' -and $AfterApply -and -not $HasBeforeRow
+    # A retained repair may have only an old generic no-change summary. Show the
+    # recorded post-fix properties without inventing their missing pre-fix values.
+    if($noBaseline -and $FindingsHtml -match 'class="fix-no-change"' -and -not @($records.Fields|Where-Object Kind -EQ 'Field').Count){$records=$currentRecords}
+    $specs=[Collections.Generic.List[object]]::new()
+    foreach($record in $records){
+        if($record.Heading){
+            $heading=$record.Heading.Html
+            if($record.Heading.Kind -eq 'Record' -and $record.Identity -and $record.Identity.Label -in @('Account Name','Printer Name') -and $record.Heading.Text -match '^(?:Account|Printer)\s+\d+$'){
+                $heading='<div class="config-item-title">'+[Net.WebUtility]::HtmlEncode($record.Heading.Text+' - '+$record.Identity.Text)+'</div>'
+            }
+            $specs.Add([pscustomobject]@{Kind='Heading';Html=$heading})
+        }
+        $matches=@($currentRecords|Where-Object {$_.Key -ieq $record.Key -and $_.Fields.Count})
+        $post=if($matches.Count -eq 1){$matches[0]}else{$null}
+        $note=if($Mode -eq 'Final'){Convert-ReportHtmlToTerminalText ([string]$Row.ActionTaken)}else{Convert-ReportHtmlToTerminalText $AppliedHtml}
+        $trusted=$AfterApply -and $null -ne $post
+        $readOnly=$Row.SectionTitle -eq 'AppSettings Check'
+        if($AfterApply){
+            if($record.Identity -and $record.Identity.Label -eq 'Account Name'){
+                $own=@();if($Row.PSObject.Properties['AccountResults']){$own=@($Row.AccountResults|Where-Object {$_.AccountName -ieq $record.Identity.Text})}
+                if($own.Count -ne 1 -or [string]::IsNullOrWhiteSpace([string]$own[0].Status) -or $own[0].Status -in @('Unknown','Bypass')){$trusted=$false}
+                else{
+                    $note=[string]$own[0].Action
+                    if($own[0].Status -notin @('Pass','Online','Remediated') -and $note -match '(?i)reject|exception|could not|failed|not verified'){$trusted=$false}
+                }
+            }elseif($Row.ItemTitle -match '^(?:KIOSK Account|Local Account:|Administrative Account|SELISE Local Accounts)'){$trusted=$false}
+            elseif($Row.PSObject.Properties['LegacyServiceRows']){
+                $own=@($Row.LegacyServiceRows|Where-Object {([regex]::Replace([string]$_.ItemTitle,'\s+\(Legacy\)$','')) -ieq $record.Record})
+                if($own.Count -eq 1){$note=Convert-ReportHtmlToTerminalText ([string]$own[0].ActionTaken)}else{$trusted=$false}
+            }elseif($record.Identity -and $record.Identity.Label -eq 'Printer Name'){
+                # Grouped printer notes are prefixed with the exact printer name.
+                # Read only this device's note; a sibling failure is not its result.
+                $names=@($currentRecords|Where-Object {$_.Identity -and $_.Identity.Label -eq 'Printer Name'}|ForEach-Object {[regex]::Escape($_.Identity.Text)})
+                $raw=Convert-ReportHtmlToTerminalText ([string]$Row.ActionTaken)
+                $markers=@([regex]::Matches($raw,'(?<Name>' + ($names -join '|') + '):\s*'))
+                $own=@(for($i=0;$i -lt $markers.Count;$i++){if($markers[$i].Groups['Name'].Value -ieq $record.Identity.Text){$i}})
+                if($own.Count -eq 1){
+                    $start=$markers[$own[0]].Index+$markers[$own[0]].Length
+                    $end=if($own[0]+1 -lt $markers.Count){$markers[$own[0]+1].Index}else{$raw.Length}
+                    $note=$raw.Substring($start,$end-$start).Trim(' ',';')
+                }elseif($currentRecords.Count -gt 1){$trusted=$false}
+            }
+            if([string]::IsNullOrWhiteSpace($note) -or $note -match '(?i)\breadback\b[^.;]*(?:fail|could not|not verified|unavailable)|(?:fail|could not)[^.;]*\breadback\b|\bnot reverified\b|account-specific results are unavailable'){$trusted=$false}
+        }
+        $seen=@{}
+        foreach($field in $record.Fields){
+            $label=[string]$field.Label
+            $ordinal=if($seen.ContainsKey($label)){[int]$seen[$label]}else{0};$seen[$label]=$ordinal+1
+            $beforeHtml=if($noBaseline){'Not recorded'}else{$field.Html}
+            $before=ConvertTo-ThoroughSettingValue -Html $beforeHtml -State $field.State -Description $field.Description
+            if($Mode -eq 'Final'){
+                $identityField=$field.Label -in @('Account Name','Printer Name','Service Name','Task Name','Ports')
+                if($AfterApply -and -not $trusted -and -not $readOnly -and $field.Kind -eq 'Field' -and -not $identityField){
+                    $value=ConvertTo-ThoroughSettingValue -Html 'Not verified' -State unverified -Description $note
+                }else{$value=ConvertTo-ThoroughSettingValue -Html $field.Html -State $field.State -Description $field.Description}
+            }else{
+                $afterHtml='Not verified';$afterState='unverified'
+                if($AfterApply -and $field.Kind -eq 'Text' -and $field.Html -match 'class="fix-no-change"'){$afterHtml='&#8212;';$afterState=''}
+                elseif(-not $AfterApply -or $readOnly){$afterHtml='Not applied'}
+                elseif($trusted){
+                    $postLabel=if($Row.ItemTitle -eq 'lodctr /R Performance Counter' -and $label -eq 'Audit'){'Rebuild State'}else{$label}
+                    $candidates=@($post.Fields|Where-Object {$_.Kind -eq $field.Kind -and $_.Label -ieq $postLabel})
+                    $beforeCount=@($record.Fields|Where-Object {$_.Kind -eq $field.Kind -and $_.Label -ieq $label}).Count
+                    # Duplicate property names retain their occurrence only when
+                    # both records contain the same number. Never guess a match.
+                    if($candidates.Count -eq $beforeCount -and $ordinal -lt $candidates.Count){$afterHtml=$candidates[$ordinal].Html;$afterState=$candidates[$ordinal].State}
+                }
+                $value=ConvertTo-ThoroughSettingValue -Html $afterHtml -State $afterState -Description $note
+            }
+            $displayLabel=if($Row.ItemTitle -eq 'lodctr /R Performance Counter' -and $label -eq 'Audit'){'Rebuild State'}else{$label}
+            $specs.Add([pscustomobject]@{Kind='Value';Label=$displayLabel;Before=$before;Value=$value})
+        }
+    }
+    if(-not $specs.Count){$specs.Add([pscustomobject]@{Kind='Value';Label='Details';Before='Not recorded';Value=(ConvertTo-ThoroughSettingValue 'Not verified' 'unverified' '')})}
+    for($index=0;$index -lt $specs.Count;$index++){
+        $entry=$specs[$index]
+        $identity=if($index -eq 0){'<td class="setting-component" rowspan="'+$specs.Count+'">'+$ComponentHtml+'</td>'+$(if($Mode -eq 'Fix'){'<td class="setting-commands" rowspan="'+$specs.Count+'">'+$CommandHtml+'</td>'})}else{''}
+        if($entry.Kind -eq 'Heading'){
+            $span=if($Mode -eq 'Fix'){3}else{2}
+            '<tr class="setting-record-row">'+$identity+'<td class="setting-record-heading" colspan="'+$span+'">'+$entry.Html+'</td></tr>'
+        }else{
+            $before=if($Mode -eq 'Fix'){'<td class="setting-before">'+$entry.Before+'</td>'}else{''}
+            '<tr class="setting-value-row">'+$identity+'<td class="setting-label">'+[Net.WebUtility]::HtmlEncode($entry.Label)+'</td>'+$before+'<td class="setting-current">'+$entry.Value+'</td></tr>'
+        }
+    }
+}
+
+function Get-ThoroughSettingColumnStyle {
+    $style=(Get-ThoroughAuditColumnStyle).Replace('audit-report','setting-report').Replace('audit-setting','setting-label').Replace('audit-required','setting-before').Replace('audit-findings','setting-current').Replace('audit-','setting-')
+    $style+"`n"+@'
+    .setting-report .setting-value-row td { border-top-color:#e4e7eb; border-bottom-color:#e4e7eb; }
+    .fix-report .checks thead tr:last-child th:nth-child(4) { background:#dfeaf7; }
+    .fix-report .checks thead tr:last-child th:nth-child(5),
+    .final-report .checks thead tr:last-child th:nth-child(3) { background:#f7efd8; }
+    .final-report .checks thead tr:last-child th:nth-child(2) { background:#e9ecf0; }
+    @media screen { .final-report .checks { min-width:600px; } }
+'@
+}
+
+function Get-ThoroughSettingHoverScript {
+    (Get-ThoroughAuditHoverScript).Replace('audit','setting')
+}
+
+
 function New-ThoroughReportSnapshot {
     param([Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Rows,
         [Parameter(Mandatory=$true)][ValidateSet('Audit','Fix','Final')][string]$DisplayMode,
@@ -837,7 +989,6 @@ if($isApplyReport -and $AfterApply -and $BeforeRows.Count){
 }
 $groupedSections = $reportRows | Group-Object SectionNumber | Sort-Object { [int]$_.Name }
 $htmlSections = foreach ($group in $groupedSections) {
-    $sectionHasStatus=$isFinalReport -and $group.Group[0].SectionTitle -ne 'AppSettings Check'
     $secName = [Net.WebUtility]::HtmlEncode($group.Group[0].SectionTitle)
     $secNum = [Net.WebUtility]::HtmlEncode($group.Name)
     $tableRows = foreach ($row in $group.Group) {
@@ -856,12 +1007,7 @@ $htmlSections = foreach ($group in $groupedSections) {
         if($isFinalReport){$stateHtml=Format-ThoroughFinalServiceRecovery -Row $row -Html $stateHtml}
         $stateHtml=Format-ThoroughReportFieldLabels $stateHtml
         $requirementHtml=Format-ThoroughReportFieldLabels (Get-ReportRequirement $findingRow)
-        if (-not $isFinalReport) { $stateHtml=Format-ThoroughReportFindingHighlights -Row $findingRow -FindingsHtml $stateHtml -RequirementHtml $requirementHtml -KioskAccountName $kioskUser }
-        $statusPassed=$row.Status -in @('Pass','Online','Remediated') -or ($row.Status -eq 'Offline' -and $row.ItemSub -eq 'Type: Old Payment Service')
-        $statusLabel=if ($statusPassed) { 'Pass' } else { 'Fail' }
-        $statusClass=if ($statusPassed) { 'badge-pass' } else { 'badge-fail' }
-        $statusDescription=[Net.WebUtility]::HtmlEncode(('Recorded result: '+$row.Status))
-        $statusHtml='<span class="badge {0}" title="{1}">{2}</span>' -f $statusClass,$statusDescription,$statusLabel
+        $stateHtml=Format-ThoroughReportFindingHighlights -Row $findingRow -FindingsHtml $stateHtml -RequirementHtml $requirementHtml -KioskAccountName $kioskUser
         if($isAuditReport){
             ConvertTo-ThoroughAuditRows -Row $row -ComponentHtml $checkHtml -CommandHtml $commandHtml -RequirementHtml $requirementHtml -FindingsHtml $stateHtml -AccountView $accountView
         } elseif ($isApplyReport) {
@@ -878,21 +1024,24 @@ $htmlSections = foreach ($group in $groupedSections) {
                 $appliedHtml=Get-ThoroughReportAppliedHtml -Row $row -AuditBased:([bool]$AuditSource) -FindingsHtml $stateHtml
             }
             if(-not (Test-ThoroughFixReportRow -Row $row -FindingsHtml $stateHtml -AppliedHtml $appliedHtml -AfterApply $AfterApply)){continue}
-            '<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td></tr>' -f $checkHtml, $commandHtml, $stateHtml, $appliedHtml
-        } elseif ($sectionHasStatus) {
-            '<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td><td>{4}</td></tr>' -f $checkHtml, $commandHtml, $requirementHtml, $stateHtml, $statusHtml
+            $postAccount=Get-AccountReportView $row
+            $postHtml=if($postAccount){$postAccount.FindingsHtml}else{Format-ReportState $row.ItemTitle $row.FoundStateHtml}
+            $postHtml=Format-ThoroughReportFieldLabels $postHtml
+            $postHtml=Format-ThoroughReportFindingHighlights -Row $row -FindingsHtml $postHtml -RequirementHtml (Format-ThoroughReportFieldLabels (Get-ReportRequirement $row)) -KioskAccountName $kioskUser
+            ConvertTo-ThoroughSettingRows -Row $row -Mode Fix -ComponentHtml $checkHtml -CommandHtml $commandHtml -FindingsHtml $stateHtml -CurrentHtml $postHtml -AppliedHtml $appliedHtml -AfterApply $AfterApply -HasBeforeRow $hasBeforeRow
         } else {
-            '<tr><td>{0}</td><td>{1}</td><td>{2}</td><td>{3}</td></tr>' -f $checkHtml, $commandHtml, $requirementHtml, $stateHtml
+            ConvertTo-ThoroughSettingRows -Row $row -Mode Final -ComponentHtml $checkHtml -FindingsHtml $stateHtml -CurrentHtml $stateHtml -AfterApply $AfterApply
         }
     }
     if($isApplyReport -and -not @($tableRows).Count){continue}
-    $columnCount = if ($sectionHasStatus) { 5 } else { 4 }
-    $columnWidths = if ($sectionHasStatus) { '<col style="width:16%"><col style="width:18%"><col style="width:27%"><col style="width:31%"><col style="width:8%">' } else { '<col style="width:18%"><col style="width:19%"><col style="width:29%"><col style="width:34%">' }
-    $columnHeaders = '<th>Component</th><th>Shortcut / Command</th><th>Required Configuration</th><th>Findings</th>'
-    if ($isApplyReport) {
-        $columnWidths='<col style="width:18%"><col style="width:22%"><col style="width:38%"><col style="width:22%">'
-        $columnHeaders='<th>Component</th><th>Shortcut / Command</th><th>Findings</th><th>Applied</th>'
-    } elseif ($sectionHasStatus) { $columnHeaders += '<th>Status</th>' }
+    $columnCount=if($isFinalReport){3}else{5}
+    if($isApplyReport){
+        $columnWidths='<col style="width:17%"><col style="width:23%"><col style="width:20%"><col style="width:20%"><col style="width:20%">'
+        $columnHeaders='<th scope="col">Component</th><th scope="col">Shortcut / Command</th><th scope="col">Setting</th><th scope="col">Findings</th><th scope="col">Applied</th>'
+    }else{
+        $columnWidths='<col style="width:25%"><col style="width:30%"><col style="width:45%">'
+        $columnHeaders='<th scope="col">Component</th><th scope="col">Setting</th><th scope="col">Status</th>'
+    }
     if($isAuditReport){
         $columnCount=5
         $columnWidths='<col style="width:17%"><col style="width:23%"><col style="width:21%"><col style="width:18%"><col style="width:21%">'
@@ -930,7 +1079,13 @@ if($isAuditReport){
     $finalHtml=$finalHtml.Replace('Green = Matched requirement or collected value; Red = Mismatched requirement or missing value; Amber = Not verified; Uncolored = Informational only.','Red = Requirement not met or missing value; Amber = Not verified; Plain values = Matched, collected or informational values.')
     $finalHtml=$finalHtml.Replace('</main>',(Get-ThoroughAuditHoverScript)+"`n</main>")
 }
-if ($isFinalReport) { $finalHtml = ConvertTo-ThoroughFinalReportHtml $finalHtml }
+if(-not $isAuditReport){
+    $bodyClass=if($isFinalReport){'final-report setting-report'}else{'fix-report setting-report'}
+    $finalHtml=$finalHtml.Replace('<body>','<body class="'+$bodyClass+'">').Replace('</style>',(Get-ThoroughSettingColumnStyle)+"`n</style>")
+    $finalHtml=$finalHtml.Replace('</main>',(Get-ThoroughSettingHoverScript)+"`n</main>")
+    $legend=if($isFinalReport){'Status shows the latest recorded setting values. This report records the observed configuration without applying repairs. Red = Requirement not met or missing value; Amber = Not verified. AppSettings values are a configuration record, not confirmation of the site assignment.'}else{'Findings shows recorded pre-fix values when available; Applied shows recorded post-fix values. Not applied = No fix was run; Not verified = A post-fix value could not be verified. Red = Requirement not met or missing value; Amber = Not verified. Hover over Applied values for recorded action details.'}
+    $finalHtml=[regex]::Replace($finalHtml,'(?is)<p class="legend">.*?</p>','<p class="legend">'+$legend+'</p>')
+}
     if($isFinalReport -and $AfterApply){
         $finalHtml=$finalHtml.Replace('This report records the observed configuration without applying repairs.','This report records the actual post-fix configuration observed during Apply Fix. No additional repairs were run to generate this view.')
     }
