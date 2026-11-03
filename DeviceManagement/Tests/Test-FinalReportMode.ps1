@@ -93,7 +93,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     Assert-Final ($html -match '<th>Restaurant ID</th><td>Not detected</td>' -and $html -notmatch '<th>Required Configuration</th>|<th>Findings</th>') 'Final metadata or columns are incorrect.'
     Assert-Final ($html.Contains('final-report setting-report') -and $html.Contains('background:#fffbf0')) 'Final is missing the approved column theme.'
     Assert-Final (-not $html.Contains('class="command-copy"') -and $html -notmatch '<span class="badge') 'Final contains command boxes or Pass/Fail badges.'
-    $firewall=Get-SettingRenderedComponent $html 'Firewall Inbound Port'
+    $firewall=Get-SettingRenderedComponent $html 'Firewall'
     Assert-Final (@($firewall.Fields|Where-Object {$_.Setting -eq 'Ports' -and $_.Value -eq '5009'}).Count -eq 1) 'Final lost its actual firewall target.'
     foreach($table in [regex]::Matches($html,'(?is)<table class="checks"[^>]*>.*?</table>')){
         Assert-Final ($table.Value.Contains('<th scope="col">Component</th><th scope="col">Setting</th><th scope="col">Status</th>') -and [regex]::Matches($table.Value,'<col\b').Count -eq 3) 'Final columns are incorrect, including AppSettings.'

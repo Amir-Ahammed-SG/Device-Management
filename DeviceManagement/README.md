@@ -221,7 +221,7 @@ The previous report layout can be restored using the saved points described in
 Security, Network & System Integrity is report section 4. AppSettings Check is
 section 5 and appears last among the five configuration sections in all three modes.
 
-All applicable inbound firewall ports share one **Firewall Inbound Port** report
+All applicable inbound firewall ports share one **Firewall** report
 component and one `wf.msc` command. Required Configuration lists Inbound, TCP,
 5009 plus 4100-4103 for NETS/NEXIDE, Enabled Yes and Action Allow. Findings show
 actual rule Direction, Protocol, Ports, Enabled and Action; actual ranges or Any
@@ -379,12 +379,22 @@ Server and ServerActive are not currently validated or repaired by Thorough Chec
 AppSettings follows point 7 of the requirements document: PaymentService,
 PaymentConfiguration (SixTerminals for SIX; NetsTerminals for NETS/NEXIDE; omitted
 for PRINT), ScheduleConfiguration for KitchenTicketPrint (displayed as
-WebApp/Shop Print), Payout Scheduler for the selected SIX/NETS/NEXIDE provider,
-Print and the three service URLs. Payout Scheduler collects only Provider and
+WebApp Printer), Cron Job for the selected SIX/NETS/NEXIDE provider,
+Print and the three service URLs. Cron Job collects only Provider and
 IsEnabled from matching schedule entries; both True and False are valid recorded
-values. PRINT omits Payout Scheduler as well as payment terminals, while
-WebApp/Shop Print remains visible. Missing matching schedules/values are reported
-as not configured. Multiple matches retain separate numbered Findings blocks.
+values. PRINT omits Cron Job as well as payment terminals, while
+WebApp Printer remains visible. WebApp Printer collects Provider, BranchUUID,
+IsKioskPrintingEnabled and IsEnabled from each KitchenTicketPrint schedule.
+BranchUUID comes only from ScheduleConfiguration.Schedules[].BranchUUID (or
+the same kitchen record in a supported direct/array ScheduleConfiguration shape).
+Root, Print and payment-schedule BranchUUID values are not substituted. Missing
+or empty BranchUUID remains explicit and read-only. Missing matching schedules/values are reported
+as not configured. Cron Job always labels each matching record NETS Terminal for
+NETS/NEXIDE or SIX Terminal for SIX, including a missing-record placeholder.
+The title follows the provider family rather than a schedule index. Multiple
+matching records remain separate and keep their recorded Provider/IsEnabled values.
+Print.PrinterName is labelled Kitchen Printer and Print.KioskPrinterName is
+labelled Kiosk/POS Printer; the original JSON keys and values are unchanged.
 AppSettings remains read-only in both modes. These groups show actual file
 values. Expected uses labelled lines;
 terminal collection headings use [SixTerminals] / [NetsTerminals], and numbered
@@ -498,8 +508,8 @@ action planning/fixture policies with different existing reset periods/delays,
 including INFINITE, repeated action entries, empty policies, no-op repeats and
 Audit/failure guards. The test never calls native service APIs.
 Report component and AppSettings labels use the requested short display names,
-including Payment Gateway, Zabbix Agent, WebApp/Shop Print and Performance Counter.
-Firewall rows use Firewall Inbound Port while Required Configuration retains each
+including Payment Gateway, Zabbix Agent, WebApp Printer and Performance Counter.
+Firewall rows use Firewall while Required Configuration retains each
 port number. Original internal titles, service names, JSON keys and copy commands
 are preserved for checks and configuration handling.
 

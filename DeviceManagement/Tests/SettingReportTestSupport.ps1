@@ -39,6 +39,13 @@ function Assert-SettingRuleParity {
     $newHtml=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Current.HtmlBase64))
     $oldHtml=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Legacy.HtmlBase64))
     if($Parameters.DisplayMode -eq 'Audit'){
+        if(-not $Parameters.AuditSource){
+            # Independent renders can straddle a minute boundary. Compare the
+            # report content, not two separately generated wall-clock values.
+            $time='(?<=<strong>Generated Time:</strong> )[^<]*(?=</span>)'
+            $newHtml=[regex]::Replace($newHtml,$time,'GENERATED_TIME')
+            $oldHtml=[regex]::Replace($oldHtml,$time,'GENERATED_TIME')
+        }
         if($newHtml.Replace("`r`n","`n") -cne $oldHtml.Replace("`r`n","`n")){throw 'Setting layout changed Audit output'}
         return
     }

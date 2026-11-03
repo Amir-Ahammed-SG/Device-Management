@@ -142,7 +142,7 @@ Review all remaining failed, unverified or manually actionable findings. Relevan
 - **Launcher and Startup:** Missing or invalid launcher/Startup files and identifiers need manual setup. Apply may create a missing desktop shortcut when its existing targets can be verified. Existing browser-policy conflicts require manual review.
 - **Touchscreen zoom:** Apply can add `--disable-pinch` to a supported existing Edge launcher. Restart Edge to load it, then test touchscreen pinch in and out. Keyboard, Ctrl + mouse wheel and other zoom controls are outside this change.
 - **Payment Service restart task:** Reported only for **NETS/NEXIDE**. The script checks the existing task and schedule; it does not create, enable, edit or run the task. A configuration Pass does not prove the scheduled restart actually succeeded.
-- **AppSettings:** Payment terminals, WebApp/Shop Print, matching Payout Scheduler entries and service URLs are collected for review. JSON configuration is not changed. Provider-specific fields depend on the discovered Payment Service provider.
+- **AppSettings:** Payment terminals, WebApp Printer (including BranchUUID from the KitchenTicketPrint schedule), matching Cron Job entries and service URLs are collected for review. JSON configuration is not changed. Provider-specific fields depend on the discovered Payment Service provider.
 - **Nmap on Windows 10:** The current CDN release does not include the local installer. If Nmap is missing, arrange manual installation and verify it afterward.
 - **Service checks:** A service Pass does not prove payment connectivity or complete monitoring connectivity. Zabbix Server/ServerActive settings and end-to-end monitoring require separate verification.
 

@@ -210,7 +210,7 @@ $auditRows.Add([pscustomobject]@{SectionNumber=1;SectionTitle='Fixture';ItemTitl
     $agent=New-ApprovedRow 3 'Core Background Services' 'Zabbix Agent 2' ([ordered]@{'Service State'='Running';'Startup type'='Automatic';'First failure'='Restart the service';'Second failure'='Restart the service';'Subsequent failures'='Take No Action';'Host Name'='OLD-DEVICE'})
     $agent|Add-Member NoteProperty ExpectedHostName 'DEVICE-01'
     Assert-Approved ((Get-ThoroughReportFindingComparison -Row $agent -Label 'Host Name' -Value 'device-01' -Requirements @{}) -ceq 'unverified') 'A case-sensitive Zabbix mismatch was green'
-    $app=New-ApprovedRow 5 'AppSettings Check' 'WebApp/Shop Print' ([ordered]@{'Provider'='KitchenTicketPrint';'IsKioskPrintingEnabled'='Not configured';'IsEnabled'=$false}) Pass 'Read Only'
+    $app=New-ApprovedRow 5 'AppSettings Check' 'WebApp Printer' ([ordered]@{'Provider'='KitchenTicketPrint';'IsKioskPrintingEnabled'='Not configured';'IsEnabled'=$false}) Pass 'Read Only'
     $app.Shortcut='<code>notepad.exe "C:\Fixture\appsettings.json"</code>'
     $audit=New-ThoroughReportSnapshot -Rows @($windows,$launcherRow,$agent,$app) -DisplayMode Audit -Hostname 'DEVICE-01'
     $auditHtml=Decode-Approved $audit
@@ -219,7 +219,7 @@ $auditRows.Add([pscustomobject]@{SectionNumber=1;SectionTitle='Fixture';ItemTitl
         $hostField=@($component.Fields|Where-Object {$_.Setting -match '^Host [Nn]ame$'})
         Assert-Approved ($component.Count -eq 1 -and $hostField.Count -eq 1 -and $hostField[0].Found -ceq 'OLD-DEVICE' -and $hostField[0].Html -match 'finding-unverified') 'Wrong hostname was green or uncolored'
     }
-    $appComponent=Get-AuditRenderedComponent $auditHtml 'WebApp/Shop Print'
+    $appComponent=Get-AuditRenderedComponent $auditHtml 'WebApp Printer'
     $missingField=@($appComponent.Fields|Where-Object Setting -EQ 'IsKioskPrintingEnabled')[0]
     Assert-Approved ($missingField.Found -ceq 'Not configured' -and $missingField.Html -match 'finding-unverified' -and $missingField.Html -notmatch 'finding-mismatch') 'Missing AppSettings values were red'
     $falseField=@($appComponent.Fields|Where-Object Setting -EQ 'IsEnabled')[0]
@@ -245,7 +245,7 @@ $auditRows.Add([pscustomobject]@{SectionNumber=1;SectionTitle='Fixture';ItemTitl
     Assert-Approved ($finalHtml.Contains('Startup type:</span> Disabled')) 'Final lacks post-fix state'
     $cells=@(Cells-Approved $fixHtml 'Kiosk Launch Script')
     Assert-Approved ($cells[2].Contains('Host name:</span> OLD-DEVICE') -and $cells[3].Contains('>Completed</strong>')) 'Launcher before/after outcome lost'
-    $cells=@(Cells-Approved $fixHtml 'WebApp/Shop Print')
+    $cells=@(Cells-Approved $fixHtml 'WebApp Printer')
     Assert-Approved ($cells[3].Contains('Expected values are not configured. Please check manually.')) 'Missing AppSettings Applied warning missing'
     Assert-Approved ((ConvertTo-Json -InputObject $rowsBefore -Depth 24 -Compress) -ceq $beforeJson) 'Rendering mutated baseline observations'
     # The exact earlier HTML format remains usable without structured observations.

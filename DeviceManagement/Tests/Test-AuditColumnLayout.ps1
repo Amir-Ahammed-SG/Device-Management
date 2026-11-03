@@ -72,7 +72,7 @@ foreach($client in @('SaaS','Subway')){
     $config=[pscustomobject]@{PaymentService='NETS';PaymentConfiguration=[pscustomobject]@{NetsTerminals=@(
         [pscustomobject]@{PosId=0;KioskId='01';TerminalIPAddress='192.0.2.1';TerminalId='';Currency='CHF';Language='de';IsSetupEnabled=$false},
         [pscustomobject]@{PosId=2;KioskId='02';TerminalIPAddress='192.0.2.2';TerminalId='T2';Currency='CHF';Language='de';IsSetupEnabled=$true}
-    )};ScheduleConfiguration=[pscustomobject]@{Schedules=@([pscustomobject]@{Provider='KitchenTicketPrint';IsKioskPrintingEnabled=$true;IsEnabled=$false},[pscustomobject]@{Provider='NETS';IsEnabled=$false},[pscustomobject]@{Provider='NETS';IsEnabled=$true})};Print=[pscustomobject]@{PrinterName='EPSON & <Front>'};MonitoringServiceBaseUrl='https://example.test/?a=1&b=2';CmsGatewayBaseUrl='https://example.test/cms';OrderServiceBaseUrl='https://example.test/order'}
+    )};ScheduleConfiguration=[pscustomobject]@{Schedules=@([pscustomobject]@{Provider='KitchenTicketPrint';BranchUUID='00000000000000000000000000000001';IsKioskPrintingEnabled=$true;IsEnabled=$false},[pscustomobject]@{Provider='NETS';IsEnabled=$false},[pscustomobject]@{Provider='NETS';IsEnabled=$true})};Print=[pscustomobject]@{PrinterName='EPSON & <Front>'};MonitoringServiceBaseUrl='https://example.test/?a=1&b=2';CmsGatewayBaseUrl='https://example.test/cms';OrderServiceBaseUrl='https://example.test/order'}
     $app=New-AuditFixtureRow 5 'AppSettings Check' '' '' Pass 'AppSettings Check'
     $app|Add-Member NoteProperty ConfigurationSnapshot $config
     $app|Add-Member NoteProperty ConfigurationServiceName 'Payment Fixture'
@@ -114,7 +114,7 @@ foreach($client in @('SaaS','Subway')){
         Assert-AuditColumns ($launchRows.Count -eq 5) 'Launcher alias matching added or removed a field.'
         $legacy=@(Read-AuditComponent $html 'Legacy Payment Services')
         Assert-AuditColumns (@($legacy|Where-Object {$_.SelectSingleNode('./td[@class="audit-record-heading"]')}).Count -eq 2) 'Multiple legacy services lost their headings.'
-        $firewallRows=@(Read-AuditComponent $html 'Firewall Inbound Port')
+        $firewallRows=@(Read-AuditComponent $html 'Firewall')
         Assert-AuditColumns ((($firewallRows|ForEach-Object {$_.InnerText}) -join '').Contains('5009') -and $firewallRows.Count -eq 5) 'Actual firewall rules were lost.'
         $terminal=@(Read-AuditComponent $html 'Payment Configuration')
         $terminalText=($terminal|ForEach-Object {$_.InnerText}) -join ''

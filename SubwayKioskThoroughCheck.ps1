@@ -140,14 +140,17 @@ function Get-ThoroughReportComponentName {
         'Windows Update (wuauserv)' { return 'Windows Update' }
         'PaymentService' { return 'Payment Service' }
         'PaymentConfiguration' { return 'Payment Configuration' }
-        'ScheduleConfiguration' { return 'WebApp/Shop Print' }
+        'ScheduleConfiguration' { return 'WebApp Printer' }
+        'WebApp/Shop Print' { return 'WebApp Printer' }
+        'Payout Scheduler' { return 'Cron Job' }
+        'Firewall Inbound Port' { return 'Firewall' }
         'Print' { return 'Printer' }
         'MonitoringServiceBaseUrl' { return 'Monitoring Service' }
         'CmsGatewayBaseUrl' { return 'CMS Gateway' }
         'OrderServiceBaseUrl' { return 'Order Service' }
         'lodctr /R Performance Counter' { return 'Performance Counter' }
     }
-    if ($Name -match '^Inbound TCP [0-9-]+ Rules?$') { return 'Firewall Inbound Port' }
+    if ($Name -match '^Inbound TCP [0-9-]+ Rules?$') { return 'Firewall' }
     $Name
 }
 
@@ -158,6 +161,19 @@ function Format-ThoroughReportFieldLabels {
         $label=Get-ThoroughReportComponentName $name
         $Html=$Html.Replace(('<span class="kv-label">'+$name+':</span>'),('<span class="kv-label">'+$label+':</span>'))
     }
+    foreach($fieldLabel in @(@('PrinterName','Kitchen Printer'),@('KioskPrinterName','Kiosk/POS Printer'))){
+        $Html=$Html.Replace(('<span class="kv-label">'+$fieldLabel[0]+':</span>'),('<span class="kv-label">'+$fieldLabel[1]+':</span>'))
+    }
+    # Older saved Audit records still use Schedule NN. Resolve their heading from
+    # the provider recorded in that block, never from its position in the array.
+    $Html=[regex]::Replace($Html,'(?is)(?<Heading><div class="config-item-title">\[?Schedule\s+\d+\]?</div>)(?<Body>.*?)(?=<div class="config-(?:item|group)-title">|$)',[Text.RegularExpressions.MatchEvaluator]{
+        param($record)
+        $providerField=[regex]::Match($record.Groups['Body'].Value,'<span class="kv-label">Provider:</span>\s*(?<Provider>[^<]+)')
+        $provider=[Net.WebUtility]::HtmlDecode($providerField.Groups['Provider'].Value).Trim().ToUpperInvariant()
+        $title=switch($provider){'SIX'{'SIX Terminal'};{$_ -in @('NETS','NEXIDE')}{'NETS Terminal'};default{''}}
+        if(-not $title){return $record.Value}
+        '<div class="config-item-title">'+$title+'</div>'+$record.Groups['Body'].Value
+    })
     $Html=[regex]::Replace($Html,'<div class="config-item-title">\[(?<Title>[^<]*)\]</div>',[Text.RegularExpressions.MatchEvaluator]{
         param($heading)
         $title=$heading.Groups['Title'].Value
@@ -1845,13 +1861,13 @@ function Get-ThoroughAppSettingsReportRows {
     $nested = Get-ThoroughPaymentConfigValue $scheduleConfig 'Schedules'
     $schedules = if ($null -ne $nested) { @($nested) } else { @($scheduleConfig) }
     $kitchenSchedules = @($schedules | Where-Object { [string](Get-ThoroughPaymentConfigValue $_ 'Provider') -ieq 'KitchenTicketPrint' })
-    $scheduleExpected = ConvertTo-ReportDefinitionHtml ([ordered]@{ 'Provider'='KitchenTicketPrint'; 'IsKioskPrintingEnabled'=''; 'IsEnabled'='' })
+    $scheduleExpected = ConvertTo-ReportDefinitionHtml ([ordered]@{ 'Provider'='KitchenTicketPrint'; 'BranchUUID'=''; 'IsKioskPrintingEnabled'=''; 'IsEnabled'='' })
     $missing=$false
     if ($kitchenSchedules.Count -eq 0) { $kitchenSchedules=@($null); $missing=$true }
     $scheduleParts = [Collections.Generic.List[string]]::new()
     for ($index=0; $index -lt $kitchenSchedules.Count; $index++) {
         $actualValues=[ordered]@{}
-        foreach ($field in @('Provider','IsKioskPrintingEnabled','IsEnabled')) {
+        foreach ($field in @('Provider','BranchUUID','IsKioskPrintingEnabled','IsEnabled')) {
             $value = Get-ThoroughPaymentConfigValue $kitchenSchedules[$index] $field
             if ($null -eq $value -or ($value -is [string] -and $value.Length -eq 0 -and $field -ne 'TerminalId')) { $missing=$true }
             $actualValues[$field] = Format-ThoroughPaymentAuditValue $value
@@ -1874,7 +1890,8 @@ function Get-ThoroughAppSettingsReportRows {
                 if($null -eq $value -or ($value -is [string] -and $value.Length -eq 0)){$missing=$true}
                 $actualValues[$field]=Format-ThoroughPaymentAuditValue $value
             }
-            if($payoutSchedules.Count -gt 1){$payoutParts.Add('<div class="config-item-title">[Schedule '+($index+1)+']</div>')}
+            $terminalLabel=if($provider -eq 'SIX'){'SIX Terminal'}else{'NETS Terminal'}
+            $payoutParts.Add('<div class="config-item-title">'+$terminalLabel+'</div>')
             $payoutParts.Add((ConvertTo-ReportDefinitionHtml $actualValues))
         }
         New-ThoroughAppSettingsGroupRow $Source 'Payout Scheduler' $payoutExpected ($payoutParts -join '') $missing
@@ -4273,13 +4290,13 @@ function Get-ThoroughPaymentConfigurationAuditLines {
     $schedules = if ($null -ne $nestedSchedules) { @($nestedSchedules) } else { @($scheduleConfiguration) }
     $kioskPrintSchedules = @($schedules | Where-Object { [string](Get-ThoroughPaymentConfigValue $_ 'Provider') -ieq 'KitchenTicketPrint' })
     if ($kioskPrintSchedules.Count -eq 0) {
-        $lines.Add('WebApp/Shop Print:')
-        foreach ($field in @('Provider', 'IsKioskPrintingEnabled', 'IsEnabled')) { $lines.Add("  ${field}: Not configured") }
+        $lines.Add('WebApp Printer:')
+        foreach ($field in @('Provider', 'BranchUUID', 'IsKioskPrintingEnabled', 'IsEnabled')) { $lines.Add("  ${field}: Not configured") }
     } else {
         for ($index = 0; $index -lt $kioskPrintSchedules.Count; $index++) {
-            $label = if ($kioskPrintSchedules.Count -eq 1) { 'WebApp/Shop Print:' } else { 'WebApp/Shop Print {0}:' -f ($index + 1) }
+            $label = if ($kioskPrintSchedules.Count -eq 1) { 'WebApp Printer:' } else { 'WebApp Printer {0}:' -f ($index + 1) }
             $lines.Add($label)
-            foreach ($field in @('Provider', 'IsKioskPrintingEnabled', 'IsEnabled')) {
+            foreach ($field in @('Provider', 'BranchUUID', 'IsKioskPrintingEnabled', 'IsEnabled')) {
                 $lines.Add("  ${field}: " + (Format-ThoroughPaymentAuditValue (Get-ThoroughPaymentConfigValue $kioskPrintSchedules[$index] $field)))
             }
         }
@@ -4287,11 +4304,11 @@ function Get-ThoroughPaymentConfigurationAuditLines {
     if($provider -in @('SIX','NETS','NEXIDE')){
         $payoutSchedules=@(Get-ThoroughPayoutSchedules -Schedules $schedules -Provider $provider)
         if($payoutSchedules.Count -eq 0){
-            $lines.Add('Payout Scheduler:')
+            $lines.Add(('Cron Job - '+$(if($provider -eq 'SIX'){'SIX Terminal'}else{'NETS Terminal'})+':'))
             foreach($field in @('Provider','IsEnabled')){$lines.Add("  ${field}: Not configured")}
         }else{
             for($index=0;$index -lt $payoutSchedules.Count;$index++){
-                $label=if($payoutSchedules.Count -eq 1){'Payout Scheduler:'}else{'Payout Scheduler {0}:' -f ($index+1)}
+                $label='Cron Job - '+$(if($provider -eq 'SIX'){'SIX Terminal'}else{'NETS Terminal'})+':'
                 $lines.Add($label)
                 foreach($field in @('Provider','IsEnabled')){$lines.Add("  ${field}: "+(Format-ThoroughPaymentAuditValue (Get-ThoroughPaymentConfigValue $payoutSchedules[$index] $field)))}
             }
@@ -4299,8 +4316,8 @@ function Get-ThoroughPaymentConfigurationAuditLines {
     }
     $printConfiguration = Get-ThoroughPaymentConfigValue $Configuration 'Print'
     $lines.Add('Print:')
-    $lines.Add('  PrinterName: ' + (Format-ThoroughPaymentAuditValue (Get-ThoroughPaymentConfigValue $printConfiguration 'PrinterName')))
-    $lines.Add('  KioskPrinterName: ' + (Format-ThoroughPaymentAuditValue (Get-ThoroughPaymentConfigValue $printConfiguration 'KioskPrinterName')))
+    $lines.Add('  Kitchen Printer: ' + (Format-ThoroughPaymentAuditValue (Get-ThoroughPaymentConfigValue $printConfiguration 'PrinterName')))
+    $lines.Add('  Kiosk/POS Printer: ' + (Format-ThoroughPaymentAuditValue (Get-ThoroughPaymentConfigValue $printConfiguration 'KioskPrinterName')))
     $lines.Add('Service Endpoints:')
     foreach ($endpoint in @('MonitoringServiceBaseUrl', 'CmsGatewayBaseUrl', 'OrderServiceBaseUrl')) {
         $lines.Add("  ${endpoint}: " + (Format-ThoroughPaymentAuditValue (Get-ThoroughPaymentConfigValue $Configuration $endpoint)))

@@ -26,9 +26,9 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1', 'SubwayKioskThorou
         'Kiosk Launch Architecture'='Kiosk Launch Script'; 'SELISE-KIOSK Startup Folder'='Startup Folder'
         'Payment Gateway Middleware'='Payment Gateway'; 'Zabbix Agent 2'='Zabbix Agent'
         'Windows Update (wuauserv)'='Windows Update'; 'PaymentService'='Payment Service'
-        'PaymentConfiguration'='Payment Configuration'; 'ScheduleConfiguration'='WebApp/Shop Print'; 'Print'='Printer'
+        'PaymentConfiguration'='Payment Configuration'; 'ScheduleConfiguration'='WebApp Printer'; 'Print'='Printer'
         'MonitoringServiceBaseUrl'='Monitoring Service'; 'CmsGatewayBaseUrl'='CMS Gateway'; 'OrderServiceBaseUrl'='Order Service'
-        'Inbound TCP 5009 Rule'='Firewall Inbound Port'; 'Inbound TCP 4100-4103 Rules'='Firewall Inbound Port'
+        'Inbound TCP 5009 Rule'='Firewall'; 'Inbound TCP 4100-4103 Rules'='Firewall'
         'lodctr /R Performance Counter'='Performance Counter'
     }
     foreach ($entry in $displayNames.GetEnumerator()) {

@@ -246,7 +246,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
             Assert-Highlight (@($admin.Fields|Where-Object {$_.Setting -eq 'Password Never Expires' -and $_.Found -eq 'Not verified' -and $_.Html -match 'finding-unverified'}).Count -eq 1) 'Audit lost the unreadable administrative flag.'
             $counter=Get-AuditRenderedComponent $html 'Performance Counter'
             Assert-Highlight (@($counter.Fields|Where-Object {$_.Setting -eq 'Audit' -and $_.Found -eq 'Not executed' -and $_.Html -match 'finding-unverified'}).Count -eq 1 -and $rows[-1].Status -eq 'Bypass') 'Audit counter warning or recorded outcome changed.'
-            $payout=Get-AuditRenderedComponent $html 'Payout Scheduler'
+            $payout=Get-AuditRenderedComponent $html 'Cron Job'
             Assert-Highlight (@($payout.Fields|Where-Object {$_.Setting -eq 'IsEnabled' -and $_.Found -eq 'False' -and $_.Html -notmatch 'finding-mismatch|finding-unverified'}).Count -eq 1) 'Audit treated a collected False value as missing.'
             continue
         }
@@ -258,7 +258,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
                 # Compare observations at the common index used by the assertions below.
                 $cells=@($cells[0],$cells[1],'',$cells[2])
             }else{Assert-Highlight (($cells[0..2] -join '') -notmatch 'class="finding-value') 'Highlighting escaped the Findings column.'}
-            if($cells[0].Contains('>Payout Scheduler</div>')){Assert-Highlight ($cells.Count -eq 4 -and [regex]::Matches($cells[3],'finding-match" title="Value collected"').Count -eq 2 -and $cells[3].Contains('IsEnabled:</span> False')) 'AppSettings provider/False values lost their collected-value colors.'}
+            if($cells[0].Contains('>Cron Job</div>')){Assert-Highlight ($cells.Count -eq 4 -and [regex]::Matches($cells[3],'finding-match" title="Value collected"').Count -eq 2 -and $cells[3].Contains('IsEnabled:</span> False')) 'AppSettings provider/False values lost their collected-value colors.'}
             if($cells[0].Contains('>Payment Gateway</div>')){
                 Assert-Highlight ($cells[3] -match 'finding-mismatch[^>]*><span class="kv-label">Service State:</span> Stopped') 'The failed service state was hidden.'
                 if(-not $isApply){

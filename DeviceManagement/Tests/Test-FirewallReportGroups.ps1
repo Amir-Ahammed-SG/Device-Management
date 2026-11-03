@@ -61,7 +61,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
             . $render
             $html=[IO.File]::ReadAllText($reportPath)
             if($mode -eq 'Audit'){
-                $auditView=Get-AuditRenderedComponent $html 'Firewall Inbound Port'
+                $auditView=Get-AuditRenderedComponent $html 'Firewall'
                 Assert-FirewallReport ($auditView.Count -eq 1 -and $auditView.Fields.Count -eq 5) 'Audit lost or duplicated actual firewall fields.'
                 foreach($spec in @(@('Ports',($ports -join ', ')),@('Direction','Inbound'),@('Protocol','TCP'),@('Enabled','Yes'),@('Action','Allow'))){
                     Assert-FirewallReport (@($auditView.Fields|Where-Object {$_.Setting -eq $spec[0] -and $_.Found -eq $spec[1]}).Count -eq 1) 'Actual Audit firewall rule value changed.'
@@ -70,7 +70,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
                 Assert-FirewallReport ($auditView.Html -notmatch 'finding-mismatch|finding-unverified') 'Healthy firewall values became warning values.'
                 continue
             }
-            $displayRows=@([regex]::Matches($html,'(?is)<tr\b[^>]*>.*?</tr>') | Where-Object {$_.Value.Contains('class="device-title">Firewall Inbound Port</div>')})
+            $displayRows=@([regex]::Matches($html,'(?is)<tr\b[^>]*>.*?</tr>') | Where-Object {$_.Value.Contains('class="device-title">Firewall</div>')})
             if($mode -eq 'Apply'){
                 Assert-FirewallReport ($displayRows.Count -eq 0 -and $html.Contains('No fixes required.')) 'Healthy unchanged firewall component remains in Fix.'
                 continue

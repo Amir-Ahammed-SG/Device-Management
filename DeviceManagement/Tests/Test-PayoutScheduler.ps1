@@ -15,7 +15,7 @@ function New-PayoutConfiguration {
             NetsTerminals=@([pscustomobject]@{PosId='POS-01';KioskId='Kiosk-1';TerminalIPAddress='192.0.2.20';TerminalId='';Currency='CHF';Language='en';IsSetupEnabled=$false})
         }
         ScheduleConfiguration=[pscustomobject]@{Schedules=@(
-            [pscustomobject]@{Provider='KitchenTicketPrint';IsKioskPrintingEnabled=$false;IsEnabled=$true},
+            [pscustomobject]@{Provider='KitchenTicketPrint';BranchUUID='00000000000000000000000000000001';IsKioskPrintingEnabled=$false;IsEnabled=$true},
             [pscustomobject]@{Provider='SIX';Name='Do not report SIX name';UID='Do not report UID';CronExpression='Do not report cron';IsEnabled=$false},
             [pscustomobject]@{Provider='NETS';Name='Do not report NETS name';UID='Do not report UID';CronExpression='Do not report cron';IsEnabled=$true},
             [pscustomobject]@{Provider='NEXIDE';Name='Do not report NEXIDE name';UID='Do not report UID';CronExpression='Do not report cron';IsEnabled=$false}
@@ -24,102 +24,127 @@ function New-PayoutConfiguration {
         MonitoringServiceBaseUrl='https://example.test/monitor';CmsGatewayBaseUrl='https://example.test/cms';OrderServiceBaseUrl='https://example.test/orders'
     }
 }
+. (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
+. (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 $caseCount=0
 foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $tokens=$null;$errors=$null
     $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
-    Assert-Payout ($errors.Count -eq 0) 'Client source parser errors'
-    . ([scriptblock]::Create(($ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
-    . (Join-Path $PSScriptRoot 'ReportRenderTestSupport.ps1')
-    $finalizer=$ast.FindAll({param($n) $n -is [Management.Automation.Language.TryStatementAst] -and $n.Finally -and $n.Finally.Extent.Text -match 'Writing HTML report'},$true) | Select-Object -Last 1
-    $render=[scriptblock]::Create(($finalizer.Finally.Statements | ForEach-Object {$_.Extent.Text}) -join "`r`n")
-    function Read-AuditReportChoice {return $true}
-    function Start-AuditStep {param($Number,$Name)}
-    function Complete-ThoroughConsole {param($IsApply,$FailedCount)}
-    function Set-Content {throw 'AppSettings writes are forbidden'}
+    Assert-Payout ($errors.Count -eq 0) 'Client source failed parsing'
+    . ([scriptblock]::Create(($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|ForEach-Object {$_.Extent.Text}) -join "`n"))
+    function Set-Content {throw 'Configuration writes are forbidden'}
     function Set-Service {throw 'Service changes are forbidden'}
     function Restart-Service {throw 'Service restarts are forbidden'}
-    function Copy-Item {throw 'AppSettings backups are forbidden'}
+    function Copy-Item {throw 'Configuration backups are forbidden'}
+    function Get-CimInstance {throw 'Rendering queried the device'}
+    $script:ApplyChanges=$false
     $client=if($sourceName -like 'Subway*'){'Subway'}else{'SaaS'}
-    foreach($isApply in @($false,$true)){
-        $script:ApplyChanges=$isApply
-        $mode=if($isApply){'Apply'}else{'Audit'}
-        foreach($case in @('SIX','NETS','NEXIDE','PRINT','unknown','case-insensitive','missing-match','missing-flag','empty-flag','multiple','direct','array','empty-schedules')){
-            $provider=switch($case){'case-insensitive'{' nEtS '};'unknown'{'OTHER'};{$_ -in @('SIX','NETS','NEXIDE','PRINT')}{$_};default{'NETS'}}
-            $config=New-PayoutConfiguration $provider
-            switch($case){
-                'missing-match' {$config.ScheduleConfiguration.Schedules=@($config.ScheduleConfiguration.Schedules | Where-Object Provider -NE 'NETS')}
-                'missing-flag' {($config.ScheduleConfiguration.Schedules | Where-Object Provider -EQ 'NETS').PSObject.Properties.Remove('IsEnabled')}
-                'empty-flag' {($config.ScheduleConfiguration.Schedules | Where-Object Provider -EQ 'NETS').IsEnabled=''}
-                'multiple' {$config.ScheduleConfiguration.Schedules+=@([pscustomobject]@{Provider='NETS';IsEnabled=$false})}
-                'direct' {$config.ScheduleConfiguration=$config.ScheduleConfiguration.Schedules | Where-Object Provider -EQ 'NETS'}
-                'array' {$config.ScheduleConfiguration=$config.ScheduleConfiguration.Schedules}
-                'empty-schedules' {$config.ScheduleConfiguration.Schedules=@()}
+    $identity=[pscustomobject]@{ReportId='OMK-244001';GeneratedAt='04 Nov 2026, 1:20 PM BST';AgentName='Fixture Agent'}
+    $historical='<div class="config-item-title">[Schedule 1]</div>'+(ConvertTo-ReportDefinitionHtml ([ordered]@{Provider='SIX';IsEnabled=$false}))+'<div class="config-item-title">Schedule 02</div>'+(ConvertTo-ReportDefinitionHtml ([ordered]@{Provider='NEXIDE';IsEnabled=$true}))
+    $normalized=Format-ThoroughReportFieldLabels $historical
+    $headings=@([regex]::Matches($normalized,'<div class="config-item-title">([^<]+)</div>')|ForEach-Object {$_.Groups[1].Value})
+    Assert-Payout (($headings -join '|') -ceq 'SIX Terminal|NETS Terminal' -and $normalized.Contains('Provider:</span> NEXIDE')) 'Saved schedule headings were renamed by ordinal or changed actual provider data'
+    foreach($case in @('SIX','NETS','NEXIDE','PRINT','unknown','case-insensitive','missing-match','missing-flag','empty-flag','multiple','direct','array','empty-schedules','missing-branch','empty-branch','multiple-kitchen','branch-case')){
+        $provider=switch($case){'case-insensitive'{' nEtS '};'unknown'{'OTHER'};{$_ -in @('SIX','NETS','NEXIDE','PRINT')}{$_};default{'NETS'}}
+        $config=New-PayoutConfiguration $provider
+        switch($case){
+            'missing-match' {$config.ScheduleConfiguration.Schedules=@($config.ScheduleConfiguration.Schedules|Where-Object Provider -NE 'NETS')}
+            'missing-flag' {($config.ScheduleConfiguration.Schedules|Where-Object Provider -EQ 'NETS').PSObject.Properties.Remove('IsEnabled')}
+            'empty-flag' {($config.ScheduleConfiguration.Schedules|Where-Object Provider -EQ 'NETS').IsEnabled=''}
+            'multiple' {$config.ScheduleConfiguration.Schedules+=@([pscustomobject]@{Provider='NETS';IsEnabled=$false})}
+            'direct' {$config.ScheduleConfiguration=$config.ScheduleConfiguration.Schedules|Where-Object Provider -EQ 'NETS'}
+            'array' {$config.ScheduleConfiguration=$config.ScheduleConfiguration.Schedules}
+            'empty-schedules' {$config.ScheduleConfiguration.Schedules=@()}
+            'missing-branch' {($config.ScheduleConfiguration.Schedules|Where-Object Provider -EQ 'KitchenTicketPrint').PSObject.Properties.Remove('BranchUUID')}
+            'empty-branch' {($config.ScheduleConfiguration.Schedules|Where-Object Provider -EQ 'KitchenTicketPrint').BranchUUID=''}
+            'multiple-kitchen' {$config.ScheduleConfiguration.Schedules+=@([pscustomobject]@{Provider='KitchenTicketPrint';BranchUUID='00000000000000000000000000000002';IsKioskPrintingEnabled=$true;IsEnabled=$false})}
+            'branch-case' {
+                $kitchen=$config.ScheduleConfiguration.Schedules|Where-Object Provider -EQ 'KitchenTicketPrint'
+                $kitchen.PSObject.Properties.Remove('BranchUUID');$kitchen|Add-Member NoteProperty branchUuid 'branch & <fixture>'
             }
-            $path=Join-Path $fixtureRoot ($client+'-'+$mode+'-'+$case+'-appsettings.json')
-            [IO.File]::WriteAllText($path,($config | ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false))
-            $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
-            $snapshot=ConvertFrom-ThoroughPaymentJson ([IO.File]::ReadAllText($path))
-            $before=$snapshot | ConvertTo-Json -Depth 12 -Compress
-            $source=[pscustomobject]@{SectionNumber=5;SectionTitle='AppSettings Check';ItemTitle='Payment Service appsettings.json';ItemSub='Type: Read-only Configuration Inspection';Shortcut=(New-ReportCommand @('notepad.exe "'+$path+'"'));ConfigurationSnapshot=$snapshot;ConfigurationServiceName='SamplePayment';ConfigurationPath=$path;Status='Pass';FoundStateHtml='Fixture only';ActionTaken='Fixture only'}
-            $rows=@(Get-ThoroughAppSettingsReportRows $source)
-            $lines=@(Get-ThoroughPaymentConfigurationAuditLines -Configuration $snapshot -ServiceName 'SamplePayment' -ConfigurationPath $path)
-            $lineText=$lines -join "`n"
-            Assert-Payout (($snapshot | ConvertTo-Json -Depth 12 -Compress) -ceq $before -and (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ceq $hash) 'AppSettings data or file was changed'
-            $webPrint=@($rows | Where-Object ItemTitle -EQ 'ScheduleConfiguration')
-            Assert-Payout ($webPrint.Count -eq 1 -and (Get-ThoroughReportComponentName 'ScheduleConfiguration') -ceq 'WebApp/Shop Print') 'WebApp/Shop Print was renamed incorrectly or omitted'
-            $payout=@($rows | Where-Object ItemTitle -EQ 'Payout Scheduler')
-            $supported=$case -notin @('PRINT','unknown')
-            if(-not $supported){
-                Assert-Payout ($payout.Count -eq 0 -and $lineText -notmatch 'Payout Scheduler') 'PRINT or an unsupported provider included payout schedules'
-            }else{
-                Assert-Payout ($payout.Count -eq 1) 'Payout component is missing or duplicated'
-                $payout=$payout[0]
-                Assert-Payout ($payout.ExpectedHtml -ceq (ConvertTo-ReportDefinitionHtml ([ordered]@{Provider='SIX, NETS, NEXIDE';IsEnabled='False / True'}))) 'Payout reference differs from the approved fields'
-                $labels=@([regex]::Matches($payout.FoundStateHtml,'kv-label">([^<]+):') | ForEach-Object {$_.Groups[1].Value})
-                $expectedLabels=if($case -eq 'multiple'){'Provider|IsEnabled|Provider|IsEnabled'}else{'Provider|IsEnabled'}
-                Assert-Payout (($labels -join '|') -ceq $expectedLabels -and $payout.FoundStateHtml -notmatch 'Name:|UID:|CronExpression:|KitchenTicketPrint') 'Payout Findings contains unrelated or missing fields'
-                $missing=$case -in @('missing-match','missing-flag','empty-flag','empty-schedules')
-                Assert-Payout (($payout.Status -eq 'Fail') -eq $missing) 'Missing payout values or false flags have an incorrect result'
-                if($case -in @('missing-match','empty-schedules')){
-                    Assert-Payout ($payout.FoundStateHtml -match 'Provider:</span> Not configured' -and $payout.FoundStateHtml -match 'IsEnabled:</span> Not configured') 'Absent matching schedule used another provider as fallback'
-                }else{
-                    $selected=$provider.Trim().ToUpperInvariant()
-                    $actualProviders=@([regex]::Matches($payout.FoundStateHtml,'Provider:</span> ([^<]*)') | ForEach-Object {$_.Groups[1].Value.Trim().ToUpperInvariant()})
-                    Assert-Payout (@($actualProviders | Where-Object {$_ -cne $selected}).Count -eq 0) 'An unrelated payout provider was included'
-                    if(-not $missing){Assert-Payout ($payout.FoundStateHtml -match 'IsEnabled:</span> (True|False)') 'Boolean values were lost'}
-                }
-                if($case -eq 'multiple'){Assert-Payout ($payout.FoundStateHtml -match '\[Schedule 1\]' -and $payout.FoundStateHtml -match '\[Schedule 2\]') 'Multiple matching schedules were not retained'}
-                Assert-Payout ($lineText -notmatch 'Do not report') 'Payout collection included unrequested schedule details'
-                if($case -ne 'multiple'){
-                    $payoutLines=@($lines | Select-Object -Skip ([array]::IndexOf($lines,'Payout Scheduler:')))
-                    Assert-Payout ($payoutLines[0] -ceq 'Payout Scheduler:' -and $payoutLines[1] -match '^  Provider:' -and $payoutLines[2] -match '^  IsEnabled:') 'Underlying collection lost the payout field order'
-                }
-            }
-            if($case -in @('SIX','NETS','NEXIDE','PRINT')){
-                $missingLines=@($lines | Where-Object {$_ -match ':\s*Not configured$' -or ($_ -match ':\s*\(empty\)$' -and $_ -notmatch 'TerminalId:\s*\(empty\)$')})
-                Assert-Payout ($missingLines.Count -eq 0) 'A configured true/false value was counted as missing'
-                $source.FoundStateHtml=ConvertTo-ThoroughPaymentReportHtml $lines
-                $auditRows=[Collections.Generic.List[psobject]]::new();$auditRows.Add($source)
-                $outputFolder=$previewRoot;$reportPath=Join-Path $previewRoot ($client+'-'+$mode+'-'+$case+'-preview.html')
-                $runId='SAMPLE-PAYOUT';$clientLocation='Sample branch';$deviceType='KIOSK';$reportHostname='SAMPLE-KIOSK-01';$reportKioskId='Kiosk-1';$KioskId=$null
-                . $render
-                $html=[IO.File]::ReadAllText($reportPath)
-                if($script:ApplyChanges){
-                    Assert-Payout (-not $html.Contains('device-title">WebApp/Shop Print</div>') -and -not $html.Contains('device-title">Payout Scheduler</div>')) 'Healthy read-only schedule components remain in Fix'
-                    Assert-Payout ($html.Contains('Read Only') -or $html.Contains('No fixes required.')) 'Pending configuration review lost its read-only label or empty state'
-                }else{
-                    Assert-Payout ($html.Contains('device-title">WebApp/Shop Print</div>') -and -not $html.Contains('device-title">Scheduler</div>')) 'Rendered print component has the old name'
-                    Assert-Payout ($html.Contains('device-title">Payout Scheduler</div>') -eq ($case -ne 'PRINT')) 'Rendered payout visibility does not match the provider'
-                    $withoutRecordStyles=$html -replace '<div class="finding-value finding-(?:match|mismatch|unverified)" title="[^"]*">','<div>'
-                    if($case -ne 'PRINT'){Assert-Payout ($withoutRecordStyles.Contains($payout.FoundStateHtml)) 'Rendered payout values changed'}
-                    Assert-Payout ($html.Contains('finding-match" title="Value collected"')) 'Collected configuration values lost their green presence styling'
-                }
-                Assert-Payout ($html -notmatch '<th>Status</th>|class="badge') 'AppSettings retains Status'
-                if($html.Contains('<table class="checks"')){Assert-Payout ($html.Contains('colspan="4"') -and [regex]::Matches($html,'<col\b').Count -eq 4) 'AppSettings columns are misaligned'}
-            }
-            $caseCount++
         }
+        # Deliberate decoys must never replace the value in the kitchen schedule.
+        $config|Add-Member NoteProperty BranchUUID 'DO-NOT-USE-ROOT-BRANCH'
+        $config.Print|Add-Member NoteProperty BranchUUID 'DO-NOT-USE-PRINT-BRANCH'
+        foreach($schedule in @($config.ScheduleConfiguration.Schedules)){
+            if($schedule -and $schedule.Provider -in @('SIX','NETS','NEXIDE')){$schedule|Add-Member NoteProperty BranchUUID 'DO-NOT-USE-PAYMENT-BRANCH' -Force}
+        }
+        $path=Join-Path $fixtureRoot ($client+'-'+$case+'-appsettings.json')
+        [IO.File]::WriteAllText($path,($config|ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false))
+        $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+        $snapshot=ConvertFrom-ThoroughPaymentJson ([IO.File]::ReadAllText($path))
+        $before=$snapshot|ConvertTo-Json -Depth 12 -Compress
+        $source=[pscustomobject]@{SectionNumber=5;SectionTitle='AppSettings Check';ItemTitle='Payment Service appsettings.json';ItemSub='Type: Read-only Configuration Inspection';Shortcut=(New-ReportCommand @('notepad.exe "'+$path+'"'));ConfigurationSnapshot=$snapshot;ConfigurationServiceName='SamplePayment';ConfigurationPath=$path;Status='Pass';FoundStateHtml='Fixture';ActionTaken='Fixture'}
+        $rows=@(Get-ThoroughAppSettingsReportRows $source)
+        $lines=@(Get-ThoroughPaymentConfigurationAuditLines $snapshot 'SamplePayment' $path)
+        $lineText=$lines -join "`n"
+        Assert-Payout ((Get-ThoroughReportComponentName 'ScheduleConfiguration') -ceq 'WebApp Printer' -and (Get-ThoroughReportComponentName 'Payout Scheduler') -ceq 'Cron Job') 'Requested component names are missing'
+        Assert-Payout ($lineText -match 'WebApp Printer(?: \d+)?:' -and $lineText -match 'Kitchen Printer:' -and $lineText -match 'Kiosk/POS Printer:' -and $lineText -notmatch 'WebApp/Shop Print|Payout Scheduler|Do not report') ('Raw collection labels or selected fields are incorrect: '+$client+'/'+$case+'; '+$lineText)
+        $webRow=@($rows|Where-Object ItemTitle -EQ 'ScheduleConfiguration')[0]
+        $branchValues=@([regex]::Matches($webRow.FoundStateHtml,'BranchUUID:</span>\s*([^<]*)')|ForEach-Object {[Net.WebUtility]::HtmlDecode($_.Groups[1].Value)})
+        $kitchenUnavailable=$case -in @('direct','missing-branch','empty-branch','empty-schedules')
+        $expectedBranches=if($case -eq 'multiple-kitchen'){@('00000000000000000000000000000001','00000000000000000000000000000002')}elseif($case -eq 'branch-case'){@('branch & <fixture>')}elseif($case -eq 'empty-branch'){@('(empty)')}elseif($kitchenUnavailable){@('Not configured')}else{@('00000000000000000000000000000001')}
+        Assert-Payout (($branchValues -join '|') -ceq ($expectedBranches -join '|') -and $webRow.FoundStateHtml -notmatch 'DO-NOT-USE') 'WebApp BranchUUID came from an unrelated path, lost its record identity or was omitted'
+        Assert-Payout (($webRow.Status -eq 'Fail') -eq $kitchenUnavailable) 'Missing BranchUUID or valid False settings changed collection status incorrectly'
+        $payout=@($rows|Where-Object ItemTitle -EQ 'Payout Scheduler')
+        $supported=$case -notin @('PRINT','unknown')
+        if(-not $supported){Assert-Payout ($payout.Count -eq 0 -and $lineText -notmatch 'Cron Job') 'An unsupported provider acquired Cron Job data'}
+        else{
+            Assert-Payout ($payout.Count -eq 1) 'Cron Job component is missing or duplicated'
+            $payout=$payout[0]
+            $terminal=if($provider.Trim().ToUpperInvariant() -eq 'SIX'){'SIX Terminal'}else{'NETS Terminal'}
+            $count=if($case -eq 'multiple'){2}else{1}
+            $headings=@([regex]::Matches($payout.FoundStateHtml,'<div class="config-item-title">([^<]+)</div>')|ForEach-Object {$_.Groups[1].Value})
+            Assert-Payout ($headings.Count -eq $count -and -not @($headings|Where-Object {$_ -cne $terminal}).Count -and $payout.FoundStateHtml -notmatch '\[?Schedule \d') 'Cron Job headings depend on array position instead of provider family'
+            $missing=$case -in @('missing-match','missing-flag','empty-flag','empty-schedules')
+            Assert-Payout (($payout.Status -eq 'Fail') -eq $missing) 'A False flag or absent schedule changed collection status'
+            $fields=@(Read-ThoroughAuditFields $payout.FoundStateHtml|Where-Object Kind -EQ 'Field')
+            Assert-Payout (($fields.Label -join '|') -ceq $(if($count -eq 2){'Provider|IsEnabled|Provider|IsEnabled'}else{'Provider|IsEnabled'})) 'Cron Job collected unexpected properties'
+            if($case -notin @('missing-match','empty-schedules')){
+                $selected=$provider.Trim().ToUpperInvariant()
+                Assert-Payout (-not @($fields|Where-Object {$_.Label -eq 'Provider' -and $_.Text.Trim().ToUpperInvariant() -cne $selected}).Count) 'An unrelated payment provider was included'
+            }
+        }
+        $reports=[ordered]@{}
+        foreach($mode in @('Audit','Fix','Final')){
+            $report=New-ThoroughReportSnapshot -Rows @($source) -BeforeRows @($source) -DisplayMode $mode -AfterApply:($mode -ne 'Audit') -AuditSource $identity -DeviceType KIOSK -Hostname FIXTURE-PC -LauncherKioskId Kiosk-1 -LauncherRestaurantId RESTAURANT-1 -AgentName 'Fixture Agent'
+            $reports[$mode]=$report
+            $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($report.HtmlBase64))
+            Assert-Payout ($html -notmatch 'DO-NOT-USE-') 'A BranchUUID decoy leaked into the report'
+            Assert-Payout ($html -notmatch '>WebApp/Shop Print<|>Payout Scheduler<|>PrinterName<|>KioskPrinterName<|>Schedule 0[12]<|Do not report') 'A report contains an old label or unrequested schedule data'
+            if($mode -eq 'Audit'){
+                $web=Get-AuditRenderedComponent $html 'WebApp Printer';$print=Get-AuditRenderedComponent $html Printer;$cron=Get-AuditRenderedComponent $html 'Cron Job'
+                Assert-Payout ($web.Count -eq 1 -and $print.Count -eq 1 -and $cron.Count -eq [int]$supported) 'Audit component names or provider visibility are incorrect'
+                $displayBranches=@($web.Fields|Where-Object Setting -EQ 'BranchUUID'|ForEach-Object {$_.Found})
+                Assert-Payout (($displayBranches -join '|') -ceq ($expectedBranches -join '|')) 'Audit omitted or changed the collected kitchen BranchUUID'
+                Assert-Payout (@($print.Fields|Where-Object {$_.Setting -eq 'Kitchen Printer' -and $_.Found -eq 'Kitchen & Receipt'}).Count -eq 1 -and @($print.Fields|Where-Object {$_.Setting -eq 'Kiosk/POS Printer' -and $_.Found -eq 'EPSON Receipt'}).Count -eq 1) 'Friendly printer labels lost their original JSON values'
+                if($supported){Assert-Payout ($cron.Headings.Count -eq $count -and -not @($cron.Headings|Where-Object {$_ -cne $terminal}).Count) 'Audit lost the fixed provider-family headings'}
+            }elseif($mode -eq 'Final'){
+                $cron=Get-SettingRenderedComponent $html 'Cron Job';$print=Get-SettingRenderedComponent $html Printer
+                $webFinal=Get-SettingRenderedComponent $html 'WebApp Printer'
+                $displayBranches=@($webFinal.Fields|Where-Object Setting -EQ 'BranchUUID'|ForEach-Object {$_.Value})
+                Assert-Payout (($displayBranches -join '|') -ceq ($expectedBranches -join '|')) 'Final omitted or changed the collected kitchen BranchUUID'
+                Assert-Payout ($cron.Count -eq [int]$supported -and @($print.Fields|Where-Object {$_.Setting -eq 'Kitchen Printer' -and $_.Value -eq 'Kitchen & Receipt'}).Count -eq 1) 'Final lost component names or actual printer values'
+                if($supported){Assert-Payout ($cron.Headings.Count -eq $count -and -not @($cron.Headings|Where-Object {$_ -cne $terminal}).Count) 'Final lost the fixed provider-family headings'}
+            }else{
+                $webFix=Get-SettingRenderedComponent $html 'WebApp Printer'
+                if($kitchenUnavailable){
+                    Assert-Payout ($webFix.Count -eq 1 -and -not @($webFix.Fields|Where-Object Value -NE 'Not applied').Count) 'Fix hid a missing BranchUUID or claimed a configuration repair'
+                    $displayBranches=@($webFix.Fields|Where-Object Setting -EQ 'BranchUUID'|ForEach-Object {$_.Findings})
+                    Assert-Payout (($displayBranches -join '|') -ceq ($expectedBranches -join '|')) 'Fix lost the original missing BranchUUID observation'
+                }
+                else{Assert-Payout ($webFix.Count -eq 0) 'A complete WebApp Printer record appeared in Fix'}
+                $cron=Get-SettingRenderedComponent $html 'Cron Job'
+                if($supported -and $missing){Assert-Payout ($cron.Count -eq 1 -and -not @($cron.Fields|Where-Object Value -NE 'Not applied').Count) 'Fix hid missing Cron data or claimed read-only repairs'}
+                else{Assert-Payout ($cron.Count -eq 0) 'Healthy or unsupported Cron Job data appeared in Fix'}
+            }
+        }
+        if($case -in @('SIX','NETS','NEXIDE','PRINT','multiple','multiple-kitchen','missing-branch')){
+            $state=[pscustomobject]@{Version=1;ClientType=$client;ComputerName='FIXTURE-PC';BundleId=$identity.ReportId;LatestMode='Audit';Reports=[pscustomobject]$reports}
+            [IO.File]::WriteAllText((Join-Path $previewRoot ($client+'-'+$case+'-preview.html')),(New-ThoroughReportBundleHtml $state),[Text.UTF8Encoding]::new($false))
+        }
+        Assert-Payout (($snapshot|ConvertTo-Json -Depth 12 -Compress) -ceq $before -and (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ceq $hash) 'Read-only collection changed input JSON or configuration file bytes'
+        $caseCount++
     }
 }
-Write-Output ("PASS: $caseCount read-only payout/provider/shape/missing-value cases and 16 real-renderer previews across both clients and modes. No device or service changes ran.")
+Write-Output ('PASS: '+$caseCount+' provider/shape/missing-value cases across both clients and all report modes; fixed Cron headings, friendly printer names and unchanged configuration bytes.')
