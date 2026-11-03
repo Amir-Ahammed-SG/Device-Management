@@ -137,7 +137,21 @@ function Get-PaymentCronModel {
         if($provider.Value -ieq 'SIX'){$six.Add($record)}
         $index++
     }
-    [pscustomobject]@{Records=$records.ToArray();Six=$six.ToArray();AllSchedules=$all.ToArray()}
+    # Inspection metadata only: never serialize or rewrite terminal settings.
+    $terminals=[Collections.Generic.List[object]]::new();$identities=@{}
+    $provider=Get-PaymentCronMember $root 'PaymentService'
+    $terminalList=Get-PaymentCronMember (Get-PaymentCronMember $root 'PaymentConfiguration') 'SixTerminals'
+    $terminalConfigurationVerified=$null -ne $provider -and $provider.Kind -eq 'String' -and $provider.Value -ieq 'SIX' -and $null -ne $terminalList -and $terminalList.Kind -eq 'Array' -and $terminalList.Items.Count -gt 0
+    if($null -ne $terminalList -and $terminalList.Kind -eq 'Array'){
+        foreach($terminal in $terminalList.Items){
+            $kiosk=Get-PaymentCronMember $terminal 'KioskId';$id=Get-PaymentCronMember $terminal 'TerminalId'
+            if($null -eq $kiosk -or $kiosk.Kind -ne 'String' -or [string]::IsNullOrWhiteSpace($kiosk.Value) -or $kiosk.Value -match '[,\x00-\x1F\x7F-\x9F]' -or $null -eq $id -or $id.Kind -notin @('String','Number') -or $id.Value -notmatch '^[0-9]+$'){$terminalConfigurationVerified=$false;continue}
+            $key=$kiosk.Value+[char]31+$id.Value
+            if($identities.ContainsKey($key)){$terminalConfigurationVerified=$false;continue}
+            $identities[$key]=$true;$terminals.Add([pscustomobject]@{KioskId=$kiosk.Value;TerminalId=[string]$id.Value;Key=$key})
+        }
+    }
+    [pscustomobject]@{Records=$records.ToArray();Six=$six.ToArray();AllSchedules=$all.ToArray();SixTerminals=$terminals.ToArray();TerminalConfigurationVerified=[bool]$terminalConfigurationVerified}
 }
 
 function Assert-PaymentCronSixRegistration {
@@ -393,30 +407,60 @@ function Read-PaymentCronFreshLog {
     try{[Text.UTF8Encoding]::new($false,$true).GetString($bytes)}catch{return ''}
 }
 
-function Test-PaymentCronRegistrationLog {
-    param([string]$Text,$Schedule,[datetime]$StartedUtc)
+function Test-PaymentCronRuntimeLog {
+    param([string]$Text,$Schedule,[datetime]$StartedUtc,[object[]]$Terminals=@())
     $expected='++Registering schedule: '+$Schedule.Name+' ('+$Schedule.UID+')'
-    $registered=$false;$complete=$false;$errors=$false
+    $registered=$false;$complete=$false;$errors=$false;$started=$false;$stopped=$false
+    $states=@{};foreach($terminal in $Terminals){$states[$terminal.Key]='Not verified'}
+    $events=[Collections.Generic.List[object]]::new()
     foreach($line in ($Text -split '\r?\n')){
         $match=[regex]::Match($line,'^(?<Time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2}:\d{2}) \[(?<Level>[A-Z]{3})\] (?<Message>.*)$')
         if(-not $match.Success){continue}
         $stamp=[DateTimeOffset]::MinValue
         if(-not [DateTimeOffset]::TryParseExact($match.Groups['Time'].Value,'yyyy-MM-dd HH:mm:ss.fff zzz',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::None,[ref]$stamp)){continue}
         if($stamp.UtcDateTime -lt $StartedUtc -or $stamp.UtcDateTime -gt [DateTime]::UtcNow.AddSeconds(2)){continue}
-        $message=$match.Groups['Message'].Value
-        if($match.Groups['Level'].Value -in @('ERR','FTL')){$errors=$true}
-        if($match.Groups['Level'].Value -eq 'INF' -and $message -ceq $expected){$registered=$true}
-        if($registered -and $match.Groups['Level'].Value -eq 'INF' -and $message -ceq '++Schdules successfully registered...'){$complete=$true}
+        $events.Add([pscustomobject]@{At=$stamp.UtcDateTime;Level=$match.Groups['Level'].Value;Message=$match.Groups['Message'].Value})
     }
-    [pscustomobject]@{Registered=($registered -and $complete -and -not $errors);Errors=$errors}
+    foreach($event in @($events|Sort-Object At)){
+        $message=$event.Message
+        if($event.Level -in @('ERR','FTL')){$errors=$true}
+        if($event.Level -ne 'INF'){continue}
+        if($message -ceq $expected){$registered=$true}
+        if($registered -and $message -ceq '++Schdules successfully registered...'){$complete=$true}
+        $application=[regex]::Match($message,'^Application has started\. Timestamp: "(?<Time>[^"]+)"$')
+        if($application.Success){
+            $applicationTime=[DateTimeOffset]::MinValue
+            if([DateTimeOffset]::TryParse($application.Groups['Time'].Value,[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::None,[ref]$applicationTime) -and $applicationTime.UtcDateTime -ge $StartedUtc -and [Math]::Abs(($applicationTime.UtcDateTime-$event.At).TotalSeconds) -le 2){$started=$true}
+        }
+        if($message -cmatch '^(?:Application has stopped\. Timestamp:|Application is stopping\. Timestamp:|ApplicationLifecycleService is stopping\.|Application shutting down\.\.\.)'){$stopped=$true}
+        $login=[regex]::Match($message,'^(?<Stage>Started|Completed) logging into the TIM API Terminal\. KioskId: (?<Kiosk>[^,]+), TerminalId: (?<Terminal>[0-9]+), IsLoggedIn: (?<Flag>True|False)$')
+        if($login.Success){
+            $key=$login.Groups['Kiosk'].Value+[char]31+$login.Groups['Terminal'].Value
+            if($states.ContainsKey($key)){$states[$key]=if($login.Groups['Stage'].Value -ceq 'Completed' -and $login.Groups['Flag'].Value -ceq 'True'){'Verified'}else{'Not verified'}}
+        }
+    }
+    if($stopped){foreach($key in @($states.Keys)){$states[$key]='Not verified'}}
+    [pscustomobject]@{Registered=($registered -and $complete -and -not $errors -and -not $stopped);Errors=$errors;ApplicationStarted=($started -and -not $stopped);Stopped=$stopped;TerminalStates=$states;TerminalsConnected=($states.Count -gt 0 -and @($states.Values|Where-Object {$_ -ne 'Verified'}).Count -eq 0)}
+}
+
+function Write-PaymentCronRuntimeEvidence {
+    param($Evidence,$Model)
+    $application=if($Evidence.ApplicationStarted){'Verified'}else{'Not verified'}
+    $connected=$Model.TerminalConfigurationVerified -and $Evidence.TerminalsConnected
+    Write-Host ('  Application startup: '+$application) -ForegroundColor $(if($Evidence.ApplicationStarted){'Green'}else{'Yellow'})
+    Write-Host ('  SIX terminal connection: '+$(if($connected){'Verified (login completed)'}else{'Not verified'})) -ForegroundColor $(if($connected){'Green'}else{'Yellow'})
+    foreach($terminal in $Model.SixTerminals){Write-Host ('    KioskId: '+$terminal.KioskId+' | TerminalId: '+$terminal.TerminalId+' | '+$Evidence.TerminalStates[$terminal.Key])}
+    if(-not $Model.TerminalConfigurationVerified){Write-Host '    PaymentService SIX and unambiguous PaymentConfiguration.SixTerminals are required to verify all terminals.' -ForegroundColor Yellow}
+    Write-Host ('  SIX cron registration (optional): '+$(if($Evidence.Registered){'Verified (matching Name/UID)'}else{'Not verified'})) -ForegroundColor $(if($Evidence.Registered){'Green'}else{'Yellow'})
+    Write-Host '  Job execution: Not tested (no manual payment/balance trigger).'
 }
 
 function Confirm-PaymentCronRuntime {
-    param($Context,$Snapshot,[int]$VerificationSeconds=15,[int]$StableSeconds=3)
+    param($Context,$Snapshot,[int]$VerificationSeconds=30,[int]$StableSeconds=3)
     Write-Host '  Restarting the selected Payment Service can interrupt an active payment.' -ForegroundColor Yellow
     do{$answer=([string](Read-Host '  Restart selected Payment Service to load SIX Cron? [Y/N]')).Trim()}while($answer -notin @('Y','N'))
-    if($answer -ieq 'N'){Write-Host '  Service reload: Skipped. SIX registration: Not verified.' -ForegroundColor Yellow;return [pscustomobject]@{Status='Pending'}}
-    $stopAttempted=$false;$restarted=$false
+    if($answer -ieq 'N'){Write-Host '  Service reload: Skipped. Application, terminal and SIX registration: Not verified.' -ForegroundColor Yellow;return [pscustomobject]@{Status='Pending';ApplicationStatus='Not verified';TerminalStatus='Not verified';CronStatus='Not verified'}}
+    $stopAttempted=$false;$restarted=$false;$evidence=$null;$evidenceShown=$false
     try{
         if($WhatIfPreference -or -not (Test-PaymentCronAdministrator)){throw 'Approved administrator execution without WhatIf is required to restart.'}
         Assert-PaymentCronSixRegistration $Snapshot.Model
@@ -443,32 +487,31 @@ function Confirm-PaymentCronRuntime {
         if($null -eq $new.StartedUtc -or $new.StartedUtc -le $Context.StartedUtc -or $new.Executable -ine $Context.Executable -or $new.Command -cne $Context.Command){throw 'New service process identity could not be verified.'}
         $restarted=$true
         Write-Host ('  Service reload: Verified. Running process: '+$new.ProcessId) -ForegroundColor Green
-        Write-Host '  Checking fresh SIX registration logs (up to 15 seconds)...'
-        $timer=[Diagnostics.Stopwatch]::StartNew();$registered=$false
+        Write-Host ('  Checking fresh application, SIX terminal and cron logs (up to '+$VerificationSeconds+' seconds)...')
+        $timer=[Diagnostics.Stopwatch]::StartNew()
+        $evidence=Test-PaymentCronRuntimeLog '' $Snapshot.Model.Six[0] $new.StartedUtc $Snapshot.Model.SixTerminals
         do{
             $observed=Get-PaymentCronServiceContext (Get-PaymentCronServiceInstance $Context.Name)
             if($observed.ProcessId -ne $new.ProcessId -or $observed.StartedUtc -ne $new.StartedUtc -or $observed.Command -cne $Context.Command){throw 'Service stopped or changed during runtime verification.'}
             if(-not (Test-PaymentCronBytesEqual (Read-PaymentCronSnapshot $Context.Path).Bytes $Snapshot.Bytes)){throw 'Configuration changed during runtime verification.'}
             if($logsReadable){
                 try{
-                    foreach($file in @(Get-PaymentCronLogFiles)){
-                        $evidence=Test-PaymentCronRegistrationLog (Read-PaymentCronFreshLog $file $baseline $new) $Snapshot.Model.Six[0] $new.StartedUtc
-                        if($evidence.Errors){throw 'Selected process logged startup errors.'}
-                        if($evidence.Registered){$registered=$true}
-                    }
-                }catch{if($_.Exception.Message -eq 'Selected process logged startup errors.'){throw};$logsReadable=$false;$registered=$false}
+                    $texts=@(foreach($file in @(Get-PaymentCronLogFiles)){Read-PaymentCronFreshLog $file $baseline $new})
+                    $evidence=Test-PaymentCronRuntimeLog ($texts -join "`n") $Snapshot.Model.Six[0] $new.StartedUtc $Snapshot.Model.SixTerminals
+                }catch{$logsReadable=$false;$evidence=Test-PaymentCronRuntimeLog '' $Snapshot.Model.Six[0] $new.StartedUtc $Snapshot.Model.SixTerminals}
             }
-            if(-not $logsReadable -or ($registered -and $timer.Elapsed.TotalSeconds -ge $StableSeconds)){break}
+            if($evidence.Errors){throw 'Selected process logged startup errors.'}
+            if($evidence.Stopped){throw 'Selected application logged shutdown during verification.'}
+            $ready=$evidence.ApplicationStarted -and $Snapshot.Model.TerminalConfigurationVerified -and $evidence.TerminalsConnected
+            if(-not $logsReadable -or ($ready -and $timer.Elapsed.TotalSeconds -ge $StableSeconds)){break}
             if($timer.Elapsed.TotalSeconds -ge $VerificationSeconds){break}
             Start-Sleep -Milliseconds 500
         }while($true)
         # Even unavailable logs require one final live-state and byte check.
         $observed=Get-PaymentCronServiceContext (Get-PaymentCronServiceInstance $Context.Name)
         if($observed.ProcessId -ne $new.ProcessId -or $observed.StartedUtc -ne $new.StartedUtc -or $observed.Command -cne $Context.Command -or -not (Test-PaymentCronBytesEqual (Read-PaymentCronSnapshot $Context.Path).Bytes $Snapshot.Bytes)){throw 'Final runtime state or configuration was not stable.'}
-        if($registered){Write-Host '  SIX registration log: Verified (matching Name/UID, selected process).' -ForegroundColor Green}
-        else{Write-Host '  SIX registration: Not verified. Fresh process-owned registration evidence is unavailable.' -ForegroundColor Yellow}
-        Write-Host '  Job execution: Not tested (no manual payment/balance trigger).'
-        [pscustomobject]@{Status=$(if($registered){'Verified'}else{'Pending'})}
+        Write-PaymentCronRuntimeEvidence $evidence $Snapshot.Model;$evidenceShown=$true
+        [pscustomobject]@{Status=$(if($ready){'Verified'}else{'Pending'});ApplicationStatus=$(if($evidence.ApplicationStarted){'Verified'}else{'Not verified'});TerminalStatus=$(if($Snapshot.Model.TerminalConfigurationVerified -and $evidence.TerminalsConnected){'Verified'}else{'Not verified'});CronStatus=$(if($evidence.Registered){'Verified'}else{'Not verified'})}
     }catch{
         $message=$_.Exception.Message
         if($stopAttempted -and -not $restarted){
@@ -481,6 +524,7 @@ function Confirm-PaymentCronRuntime {
                 }else{$message+=' Check the selected service manually.'}
             }catch{$message+=' Selected service recovery was not verified; manual action required.'}
         }
+        if($null -ne $evidence -and -not $evidenceShown){Write-PaymentCronRuntimeEvidence $evidence $Snapshot.Model}
         Write-Host ('  Runtime verification failed: '+$message) -ForegroundColor Red
         [pscustomobject]@{Status='Failed'}
     }
@@ -527,7 +571,7 @@ function Invoke-PaymentCronJob {
             Write-Host '  File readback: Verified; all bytes outside the SIX Boolean are unchanged.' -ForegroundColor Green
         }
         $runtime=Confirm-PaymentCronRuntime $context $after
-        [pscustomobject]@{Status=$(if($runtime.Status -eq 'Verified'){'Pass'}elseif($runtime.Status -eq 'Pending'){'Skipped'}else{'Fail'});ReturnToMenu=$false;RuntimeStatus=$runtime.Status}
+        [pscustomobject]@{Status=$(if($runtime.Status -eq 'Verified'){'Pass'}elseif($runtime.Status -eq 'Pending'){'Skipped'}else{'Fail'});ReturnToMenu=$false;RuntimeStatus=$runtime.Status;RuntimeDetails=$runtime}
     }catch{Write-Host ('  Failed: '+$_.Exception.Message) -ForegroundColor Red;[pscustomobject]@{Status='Fail';ReturnToMenu=$false}}
 }
 

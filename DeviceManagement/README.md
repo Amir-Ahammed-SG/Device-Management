@@ -82,15 +82,28 @@ processes. Failed control responses trigger a selected-service recovery attempt
 only when that service is confirmed stopped with the same executable command.
 
 Reload verification requires a newer process creation time, the same executable path
-and command, a stable Running state, and unchanged configuration. SIX registration
-additionally requires fresh matching Name/UID and completed-registration messages
-from `C:\Logs\Payment_Middleware_*.txt`, after the pre-restart file offsets and new
-process start. The supported log format comes from Payment Middleware source
+and command, a stable Running state, and unchanged configuration. The tool then
+waits up to 30 seconds for fresh **Application has started** and completed TIM API
+terminal-login messages with **IsLoggedIn: True**, matching each configured
+`PaymentConfiguration.SixTerminals` KioskId/TerminalId pair. It reports application
+startup and each terminal separately. Missing, ambiguous, wrong-device, login-attempt
+only or incomplete terminal evidence remains Not verified. A later login retry
+invalidates the earlier successful login in the same observation window.
+The provider must be SIX and all configured terminal identities must be readable
+and unique to verify the aggregate terminal result. No terminal settings are changed.
+
+Cron registration is an **optional, separate result**: it requires the matching
+SIX schedule Name/UID followed by the completed-registration message. Missing cron
+evidence does not block a verified application/terminal result. This proves log
+evidence of registration, not execution of the scheduled balance job.
+All evidence comes from `C:\Logs\Payment_Middleware_*.txt`, after the pre-restart
+file offsets and new process start. The startup/login format was also verified
+against the supplied Payment Middleware log. The scheduler format comes from source
 `a52d204e8e5d82b3ada0cb74b255d102018ae3c7`. Windows Restart Manager is queried
 read-only to ensure the log has a single owner matching the selected PID and
 process start time. The tool imports no Restart Manager shutdown/restart APIs.
 Unreadable, ambiguous, stale, differently formatted or unowned logs remain
-Not verified; observed startup errors fail verification. Pending verification
+Not verified; observed errors or application shutdown fail verification. Pending verification
 returns Skipped rather than Pass. No test payment/balance job is requested, and
 job execution is not verified. No Payment Middleware source/binary is modified.
 `Tests/Test-PaymentCronJob.ps1` covers byte-safe JSON changes; the separate

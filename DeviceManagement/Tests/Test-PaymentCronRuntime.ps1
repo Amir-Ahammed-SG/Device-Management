@@ -16,7 +16,7 @@ $realConfirm=(Get-Command Confirm-PaymentCronRuntime).ScriptBlock
 $realWait=(Get-Command Wait-PaymentCronServiceState).ScriptBlock
 $realWrite=(Get-Command Write-PaymentCronBytes).ScriptBlock
 function Assert-Runtime {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
-$json='{"ScheduleConfiguration":{"Schedules":[{"Provider":"SIX","Name":"Cron six [fixture]","UID":"shared-uid","CronExpression":"0 3 * * *","IsEnabled":true},{"Provider":"NETS","Name":"Nets","UID":"shared-uid","CronExpression":"0 3 * * *","IsEnabled":false},{"Provider":"Other","Name":"Other","UID":"other-uid","CronExpression":"* * * * *","IsEnabled":true}]}}'
+$json='{"PaymentService":"SIX","PaymentConfiguration":{"SixTerminals":[{"KioskId":"Kiosk-1","TerminalId":"12345678"}]},"ScheduleConfiguration":{"Schedules":[{"Provider":"SIX","Name":"Cron six [fixture]","UID":"shared-uid","CronExpression":"0 3 * * *","IsEnabled":true},{"Provider":"NETS","Name":"Nets","UID":"shared-uid","CronExpression":"0 3 * * *","IsEnabled":false},{"Provider":"Other","Name":"Other","UID":"other-uid","CronExpression":"* * * * *","IsEnabled":true}]}}'
 function Reset-Runtime {
     $script:Mode='success';$script:Admin=$true;$script:WhatIfPreference=$false;$script:Stops=0;$script:Starts=0;$script:ServiceReads=0;$script:Writes=0
     $script:Created=[datetime]::UtcNow.AddMinutes(-10);$script:OriginalCreated=$script:Created
@@ -86,6 +86,16 @@ function Invoke-CimMethod {param($InputObject,$MethodName,$OperationTimeoutSec,$
     $level=if($script:Mode -eq 'wrong-level'){'WRN'}else{'INF'}
     $lines=$time+' ['+$level+'] '+$message+"`r`n"
     if($script:Mode -ne 'incomplete-log'){$lines+=$time+" [INF] ++Schdules successfully registered...`r`n"}
+    if($script:Mode -eq 'no-cron'){$lines=''}
+    if($script:Mode -ne 'no-startup'){$lines+=$time+' [INF] Application has started. Timestamp: "'+$stamp.ToString('o')+'"'+"`r`n"}
+    $terminalId=if($script:Mode -eq 'wrong-terminal'){'99999999'}else{'12345678'}
+    $kioskId=if($script:Mode -eq 'wrong-kiosk'){'Kiosk-2'}else{'Kiosk-1'}
+    $stage=if($script:Mode -eq 'login-attempt'){'Started'}else{'Completed'}
+    $flag=if($script:Mode -in @('login-attempt','login-false')){'False'}else{'True'}
+    $lines+=$time+' [INF] '+$stage+' logging into the TIM API Terminal. KioskId: '+$kioskId+', TerminalId: '+$terminalId+', IsLoggedIn: '+$flag+"`r`n"
+    if($script:Mode -eq 'login-retry'){$lines+=$time+" [INF] Started logging into the TIM API Terminal. KioskId: Kiosk-1, TerminalId: 12345678, IsLoggedIn: False`r`n"}
+    if($script:Mode -eq 'multiple-terminals'){$lines+=$time+" [INF] Completed logging into the TIM API Terminal. KioskId: Kiosk-2, TerminalId: 87654321, IsLoggedIn: True`r`n"}
+    if($script:Mode -eq 'shutdown'){$lines+=$time+" [INF] Application shutting down...`r`n"}
     if($script:Mode -eq 'startup-error'){$lines+=$time+" [ERR] Host terminated unexpectedly.`r`n"}
     if($script:Mode -eq 'truncated-log'){[IO.File]::WriteAllText($log,'')}
     else{[IO.File]::AppendAllText($log,$lines,[Text.UTF8Encoding]::new($false))}
@@ -98,8 +108,13 @@ function Stop-Process {throw 'Process killing is forbidden'}
 function Start-Process {throw 'Process execution is forbidden'}
 function Copy-Item {throw 'Backup creation is forbidden'}
 $cases=0
-foreach($mode in @('success','pid-reuse','decline','invalid-decline','no-admin','whatif','process-changed','config-changed','uid-conflict','no-start-time','stop-refused','stop-rpc-failed','stop-timeout','start-failed','start-recovery','start-timeout','old-process','crash','process-switch','config-changed-after','no-logs','baseline-denied','owners-denied','wrong-owner','multiple-owners','stale-owner','stale-log','future-log','wrong-uid','wrong-name','wrong-level','incomplete-log','startup-error','truncated-log')){
+foreach($mode in @('success','pid-reuse','decline','invalid-decline','no-admin','whatif','process-changed','config-changed','uid-conflict','no-start-time','stop-refused','stop-rpc-failed','stop-timeout','start-failed','start-recovery','start-timeout','old-process','crash','process-switch','config-changed-after','no-logs','baseline-denied','owners-denied','wrong-owner','multiple-owners','stale-owner','stale-log','future-log','wrong-uid','wrong-name','wrong-level','incomplete-log','startup-error','truncated-log','no-cron','no-startup','login-attempt','wrong-terminal','wrong-kiosk','login-false','login-retry','shutdown','missing-terminal-config','ambiguous-terminal-config','multiple-terminals','second-terminal-missing','numeric-terminal')){
     Reset-Runtime;$script:Mode=$mode
+    if($mode -eq 'missing-terminal-config'){[IO.File]::WriteAllText($path,$json.Replace('"PaymentService":"SIX"','"PaymentService":"NETS"'))}
+    if($mode -eq 'ambiguous-terminal-config'){[IO.File]::WriteAllText($path,$json.Replace('"TerminalId":"12345678"}]','"TerminalId":"12345678"},{"KioskId":"Kiosk-1","TerminalId":"12345678"}]'))}
+    if($mode -in @('multiple-terminals','second-terminal-missing')){[IO.File]::WriteAllText($path,$json.Replace('"TerminalId":"12345678"}]','"TerminalId":"12345678"},{"KioskId":"Kiosk-2","TerminalId":"87654321"}]'))}
+    if($mode -eq 'numeric-terminal'){[IO.File]::WriteAllText($path,$json.Replace('"TerminalId":"12345678"','"TerminalId":12345678'))}
+    $initialBytes=[IO.File]::ReadAllBytes($path)
     $context=Get-PaymentCronServiceContext $script:Service;$snapshot=Read-PaymentCronSnapshot $path
     switch($mode){
         'no-admin' {$script:Admin=$false}
@@ -113,15 +128,16 @@ foreach($mode in @('success','pid-reuse','decline','invalid-decline','no-admin',
     $script:ServiceReads=0
     $script:Answers.Enqueue($(if($mode -in @('decline','invalid-decline')){'N'}else{'Y'}))
     $result=Confirm-PaymentCronRuntime $context $snapshot
-    $expected=if($mode -in @('success','pid-reuse')){'Verified'}elseif($mode -in @('decline','invalid-decline','no-logs','baseline-denied','owners-denied','wrong-owner','multiple-owners','stale-owner','stale-log','future-log','wrong-uid','wrong-name','wrong-level','incomplete-log','truncated-log')){'Pending'}else{'Failed'}
+    $expected=if($mode -in @('success','pid-reuse','wrong-uid','wrong-name','wrong-level','incomplete-log','no-cron','multiple-terminals','numeric-terminal')){'Verified'}elseif($mode -in @('decline','invalid-decline','no-logs','baseline-denied','owners-denied','wrong-owner','multiple-owners','stale-owner','stale-log','future-log','truncated-log','no-startup','login-attempt','wrong-terminal','wrong-kiosk','login-false','login-retry','missing-terminal-config','ambiguous-terminal-config','second-terminal-missing')){'Pending'}else{'Failed'}
     Assert-Runtime ($result.Status -eq $expected) ('Incorrect runtime verification: '+$mode+' / '+$result.Status)
     if($mode -in @('decline','invalid-decline','no-admin','whatif','process-changed','config-changed','uid-conflict','no-start-time')){Assert-Runtime ($script:Stops -eq 0 -and $script:Starts -eq 0) ('Unsafe restart: '+$mode)}
     if($mode -eq 'stop-refused'){Assert-Runtime ($script:Stops -eq 1 -and $script:Starts -eq 0) 'Refused stop forced a dependent service'}
     if($mode -eq 'start-recovery'){Assert-Runtime ($script:Starts -eq 2 -and $script:Service.State -eq 'Running') 'Failed start did not attempt selected-service recovery'}
     if($mode -eq 'stop-rpc-failed'){Assert-Runtime ($script:Starts -eq 1 -and $script:Service.State -eq 'Running') 'Lost stop response left a confirmed stopped service without recovery'}
     Assert-Runtime ($script:Writes -eq 0) 'Restart verification rewrote configuration'
-    $wanted=if($mode -in @('config-changed','config-changed-after')){$json+' '}else{$json}
-    Assert-Runtime ([IO.File]::ReadAllText($path) -ceq $wanted) ('Runtime verification changed file bytes: '+$mode)
+    if($mode -in @('wrong-uid','wrong-name','wrong-level','incomplete-log','no-cron')){Assert-Runtime ($result.CronStatus -eq 'Not verified') ('Optional cron registration was fabricated: '+$mode)}
+    $wanted=if($mode -in @('config-changed','config-changed-after')){[Text.Encoding]::UTF8.GetBytes($json+' ')}else{$initialBytes}
+    Assert-Runtime (Test-PaymentCronBytesEqual ([IO.File]::ReadAllBytes($path)) $wanted) ('Runtime verification changed file bytes: '+$mode)
     $cases++
 }
 foreach($enabled in @($false,$true)){
@@ -151,10 +167,35 @@ foreach($field in @('Name','UID','CronExpression')){
     Assert-Runtime ($result.Status -eq 'Fail' -and $script:Prompts.Count -eq 0 -and $script:Stops -eq 0 -and $script:Writes -eq 0) 'Incomplete SIX identity was enabled or restarted'
     $cases++
 }
+# Independent message-parser cases use the supplied log's format with synthetic IDs.
+$since=[datetime]::UtcNow.AddSeconds(-10);$at=$since.AddSeconds(1)
+$prefix=([DateTimeOffset]$at).ToString('yyyy-MM-dd HH:mm:ss.fff zzz',[Globalization.CultureInfo]::InvariantCulture)
+$application=$prefix+' [INF] Application has started. Timestamp: "'+$at.ToString('o')+'"'
+$login=$prefix+' [INF] Completed logging into the TIM API Terminal. KioskId: Kiosk-1, TerminalId: 12345678, IsLoggedIn: True'
+$model=Get-PaymentCronModel $json
+foreach($case in @('valid','receipt-spoof','wrong-app-level','bad-inner-time','stale-inner-time','wrong-terminal-prefix','transaction-only','partial-line','registration-summary-only','shutdown-after-login')){
+    $text=$application+"`n"+$login
+    switch($case){
+        'receipt-spoof' {$text=$prefix+' [INF] Received Message: '+$application+' '+$login}
+        'wrong-app-level' {$text=$text.Replace('[INF] Application','[DBG] Application')}
+        'bad-inner-time' {$text=$text.Replace($at.ToString('o'),'invalid')}
+        'stale-inner-time' {$text=$text.Replace($at.ToString('o'),$since.AddHours(-1).ToString('o'))}
+        'wrong-terminal-prefix' {$text=$text.Replace('TerminalId: 12345678,','TerminalId: 123456789,')}
+        'transaction-only' {$text=$prefix+' [INF] WebSocket disconnection. PaymentService: SIX, IsTransactionSuccessful: true'}
+        'partial-line' {$text=$application+"`n"+$login.Substring(0,$login.Length-1)}
+        'registration-summary-only' {$text=$prefix+' [INF] ++Schdules successfully registered...'}
+        'shutdown-after-login' {$text+="`n"+$prefix+' [INF] Application shutting down...'}
+    }
+    $proof=Test-PaymentCronRuntimeLog $text $model.Six[0] $since $model.SixTerminals
+    $wantApplication=$case -in @('valid','wrong-terminal-prefix','partial-line')
+    $wantTerminal=$case -in @('valid','wrong-app-level','bad-inner-time','stale-inner-time')
+    Assert-Runtime ($proof.ApplicationStarted -eq $wantApplication -and $proof.TerminalsConnected -eq $wantTerminal -and -not $proof.Registered) ('False startup/terminal/cron proof: '+$case)
+    $cases++
+}
 # Validate the real, read-only Windows owner API without controlling any service.
 $owned=Join-Path $root 'owned-log.txt';$stream=[IO.FileStream]::new($owned,[IO.FileMode]::Create,[IO.FileAccess]::Write,[IO.FileShare]::Read)
 try{
     $owners=@(& $realOwners $owned)
     Assert-Runtime (@($owners|Where-Object Pid -EQ $PID).Count -eq 1) 'Native log-owner query did not identify this fixture process'
 }finally{$stream.Dispose()}
-Write-Output ('PASS: '+$cases+' runtime cases; explicit Y/N, selected-service control, restart/recovery/timeouts, fresh process-owned registration evidence, ambiguity/staleness/errors, unchanged JSON, main flow and native read-only log-owner query. No real service was controlled.')
+Write-Output ('PASS: '+$cases+' runtime cases; explicit Y/N, selected-service control, restart/recovery/timeouts, fresh process-owned startup and configured terminal login, optional cron registration, multiple terminals, ambiguity/staleness/errors, unchanged JSON, main flow and native read-only log-owner query. No real service was controlled.')
