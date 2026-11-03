@@ -73,6 +73,7 @@ $fixtures=@(
     'Test-PayoutScheduler.ps1',
     'Test-ClientDetailsHeader.ps1',
     'Test-LauncherInspection.ps1',
+    'Test-KioskLaunchTask.ps1',
     'Test-KioskAccountProperties.ps1'
 )
 # A separate process prevents one fixture's mocks or preferences leaking to another.

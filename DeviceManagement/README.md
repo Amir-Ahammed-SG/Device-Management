@@ -304,6 +304,38 @@ and event logs, including missing/unreadable detection and failed readback.
 `Tests/Test-PrinterReportGroups.ps1` checks grouping, encoded names, exact copy
 commands, mixed results and actual Audit/Apply report rendering for both clients.
 
+Both clients include **Kiosk Launch Task** under Kiosk Application & Policies.
+Audit reads existing `Launch Kiosk` tasks across Task Scheduler folders and
+records their actual principal, logon trigger/user/delay, action, script path,
+enabled state, execution limit and battery settings. The report also records
+launcher-file availability and whether an existing Startup BAT is also present.
+Missing tasks are reported as missing; unavailable inspection stays unverified.
+
+Apply creates `\Launch Kiosk` only when no task with that name exists and the
+selected local kiosk account, SID, enabled state, existing profile, launcher and
+Windows PowerShell paths have been verified. It uses that account's existing
+`Scripts\LaunchKiosk.ps1`, rather than assuming the username is SELISE-KIOSK.
+The new task runs Windows PowerShell hidden at that user's logon after a
+five-second delay, with `-NoProfile -ExecutionPolicy Bypass`, an interactive
+token and limited privileges. It has no execution time limit, permits battery
+operation, enables StartWhenAvailable and ignores concurrent instances.
+StartWhenAvailable does not guarantee replay of a missed logon event.
+
+Registration is create-only and stores no password. Existing tasks, including
+disabled, incorrectly configured, differently located or ambiguous matches,
+are preserved for manual review. Query failures never authorize creation.
+Apply reads the definition back before reporting remediation; failed or
+unavailable readback remains a failure. Audit, Fix and Final retain the agreed
+setting columns, with actual before/after values in Fix and current recorded
+values in Final. A verified definition does not prove the kiosk opened.
+The check does not start the task, sign the user in, or change auto-login,
+launcher content or Startup BATs. If the Startup BAT also exists, the report
+warns that both logon launch paths remain configured; neither is removed.
+This missing-only repair is separate from the read-only Payment Service
+Restart Task check described above.
+`Tests/Test-KioskLaunchTask.ps1` covers both clients using mocked registration
+and native in-memory definitions, without registering or running a real task.
+
 Audit inspects the launcher, profile and Startup without changes or prompts.
 Within Kiosk Application & Policies, Apply may enable the two required kiosk
 account properties, add missing browser-policy values and create a missing desktop

@@ -3659,6 +3659,250 @@ function Invoke-BrowserPolicyCheck {
     return $result
 }
 
+function Get-KioskLaunchTaskInventory {
+    # A failed enumeration is not evidence that a task is missing.
+    @(Get-ScheduledTask -ErrorAction Stop | Where-Object {[string]$_.TaskName -ieq 'Launch Kiosk'})
+}
+
+function Get-KioskLaunchTaskContext {
+    param([string]$UserName,$Account)
+    $issues=[Collections.Generic.List[string]]::new()
+    $context=[pscustomobject]@{UserName=$UserName;UserId='Not verified';Sid='';ScriptPath='Not verified';ProgramPath=(Join-Path $PSHOME 'powershell.exe');WorkingDirectory='';LauncherFile='Not verified';StartupBat='Not verified';Ready=$false;Reason=''}
+    try{
+        if($null -eq $Account -or [string]$Account.Name -ine $UserName){throw 'The selected kiosk account was not verified.'}
+        $fresh=Get-LocalAccount $UserName
+        if($null -eq $fresh -or $null -eq $fresh.SID -or -not [string]$fresh.SID.Value){throw 'The selected local account SID is unavailable.'}
+        if($null -eq $Account.SID -or [string]$Account.SID.Value -cne [string]$fresh.SID.Value){throw 'The selected local account identity changed; no task was created.'}
+        $context.Sid=[string]$fresh.SID.Value
+        if([string]::IsNullOrWhiteSpace($env:COMPUTERNAME)){throw 'The local computer name is unavailable.'}
+        $context.UserId=$env:COMPUTERNAME+'\'+$UserName
+        if($fresh.Enabled -isnot [bool] -or -not $fresh.Enabled){$issues.Add('The selected kiosk account is disabled or its enabled state is unverified.')}
+        $profile=Get-KioskProfilePath $UserName
+        if([string]::IsNullOrWhiteSpace($profile)){throw 'The selected kiosk user profile is unavailable.'}
+        $profile=[IO.Path]::GetFullPath($profile).TrimEnd('\')
+        if($profile -notmatch '^[A-Za-z]:\\'){throw 'The kiosk profile must be a verified local Windows path.'}
+        $context.ScriptPath=[IO.Path]::GetFullPath((Join-Path $profile 'Scripts\LaunchKiosk.ps1'))
+        $context.WorkingDirectory=[IO.Path]::GetDirectoryName($context.ScriptPath)
+        $startup=Join-Path $profile 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\LaunchKiosk.bat'
+        $context.StartupBat=if(Test-Path -LiteralPath $startup -PathType Leaf -ErrorAction Stop){'Also present (unchanged)'}else{'Not present'}
+        $context.LauncherFile=if(Test-Path -LiteralPath $context.ScriptPath -PathType Leaf -ErrorAction Stop){'Available'}else{'Missing'}
+        if($context.LauncherFile -ne 'Available'){$issues.Add('The existing LaunchKiosk.ps1 file is missing.')}
+        if(-not (Test-Path -LiteralPath $context.ProgramPath -PathType Leaf -ErrorAction Stop)){$issues.Add('Windows PowerShell executable is unavailable.')}
+        foreach($target in @($context.ScriptPath,$context.ProgramPath)){
+            if(-not (Test-Path -LiteralPath $target -PathType Leaf -ErrorAction Stop)){continue}
+            $current=$target
+            while($current){
+                $item=Get-Item -LiteralPath $current -Force -ErrorAction Stop
+                if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){throw 'A linked launcher or executable path requires manual review.'}
+                $parent=[IO.Path]::GetDirectoryName($current)
+                if($parent -eq $current){break};$current=$parent
+            }
+        }
+    }catch{$issues.Add($_.Exception.Message)}
+    $context.Ready=$issues.Count -eq 0
+    $context.Reason=$issues -join ' '
+    $context
+}
+
+function Test-KioskLaunchTaskIdentity {
+    param([string]$Identity,$Context)
+    if(-not $Context.Sid){return $false}
+    $Identity -ieq $Context.Sid -or $Identity -ieq $Context.UserId -or $Identity -ieq ('.\'+$Context.UserName)
+}
+
+function Read-KioskLaunchTaskArguments {
+    param([string]$Arguments)
+    # Inspect native argument tokens only. Never evaluate a task command line.
+    $result=[pscustomobject]@{Known=$false;ScriptPath='Not verified';ProfileLoading='Not verified';ExecutionPolicy='Not verified';WindowStyle='Not verified'}
+    $tokens=[Collections.Generic.List[string]]::new();$end=0
+    foreach($match in [regex]::Matches($Arguments,'"(?<Quoted>[^"]*)"|(?<Bare>[^\s"]+)')){
+        if(($tokens.Count -gt 0 -and $match.Index -eq $end) -or $Arguments.Substring($end,$match.Index-$end).Trim()){return $result}
+        $tokens.Add($(if($match.Groups['Quoted'].Success){$match.Groups['Quoted'].Value}else{$match.Groups['Bare'].Value}))
+        $end=$match.Index+$match.Length
+    }
+    if($Arguments.Substring($end).Trim()){return $result}
+    $seen=@{}
+    for($i=0;$i -lt $tokens.Count;$i++){
+        $key=$tokens[$i].ToLowerInvariant()
+        if($seen.ContainsKey($key)){return $result};$seen[$key]=$true
+        switch($key){
+            '-noprofile' {$result.ProfileLoading='Disabled'}
+            '-executionpolicy' {if(++$i -ge $tokens.Count){return $result};$result.ExecutionPolicy=$tokens[$i]}
+            '-windowstyle' {if(++$i -ge $tokens.Count){return $result};$result.WindowStyle=$tokens[$i]}
+            '-file' {if(++$i -ge $tokens.Count){return $result};$result.ScriptPath=$tokens[$i]}
+            default {return $result}
+        }
+    }
+    $result.Known=$seen.Count -eq 4 -and $seen.ContainsKey('-noprofile') -and $seen.ContainsKey('-executionpolicy') -and $seen.ContainsKey('-windowstyle') -and $seen.ContainsKey('-file')
+    $result
+}
+
+function Get-KioskLaunchTaskFields {
+    param($Context,[string]$Availability='Missing')
+    $fields=[ordered]@{
+        'Task Name'='Launch Kiosk';'Task Path'='\';'Task'=$Availability;'Task State'='Not configured';'Task Enabled'='Not configured'
+        'Run As'='Not configured';'Logon Type'='Not configured';'Run Level'='Not configured';'Trigger'='Not configured';'Logon User'='Not configured'
+        'Startup Delay'='Not configured';'Program'='Not configured';'Script Path'='Not configured';'Profile Loading'='Not configured'
+        'Execution Policy'='Not configured';'Window Style'='Not configured';'Working Directory'='Not configured';'Execution Time Limit'='Not configured'
+        'Start On Battery'='Not configured';'Stop On Battery'='Not configured';'Start When Available'='Not configured'
+        'Launcher File'=$Context.LauncherFile;'Startup BAT'=$Context.StartupBat
+    }
+    if($Availability -eq 'Not verified'){foreach($key in @($fields.Keys|Where-Object {$_ -notin @('Task Name','Task','Launcher File','Startup BAT')})){$fields[$key]='Not verified'}}
+    $fields
+}
+
+function Get-KioskLaunchTaskRequirements {
+    param($Context)
+    [ordered]@{
+        'Task Name'='Launch Kiosk';'Task Path'='\';'Task'='Available';'Task State'='';'Task Enabled'='Yes'
+        'Run As'=$Context.UserId;'Logon Type'='Interactive';'Run Level'='Limited';'Trigger'='At logon';'Logon User'=$Context.UserId
+        'Startup Delay'='5 seconds';'Program'='Windows PowerShell';'Script Path'=$Context.ScriptPath;'Profile Loading'='Disabled'
+        'Execution Policy'='Bypass';'Window Style'='Hidden';'Working Directory'='';'Execution Time Limit'='Unlimited'
+        'Start On Battery'='Yes';'Stop On Battery'='No';'Start When Available'='Yes';'Launcher File'='Available';'Startup BAT'=''
+    }
+}
+
+function Read-KioskLaunchTaskSnapshot {
+    param([AllowEmptyCollection()][object[]]$Tasks,$Context)
+    $fields=Get-KioskLaunchTaskFields $Context
+    if($Tasks.Count -eq 0){return [pscustomobject]@{Fields=$fields;Verified=$true;Passed=$false;Reason='Launch Kiosk task is missing.'}}
+    if($Tasks.Count -ne 1){
+        $fields['Task']='Multiple matches';$fields['Task Path']=($Tasks|ForEach-Object {[string]$_.TaskPath}) -join ', '
+        foreach($key in @($fields.Keys|Where-Object {$_ -notin @('Task Name','Task Path','Task','Launcher File','Startup BAT')})){$fields[$key]='Not verified'}
+        return [pscustomobject]@{Fields=$fields;Verified=$false;Passed=$false;Reason='Multiple Launch Kiosk tasks require manual review; existing tasks were preserved.'}
+    }
+    $task=$Tasks[0];$fields['Task']='Available';$fields['Task Path']=[string]$task.TaskPath;$fields['Task State']=[string]$task.State
+    $reader=$null;$inputText=$null
+    try{
+        if(-not [string]$task.TaskPath){throw 'Task folder could not be verified.'}
+        $xml=Export-ScheduledTask -TaskName 'Launch Kiosk' -TaskPath ([string]$task.TaskPath) -ErrorAction Stop
+        $settings=[Xml.XmlReaderSettings]::new();$settings.DtdProcessing=[Xml.DtdProcessing]::Prohibit;$settings.XmlResolver=$null
+        $inputText=[IO.StringReader]::new([string]$xml);$reader=[Xml.XmlReader]::Create($inputText,$settings)
+        $document=[Xml.XmlDocument]::new();$document.XmlResolver=$null;$document.Load($reader)
+        if($document.DocumentElement.LocalName -ne 'Task' -or $document.DocumentElement.NamespaceURI -ne 'http://schemas.microsoft.com/windows/2004/02/mit/task'){throw 'Unrecognized scheduled task definition.'}
+        $ns=[Xml.XmlNamespaceManager]::new($document.NameTable);$ns.AddNamespace('t',$document.DocumentElement.NamespaceURI)
+        $text={param([string]$Path) $node=$document.SelectSingleNode($Path,$ns);if($node){$node.InnerText}else{''}}
+        $yesNo={param([string]$Value) if($Value -ieq 'true'){'Yes'}elseif($Value -ieq 'false'){'No'}else{'Not verified'}}
+        $fields['Task Enabled']=& $yesNo (& $text '/t:Task/t:Settings/t:Enabled')
+        if($fields['Task State'] -eq 'Disabled'){$fields['Task Enabled']='No'}
+        $principals=@($document.SelectNodes('/t:Task/t:Principals/t:Principal',$ns))
+        if($principals.Count -ne 1){throw 'The task principal is missing or ambiguous.'}
+        $principal=& $text '/t:Task/t:Principals/t:Principal/t:UserId'
+        $fields['Run As']=if(Test-KioskLaunchTaskIdentity $principal $Context){$Context.UserId}else{$principal}
+        $logon=& $text '/t:Task/t:Principals/t:Principal/t:LogonType'
+        $fields['Logon Type']=if($logon -eq 'InteractiveToken'){'Interactive'}elseif($logon){$logon}else{'Not verified'}
+        $level=& $text '/t:Task/t:Principals/t:Principal/t:RunLevel'
+        $fields['Run Level']=switch($level){'LeastPrivilege'{'Limited'};'HighestAvailable'{'Highest'};default{'Not verified'}}
+        $triggers=@($document.SelectNodes('/t:Task/t:Triggers/*',$ns))
+        if($triggers.Count -eq 1 -and $triggers[0].LocalName -eq 'LogonTrigger'){
+            $enabled=& $text '/t:Task/t:Triggers/t:LogonTrigger/t:Enabled'
+            $fields['Trigger']=if($enabled -ieq 'true'){'At logon'}elseif($enabled -ieq 'false'){'Disabled logon trigger'}else{'Not verified'}
+            $triggerUser=& $text '/t:Task/t:Triggers/t:LogonTrigger/t:UserId'
+            $fields['Logon User']=if(Test-KioskLaunchTaskIdentity $triggerUser $Context){$Context.UserId}elseif($triggerUser){$triggerUser}else{'Any user'}
+            $delay=& $text '/t:Task/t:Triggers/t:LogonTrigger/t:Delay'
+            try{$duration=[Xml.XmlConvert]::ToTimeSpan($delay);$fields['Startup Delay']=$duration.TotalSeconds.ToString([Globalization.CultureInfo]::InvariantCulture)+' seconds'}catch{$fields['Startup Delay']='Not verified'}
+        }else{$fields['Trigger']=if($triggers.Count -gt 1){'Multiple triggers'}else{'Not a logon trigger'};$fields['Logon User']='Not verified';$fields['Startup Delay']='Not verified'}
+        $actions=@($document.SelectNodes('/t:Task/t:Actions/*',$ns))
+        if($actions.Count -eq 1 -and $actions[0].LocalName -eq 'Exec'){
+            $program=& $text '/t:Task/t:Actions/t:Exec/t:Command'
+            $fields['Program']=if($program -ieq $Context.ProgramPath -or $program -ieq 'powershell.exe'){'Windows PowerShell'}else{$program}
+            $arguments=Read-KioskLaunchTaskArguments (& $text '/t:Task/t:Actions/t:Exec/t:Arguments')
+            if($arguments.Known){
+                $fields['Script Path']=$arguments.ScriptPath;$fields['Profile Loading']=$arguments.ProfileLoading
+                $fields['Execution Policy']=$arguments.ExecutionPolicy;$fields['Window Style']=$arguments.WindowStyle
+            }else{foreach($key in @('Script Path','Profile Loading','Execution Policy','Window Style')){$fields[$key]='Not verified'}}
+            $directory=& $text '/t:Task/t:Actions/t:Exec/t:WorkingDirectory'
+            $fields['Working Directory']=if($directory){$directory}else{'(default)'}
+        }else{foreach($key in @('Program','Script Path','Profile Loading','Execution Policy','Window Style','Working Directory')){$fields[$key]='Not verified'}}
+        $limit=& $text '/t:Task/t:Settings/t:ExecutionTimeLimit'
+        try{$duration=[Xml.XmlConvert]::ToTimeSpan($limit);$fields['Execution Time Limit']=if($duration -eq [TimeSpan]::Zero){'Unlimited'}else{$limit}}catch{$fields['Execution Time Limit']='Not verified'}
+        $disallow=& $text '/t:Task/t:Settings/t:DisallowStartIfOnBatteries'
+        $fields['Start On Battery']=if($disallow -ieq 'false'){'Yes'}elseif($disallow -ieq 'true'){'No'}else{'Not verified'}
+        $fields['Stop On Battery']=& $yesNo (& $text '/t:Task/t:Settings/t:StopIfGoingOnBatteries')
+        $fields['Start When Available']=& $yesNo (& $text '/t:Task/t:Settings/t:StartWhenAvailable')
+        $required=Get-KioskLaunchTaskRequirements $Context
+        $passed=$Context.Ready
+        foreach($key in $required.Keys){if($required[$key] -and [string]$fields[$key] -ine [string]$required[$key]){$passed=$false}}
+        [pscustomobject]@{Fields=$fields;Verified=$true;Passed=$passed;Reason=$(if($passed){'Existing task definition verified; no task was changed or executed.'}else{'Existing task configuration requires manual review; task preserved. '+$Context.Reason})}
+    }catch{
+        foreach($key in @($fields.Keys|Where-Object {$_ -notin @('Task Name','Task Path','Task','Task State','Launcher File','Startup BAT')})){$fields[$key]='Not verified'}
+        [pscustomobject]@{Fields=$fields;Verified=$false;Passed=$false;Reason='Task definition could not be verified: '+$_.Exception.Message}
+    }finally{if($reader){$reader.Dispose()};if($inputText){$inputText.Dispose()}}
+}
+
+function Open-KioskLaunchTaskScheduler {
+    $service=New-Object -ComObject 'Schedule.Service'
+    $service.Connect()
+    $service
+}
+
+function New-KioskLaunchTaskDefinition {
+    param($Service,$Context)
+    $definition=$service.NewTask(0)
+    $definition.RegistrationInfo.Description='Start the existing kiosk launcher five seconds after the selected local user logs on.'
+    $definition.Principal.UserId=$Context.Sid;$definition.Principal.LogonType=3;$definition.Principal.RunLevel=0
+    $trigger=$definition.Triggers.Create(9);$trigger.UserId=$Context.Sid;$trigger.Delay='PT5S';$trigger.Enabled=$true
+    $action=$definition.Actions.Create(0);$action.Path=$Context.ProgramPath
+    $action.Arguments='-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "'+$Context.ScriptPath+'"'
+    $action.WorkingDirectory=$Context.WorkingDirectory
+    $definition.Settings.Enabled=$true;$definition.Settings.DisallowStartIfOnBatteries=$false
+    $definition.Settings.StopIfGoingOnBatteries=$false;$definition.Settings.StartWhenAvailable=$true
+    $definition.Settings.ExecutionTimeLimit='PT0S';$definition.Settings.MultipleInstances=2
+    $definition
+}
+
+function Register-MissingKioskLaunchTask {
+    param($Context)
+    if(-not (Test-CanApply) -or -not $Context.Ready){throw 'Missing-task creation requires approved Apply and verified kiosk prerequisites.'}
+    $service=Open-KioskLaunchTaskScheduler
+    $definition=New-KioskLaunchTaskDefinition $service $Context
+    $root=$service.GetFolder('\')
+    # TASK_CREATE (2) fails if another writer creates this task concurrently.
+    # Never use TASK_CREATE_OR_UPDATE, a password, deletion or task execution.
+    [void]$root.RegisterTaskDefinition('Launch Kiosk',$definition,2,$Context.Sid,$null,3,$null)
+}
+
+function Get-KioskLaunchTaskCheck {
+    param([string]$UserName,$Account)
+    $context=Get-KioskLaunchTaskContext $UserName $Account
+    $status='Fail';$note='Task not verified; no task was changed.';$fields=Get-KioskLaunchTaskFields $context 'Not verified'
+    $created=$false;$failure=$null
+    try{
+        $tasks=@(Get-KioskLaunchTaskInventory)
+        $snapshot=Read-KioskLaunchTaskSnapshot -Tasks $tasks -Context $context
+        if($tasks.Count -eq 0 -and (Test-CanApply)){
+            if(-not $context.Ready){$note='Missing task was not created: '+$context.Reason}
+            else{
+                # Read again after preflight. TASK_CREATE also protects the final race.
+                $tasks=@(Get-KioskLaunchTaskInventory)
+                if($tasks.Count -eq 0){
+                    try{Register-MissingKioskLaunchTask $context;$created=$true}catch{$failure=$_.Exception.Message}
+                    $tasks=@(Get-KioskLaunchTaskInventory)
+                }
+                $snapshot=Read-KioskLaunchTaskSnapshot -Tasks $tasks -Context $context
+                if($failure){$note='Task creation failed: '+$failure+' Existing tasks were preserved. '+$snapshot.Reason}
+                elseif($created -and $snapshot.Passed){$status='Remediated';$note='Created missing Launch Kiosk task; readback verified. The task was not executed.'}
+                elseif($created -and $snapshot.Verified){$note='Created missing Launch Kiosk task; readback shows configuration mismatches. Manual action required. '+$snapshot.Reason}
+                elseif($created){$note='Task creation returned, but configuration readback was not verified. Manual action required. '+$snapshot.Reason}
+                else{$note=$snapshot.Reason;if($snapshot.Passed){$status='Pass'}}
+            }
+        }else{$note=$snapshot.Reason;if($snapshot.Passed){$status='Pass'}}
+        $fields=$snapshot.Fields
+    }catch{$note='Task Scheduler verification failed: '+$_.Exception.Message+' No existing task was replaced.';if($created){$note+=' Creation returned, but readback was not verified; manual review required.'}}
+    if($context.StartupBat -eq 'Also present (unchanged)'){$note+=' Startup BAT also exists; both logon launch paths remain configured.'}
+    $result=New-CheckResult $status $note 'Kiosk launch task inspected'
+    $result|Add-Member NoteProperty StateHtml (ConvertTo-ReportDefinitionHtml $fields)
+    $result|Add-Member NoteProperty ExpectedHtml (ConvertTo-ReportDefinitionHtml (Get-KioskLaunchTaskRequirements $context))
+    $result
+}
+
+function Invoke-KioskLaunchTaskCheck {
+    param([string]$UserName,$Account)
+    $result=Get-KioskLaunchTaskCheck $UserName $Account
+    Add-AuditEntry -SectionNumber 2 -SectionTitle 'Kiosk Application & Policies' -ItemTitle 'Kiosk Launch Task' -ItemSub 'Type: Missing-only logon task repair' -Shortcut (New-ReportCommand @('taskschd.msc','schtasks.exe /Query /TN "\Launch Kiosk" /XML')) -FoundStateHtml $result.StateHtml -Status $result.Status -ActionTaken ([Net.WebUtility]::HtmlEncode($result.Action))
+    $auditRows[$auditRows.Count-1]|Add-Member NoteProperty ExpectedHtml $result.ExpectedHtml
+}
+
 $kioskAccount = $null
 try {
     Start-AuditStep 3 'SELISE local accounts'
@@ -3711,6 +3955,8 @@ catch { Add-ResultEntry $sec2Num $sec2Title 'System & Browser Policies' (New-Che
 } else {
     Write-Verbose 'Kiosk account unavailable: launcher, startup, auto-login and browser-policy checks were omitted.'
 }
+
+Invoke-KioskLaunchTaskCheck -UserName $kioskUser -Account $kioskAccount
 
 # =============================================================
 # GROUP 3: CORE BACKGROUND SERVICES
