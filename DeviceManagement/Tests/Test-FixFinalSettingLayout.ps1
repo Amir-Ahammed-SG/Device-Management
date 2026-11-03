@@ -89,7 +89,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
             $legacySnapshot=& $legacy @parameters;$legacyHtml=Decode-Setting $legacySnapshot
             [IO.File]::WriteAllText((Join-Path $outputRoot ($client+'-'+$case.Name+'-'+$mode+'-Legacy.html')),$legacyHtml,$utf8)
             if($mode -eq 'Audit'){
-                Assert-Setting ($html.Replace("`r`n","`n") -ceq $legacyHtml.Replace("`r`n","`n")) 'Audit presentation or observations changed.'
+                Assert-Setting ((Remove-AuditAdditionalReferenceSection $html).Replace("`r`n","`n") -ceq (Remove-AuditAdditionalReferenceSection $legacyHtml).Replace("`r`n","`n")) 'Audit presentation or observations changed outside Additional references.'
                 continue
             }
             $headers=if($mode -eq 'Fix'){@('Component','Shortcut / Command','Setting','Findings','Applied')}else{@('Component','Setting','Status')}

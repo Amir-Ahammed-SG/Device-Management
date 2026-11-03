@@ -34,11 +34,20 @@ function Get-LegacySettingCells {
     }
 }
 
+function Remove-AuditAdditionalReferenceSection {
+    param([string]$Html)
+    # The requested manual references are tested in Test-AuditColumnLayout.
+    # Historical comparison still covers every existing report byte outside it.
+    [regex]::Replace($Html,'(?s)<section class="report-additional" aria-labelledby="additional-heading">.*?</section>\r?\n','')
+}
+
 function Assert-SettingRuleParity {
     param($Current,$Legacy,[Collections.IDictionary]$Parameters)
     $newHtml=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Current.HtmlBase64))
     $oldHtml=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Legacy.HtmlBase64))
     if($Parameters.DisplayMode -eq 'Audit'){
+        $newHtml=Remove-AuditAdditionalReferenceSection $newHtml
+        $oldHtml=Remove-AuditAdditionalReferenceSection $oldHtml
         if(-not $Parameters.AuditSource){
             # Independent renders can straddle a minute boundary. Compare the
             # report content, not two separately generated wall-clock values.

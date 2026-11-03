@@ -603,6 +603,14 @@ download failed HTTPS certificate validation during this change. No installer
 was executed. Package preparation must succeed before the Windows 10 fallback
 can install Nmap.
 
+Audit reports for both clients include **Additional** below the configuration
+checks. Nmap has one copy button for the complete three-line PowerShell script
+that downloads `nmap-7.95-setup.exe` to TEMP and opens its manual installation
+wizard. Printer Utility links to the supplied Epson TM-m30III download page in
+a new tab. These are manual operator references: rendering or opening the Audit
+does not download or execute an installer. Fix and Final omit this section.
+Existing Nmap checks and Apply installation rules remain unchanged.
+
 Thorough Check for POS/KDS, Payment Service and other client/device installations remain Pending. Selecting
 a Pending operation returns Unavailable and makes no system changes.
 

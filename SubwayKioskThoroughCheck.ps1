@@ -883,6 +883,30 @@ function Get-ThoroughSettingHoverScript {
 }
 
 
+function Get-ThoroughAuditAdditionalHtml {
+    # These are operator references, not audit findings or executable actions.
+    $nmapScript=@'
+cd $env:TEMP
+Invoke-WebRequest -Uri "https://nmap.org/dist/nmap-7.95-setup.exe" -OutFile "nmap-setup.exe"
+Start-Process ".\nmap-setup.exe" -Wait
+'@
+    $nmapButton=(ConvertTo-ReportCommandBoxes (New-ReportCommand @($nmapScript))).Replace('<code>','<code style="white-space:pre-wrap">')
+    $printerUrl=[Net.WebUtility]::HtmlEncode('https://download-center.epson.com/download/?module_id=fa99ba54-3151-4dbc-8b3c-31ed9d314d6b%3A1.50&device_id=TM-m30III&os=WIN1064&region=DE&language=en')
+    @"
+<section class="report-additional" aria-labelledby="additional-heading">
+<h2 id="additional-heading">ADDITIONAL</h2>
+<table aria-label="Manual installation resources">
+    <colgroup><col style="width:25%"><col style="width:75%"></colgroup>
+    <thead><tr><th scope="col">Resource</th><th scope="col">Manual Download / Installation</th></tr></thead>
+    <tbody>
+        <tr><td><strong>Nmap</strong></td><td>Copy the script and run it in PowerShell to open the installation wizard.$nmapButton</td></tr>
+        <tr><td><strong>Printer Utility</strong></td><td><a href="$printerUrl" target="_blank" rel="noopener noreferrer">Download Epson Printer Utility</a><br>Download the utility from the Epson page, then run the downloaded installer.</td></tr>
+    </tbody>
+</table>
+</section>
+"@
+}
+
 function New-ThoroughReportSnapshot {
     param([Parameter(Mandatory=$true)][AllowEmptyCollection()][object[]]$Rows,
         [Parameter(Mandatory=$true)][ValidateSet('Audit','Fix','Final')][string]$DisplayMode,
@@ -1091,6 +1115,7 @@ $(Get-ThoroughReportBlockAlignmentScript)
 
 $finalHtml = $htmlHeader + ($htmlSections -join "`n") + $htmlFooter
 if($isAuditReport){
+    $finalHtml=$finalHtml.Replace('<p class="legend">',(Get-ThoroughAuditAdditionalHtml)+"`n"+'<p class="legend">')
     $finalHtml=$finalHtml.Replace('<body>','<body class="audit-report">').Replace('</style>',(Get-ThoroughAuditColumnStyle)+"`n</style>")
     $finalHtml=$finalHtml.Replace('Green = Matched requirement or collected value; Red = Mismatched requirement or missing value; Amber = Not verified; Uncolored = Informational only.','Red = Requirement not met or missing value; Amber = Not verified; Plain values = Matched, collected or informational values.')
     $finalHtml=$finalHtml.Replace('</main>',(Get-ThoroughAuditHoverScript)+"`n</main>")

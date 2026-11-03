@@ -89,12 +89,27 @@ foreach($client in @('SaaS','Subway')){
         $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
         [IO.File]::WriteAllText((Join-Path $previewRoot ($client+'-'+$mode+'.html')),$html,[Text.UTF8Encoding]::new($false))
         if($mode -ne 'Audit'){
+            Assert-AuditColumns (-not $html.Contains('class="report-additional"') -and -not $html.Contains('nmap-7.95-setup.exe')) ($mode+' inherited Audit manual installation references.')
             $expected=if($mode -eq 'Fix'){'<th scope="col">Setting</th><th scope="col">Findings</th><th scope="col">Applied</th>'}else{'<th scope="col">Component</th><th scope="col">Setting</th><th scope="col">Status</th>'}
             Assert-AuditColumns ($html.Contains($expected) -and $html.Contains('setting-report')) ($mode+' is missing the approved setting layout.')
             Assert-AuditColumns (-not $html.Contains('class="audit-setting"')) ($mode+' inherited Audit requirement cells.')
             continue
         }
         Assert-AuditColumns ($html.Contains('<th scope="col">Setting</th><th scope="col">Required</th><th scope="col">Findings</th>')) 'Audit has incorrect columns.'
+        $additional=[regex]::Match($html,'(?s)<section class="report-additional".*?</section>')
+        Assert-AuditColumns ($additional.Success -and $additional.Index -gt $html.LastIndexOf('<table class="checks"') -and $additional.Index -lt $html.IndexOf('<footer class="report-footer">')) 'Additional references are missing or misplaced.'
+        Assert-AuditColumns ($additional.Value.Contains('<h2 id="additional-heading">ADDITIONAL</h2>')) 'Additional section heading is missing.'
+        $buttons=@([regex]::Matches($additional.Value,'data-command="([^"]*)"'))
+        Assert-AuditColumns ($buttons.Count -eq 1) 'Nmap installation must copy as one complete script.'
+        $scriptText=[Net.WebUtility]::HtmlDecode($buttons[0].Groups[1].Value).Replace("`r`n","`n")
+        $expectedScript='cd $env:TEMP'+"`n"+'Invoke-WebRequest -Uri "https://nmap.org/dist/nmap-7.95-setup.exe" -OutFile "nmap-setup.exe"'+"`n"+'Start-Process ".\nmap-setup.exe" -Wait'
+        Assert-AuditColumns ($scriptText -ceq $expectedScript -and $additional.Value.Contains('white-space:pre-wrap')) 'Copied Nmap script, literal TEMP variable or visible line breaks changed.'
+        $scriptTokens=$null;$scriptErrors=$null
+        [void][Management.Automation.Language.Parser]::ParseInput($scriptText,[ref]$scriptTokens,[ref]$scriptErrors)
+        Assert-AuditColumns ($scriptErrors.Count -eq 0) 'Manual Nmap script does not parse.'
+        $link=[regex]::Match($additional.Value,'<a href="([^"]+)" target="_blank" rel="noopener noreferrer">Download Epson Printer Utility</a>')
+        $expectedUrl='https://download-center.epson.com/download/?module_id=fa99ba54-3151-4dbc-8b3c-31ed9d314d6b%3A1.50&device_id=TM-m30III&os=WIN1064&region=DE&language=en'
+        Assert-AuditColumns ($link.Success -and [Net.WebUtility]::HtmlDecode($link.Groups[1].Value) -ceq $expectedUrl) 'Epson manual download link or new-tab behavior changed.'
         Assert-AuditColumns ($html.Contains('<body class="audit-report">') -and $html.Contains('background:#edf4fb') -and $html.Contains('background:#fffbf0')) 'Approved Audit column colors are missing.'
         Assert-AuditColumns ($html -notmatch '>Mismatch<|>Not detected</span>\s*<[^>]+>Not verified') 'Extra finding status labels remain.'
         $printers=@(Read-AuditComponent $html 'Printer')
