@@ -43,7 +43,7 @@ $assignments=@($ast.FindAll({param($node) $node -is [Management.Automation.Langu
 if ($assignments.Count -ne 1) { throw 'Expected one embedded resource map.' }
 $resourceAst=[Management.Automation.Language.Parser]::ParseInput($assignments[0].Right.Extent.Text,[ref]$tokens,[ref]$parseErrors)
 $resources=$resourceAst.EndBlock.Statements[0].PipelineElements[0].Expression.SafeGetValue()
-if ($resources.Count -ne $manifest.Files.Count -or $resources.Count -ne 19) { throw 'Runtime resource inventory changed; review the build manifest.' }
+if ($resources.Count -ne $manifest.Files.Count -or $resources.Count -ne 20) { throw 'Runtime resource inventory changed; review the build manifest.' }
 foreach ($file in $manifest.Files) {
     $relative=if ($file.Path -eq 'Deployment/MemoryRuntime.ps1') {'DeviceManagement/'+$file.Path} else {$file.Path}
     $source=Join-Path $sourceRoot $relative
@@ -54,7 +54,7 @@ foreach ($file in $manifest.Files) {
     try { $actual=[BitConverter]::ToString($hash.ComputeHash([Convert]::FromBase64String($resource.Data))).Replace('-','') } finally { $hash.Dispose() }
     if ($actual -ine $resource.SHA256 -or $actual -ine $file.RuntimeSHA256) { throw ('Runtime checksum mismatch: '+$file.Path) }
 }
-Write-Output 'PASS: release bytes, manifest, current sources and all 19 runtime resources match.'
+Write-Output 'PASS: release bytes, manifest, current sources and all 20 runtime resources match.'
 $fixtures=@(
     'Test-AdministrativeAccountPolicy.ps1',
     'Test-AccountClassification.ps1',
@@ -74,6 +74,7 @@ $fixtures=@(
     'Test-ClientDetailsHeader.ps1',
     'Test-LauncherInspection.ps1',
     'Test-KioskLaunchTask.ps1',
+    'Test-PaymentCronJob.ps1',
     'Test-KioskAccountProperties.ps1'
 )
 # A separate process prevents one fixture's mocks or preferences leaking to another.

@@ -5,7 +5,7 @@ navigation with validated operation routing.
 
 Deferred production findings are tracked in [KNOWN-ISSUES.md](KNOWN-ISSUES.md).
 
-Runtime code is in `Start-DeviceManagement.ps1`, `Core`, `Config`, `Checks` and `Installations`.
+Runtime code is in `Start-DeviceManagement.ps1`, `Core`, `Config`, `Checks`, `Installations` and `OtherTools`.
 Development tests are grouped under `Tests`; reference documents, validation
 evidence and deployment records are under [Docs](Docs/README.md). Generated
 `output` files are disposable test artifacts and are excluded from deployment.
@@ -44,6 +44,38 @@ selecting one displays a notice and stays on the same menu. Back and Exit use
 preserved above the navigation footer.
 
 ## Current implementation
+
+The main menu also offers **Other Tools > Payment Cron Job**. Selecting it
+automatically reads the running Payment Service's `appsettings.json` and prints
+Provider, Name, UID, CronExpression and IsEnabled for SIX, NETS and NEXIDE
+schedules. Multiple running candidates require explicit selection. The configured
+executable must match the actual running process, and hosted executables,
+command-line configuration overrides and linked paths require manual review.
+
+When exactly one SIX schedule has Boolean `IsEnabled: false`, the tool asks
+**Enable SIX Cron? [Y/N]**. N returns directly to Other Tools. Y requires an
+administrator, changes only that SIX Boolean to true, verifies the file and
+keeps the result visible until Enter. Already enabled schedules need no prompt
+or write. Invalid JSON, duplicate properties, missing/ambiguous SIX schedules,
+changed service identity, changed file content or an unavailable exclusive file
+lock prevent writing. NETS, NEXIDE and every other setting remain unchanged.
+
+The standalone script is `OtherTools/PaymentCronJob.ps1`. It preserves the
+original file's bytes outside the Boolean token, including comments, spacing,
+line endings and supported UTF-8/UTF-16/UTF-32 BOM/encoding. It writes the
+existing file under an exclusive lock and verifies the exact resulting bytes.
+The original bytes are retained only in memory for verification and restoration
+after a caught write/readback failure. No backup, temporary file or HTML report
+is created. A crash/power loss cannot be recovered from that memory snapshot.
+The tool does not restart the service or claim that it loaded the changed
+configuration. `Tests/Test-PaymentCronJob.ps1` uses synthetic services and fixture
+files; in-memory menu fixtures cover the single check-then-Y/N flow.
+
+Thorough Check reports now use `C:\Thorough Check\` for both clients and all
+execution paths. Existing restore-point behavior uses
+`C:\Thorough Check\Restore Points\`. Audit creates the report directory only
+when HTML output is requested. Existing Desktop reports and restore points are
+left in place; this location change does not migrate or delete old files.
 
 SaaS and Subway KIOSK Installation offer Microsoft Edge from the browser menu.
 Google Chrome is temporarily marked **Not available**; selecting it keeps the
@@ -142,8 +174,8 @@ selection parity. Legacy business-rule fixtures execute both renderers and compa
 current component/property/command selection before asserting the captured older
 presentation; they do not substitute for the direct new-layout checks.
 
-Each client/computer now keeps one self-contained HTML file under Desktop →
-Thorough Check: `Thorough Check Reports - <Client> - <Computer>.html`. The file
+Each client/computer now keeps one self-contained HTML file under
+`C:\Thorough Check\`: `Thorough Check Reports - <Client> - <Computer>.html`. The file
 contains Audit, Fix and Final tabs and can be shared without
 accompanying files. Each tab shows its own saved time and OMK report ID.
 

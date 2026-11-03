@@ -24,7 +24,7 @@ function New-DeviceManagementContext {
         SelectedPackage = $SelectedPackage
         RunId          = '{0}_{1}' -f (Get-Date -Format 'yyyyMMdd_HHmmss'), ([guid]::NewGuid().ToString('N').Substring(0, 8))
         RootPath       = [IO.Path]::GetFullPath($RootPath)
-        ReportFolder   = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Thorough Check'
+        ReportFolder   = 'C:\Thorough Check'
     }
 }
 

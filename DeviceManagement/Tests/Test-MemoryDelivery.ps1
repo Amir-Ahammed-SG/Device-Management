@@ -54,7 +54,18 @@ foreach ($client in @('SaaS','Subway')) {
 foreach($client in @('SaaS','Subway')) {
     $bundle.Files['DeviceManagement/Installations/KIOSK/'+$client+'-Install.ps1']='param($Context) throw ''Unexpected installation fixture route; no setup executed.'''
 }
-$bundle.Files['DeviceManagement/Core/Context.psm1']=$bundle.Files['DeviceManagement/Core/Context.psm1'].Replace("Join-Path ([Environment]::GetFolderPath('Desktop')) 'Thorough Check'",'$env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT')
+$bundle.Files['DeviceManagement/OtherTools/PaymentCronJob.ps1']=@'
+param([switch]$MenuRun)
+$answer=Read-Host 'Enable SIX Cron? [Y/N]'
+Write-Host ('CRON_FIXTURE_RESULT='+$answer)
+[pscustomobject]@{Status='Skipped';ReturnToMenu=($answer -eq 'N')}
+'@
+$bundle.Files['DeviceManagement/Core/Context.psm1']=$bundle.Files['DeviceManagement/Core/Context.psm1'].Replace("'C:\Thorough Check'",'$env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT')
+# ConsoleHost suppresses Read-Host prompt text when stdin is redirected. Trace
+# entry to the real pause statement while retaining the actual nested prompt.
+$pause="[void](Read-Host '  Press Enter to return to Other Tools')"
+$bundle.Files['DeviceManagement/Start-DeviceManagement.ps1']=$bundle.Files['DeviceManagement/Start-DeviceManagement.ps1'].Replace($pause,("Write-Host 'CRON_RESULT_PAUSE'; "+$pause))
+[void][IO.Directory]::CreateDirectory((Join-Path $projectRoot 'output/payment-cron-job'))
 $menu=$bundle.Files['DeviceManagement/Start-DeviceManagement.ps1']
 $menuAst=[Management.Automation.Language.Parser]::ParseInput($menu,[ref]$tokens,[ref]$errors)
 $screen=@($menuAst.EndBlock.Statements | Where-Object {$_ -is [Management.Automation.Language.AssignmentStatementAst] -and $_.Left.Extent.Text -eq '$screen'})[0]
@@ -144,6 +155,14 @@ try {
     Assert-Memory ($ui -match 'Invalid selection. Enter a displayed option number.' -and $ui -match 'Invalid selection. Enter 3, 8 or 0.') 'Invalid menu/navigation input was not explained.'
     Assert-Memory ($ui -notmatch 'Review settings. HTML report is optional.|Apply the agreed repairs and verify results.|Select mode:|Select device:|Select operation:') 'Removed help text or inconsistent input prompts remain.'
     Write-Output 'PASS: full menu, unavailable/invalid input stays in place, Back/Main Menu/repeated clients, nested Read-Host, branch input and caller return.'
+    foreach($answer in @('N','Y')){
+        $toolInputs=if($answer -eq 'N'){@('4','1','N','8','0')}else{@('4','1','Y','','8','0')}
+        $toolUi=$toolInputs|& (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $interactivePath 2>&1|Out-String
+        [IO.File]::WriteAllText((Join-Path $projectRoot ('output/payment-cron-job/menu-'+$answer+'.txt')),$toolUi,[Text.UTF8Encoding]::new($false))
+        Assert-Memory ($LASTEXITCODE -eq 0 -and $toolUi -match ('CRON_FIXTURE_RESULT='+$answer) -and $toolUi -match '\[4\] Other Tools' -and $toolUi -match 'Other Tools > Payment Cron Job' -and $toolUi -notmatch '\[1\] Check Schedules|\[2\] Enable SIX Cron') 'Other Tools did not use the automatic check/fix prompt route'
+        Assert-Memory (($toolUi -match 'CRON_RESULT_PAUSE') -eq ($answer -eq 'Y') -and $toolUi -notmatch 'Invalid selection') 'Decline did not return directly or confirmed result was cleared without a pause'
+    }
+    Write-Output 'PASS: Other Tools single Payment Cron Job entry, nested Y/N prompt, N immediate return, Y result pause, Back/Main Menu/Exit; only a tool fixture executed.'
     foreach($clientChoice in @(@{Key='1';Client='Subway'},@{Key='2';Client='SaaS'})) {
         $beforeFinal=@(Get-Content -LiteralPath $log).Count
         $finalInputs=@($clientChoice.Key,'1','1','3','0')

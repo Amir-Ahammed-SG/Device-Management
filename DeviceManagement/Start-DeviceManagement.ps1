@@ -517,9 +517,11 @@ function Update-ThoroughCheckOperationResult {
 while (-not $exitRequested) {
     switch ($screen) {
         'Client' {
-            Show-DeviceManagementHeader 'Select Client'
-            $selection = Read-NumberedSelection -Items $clientsConfiguration.Clients -AllowExit -Prompt 'Select option'
+            Show-DeviceManagementHeader 'Main Menu'
+            $mainItems=@($clientsConfiguration.Clients)+@([pscustomobject]@{Id='OtherTools';DisplayName='Other Tools';ImplementationState='Ready'})
+            $selection = Read-NumberedSelection -Items $mainItems -AllowExit -Prompt 'Select option'
             if ($selection -eq '__EXIT__') { $exitRequested = $true; break }
+            if ($selection.Id -eq 'OtherTools') { $screen='OtherTools'; break }
             $selectedClient = $selection
             $selectedDevice = $null
             $selectedOperation = $null
@@ -527,6 +529,21 @@ while (-not $exitRequested) {
             $clientLocation = $null
             $agentName = $null
             $screen = 'Device'
+        }
+        'OtherTools' {
+            Show-DeviceManagementHeader -Title 'Other Tools'
+            $tools=@([pscustomobject]@{Id='PaymentCronJob';DisplayName='Payment Cron Job';ImplementationState='Ready'})
+            $selection=Read-NumberedSelection -Items $tools -AllowBack -AllowExit -Prompt 'Select option'
+            if($selection -eq '__BACK__'){$screen='Client';break}
+            if($selection -eq '__EXIT__'){$exitRequested=$true;break}
+            Show-DeviceManagementHeader -Title 'Payment Cron Job' -Breadcrumb 'Other Tools > Payment Cron Job'
+            try{
+                $toolResult=Invoke-DeviceManagementOtherTool -RootPath $architectureRoot -ToolId $selection.Id
+                if(-not $toolResult.ReturnToMenu){[void](Read-Host '  Press Enter to return to Other Tools')}
+            }catch{
+                Write-Host ('  Failed: '+$_.Exception.Message) -ForegroundColor Red
+                [void](Read-Host '  Press Enter to return to Other Tools')
+            }
         }
         'Device' {
             Show-DeviceManagementHeader -Title 'Select Device' -Breadcrumb $selectedClient.DisplayName

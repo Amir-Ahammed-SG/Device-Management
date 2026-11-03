@@ -87,8 +87,7 @@ if ($Apply -and -not $WhatIfPreference) {
 $runMode = if ($FinalReport) { 'THOROUGH CHECK REPORT' } elseif ($script:ApplyChanges) { 'APPLY' } else { 'AUDIT ONLY' }
 
 $ProgressPreference = 'SilentlyContinue'
-$desktopPath = [Environment]::GetFolderPath('Desktop')
-$outputFolder = Join-Path $desktopPath 'Thorough Check'
+$outputFolder = 'C:\Thorough Check'
 # Apply mode always writes a report. Audit mode creates the folder only after
 # the operator chooses to generate the HTML report.
 if ($script:ApplyChanges -and -not (Test-Path -LiteralPath $outputFolder)) {
@@ -2479,7 +2478,7 @@ function Write-ThoroughTextChange {
     if(-not (Test-CanApply)){throw 'Configuration writes are disabled outside Apply Fix.'}
     if($Text -ceq $Original.Text){return [pscustomobject]@{Changed=$false;BackupPath=$null}}
     if([string]::IsNullOrWhiteSpace($BackupFolder)){
-        $BackupFolder=Join-Path ([Environment]::GetFolderPath('Desktop')) 'Thorough Check\Restore Points'
+        $BackupFolder='C:\Thorough Check\Restore Points'
     }
     $body=$Original.Encoding.GetBytes($Text)
     $candidate=[byte[]]::new($Original.PreambleLength+$body.Length)

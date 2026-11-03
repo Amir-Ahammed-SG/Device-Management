@@ -27,4 +27,22 @@ function Invoke-ConfiguredOperation {
     & $handler -Context $Context
 }
 
-Export-ModuleMember -Function Resolve-OperationHandlerPath, Invoke-ConfiguredOperation
+function Invoke-DeviceManagementOtherTool {
+    param([Parameter(Mandatory=$true)][string]$RootPath,[Parameter(Mandatory=$true)][ValidateSet('PaymentCronJob')][string]$ToolId)
+    $embedded=Get-Variable -Name MemoryBundle -Scope Script -ErrorAction SilentlyContinue
+    if($null -ne $embedded){
+        $resource='DeviceManagement/OtherTools/PaymentCronJob.ps1'
+        if(-not $script:MemoryBundle.Files.ContainsKey($resource)){throw 'The embedded Payment Cron Job tool is missing.'}
+        $execution=Invoke-DeviceManagementMemoryScript -Code $script:MemoryBundle.Files[$resource] -Bundle $script:MemoryBundle -RuntimeCode $script:MemoryRuntime -Parameters @{MenuRun=$true}
+        if($execution.State -ne 'Completed' -or $execution.Errors.Count -gt 0){throw 'Payment Cron Job could not complete; review the terminal output.'}
+        $results=@($execution.Output)
+    }else{
+        $path=Join-Path $RootPath 'OtherTools\PaymentCronJob.ps1'
+        if(-not (Test-Path -LiteralPath $path -PathType Leaf)){throw 'Payment Cron Job script is missing.'}
+        $results=@(& $path -MenuRun)
+    }
+    if($results.Count -ne 1 -or -not $results[0].PSObject.Properties['Status'] -or $results[0].Status -notin @('Pass','Fail','Skipped') -or -not $results[0].PSObject.Properties['ReturnToMenu'] -or $results[0].ReturnToMenu -isnot [bool]){throw 'Payment Cron Job did not return a verified completion result.'}
+    $results[0]
+}
+
+Export-ModuleMember -Function Resolve-OperationHandlerPath, Invoke-ConfiguredOperation, Invoke-DeviceManagementOtherTool

@@ -52,7 +52,7 @@ The checks return a completion result containing their actual exit status and
 exact report path. A missing, duplicate or invalid result fails verification.
 Each client's KIOSK Installation runs its separate embedded handler and setup source,
 validates all four inputs before changes, and returns one verified operation
-result. Each client handler selects the embedded Edge or Chrome setup from the browser choice. The bundle now contains 19 runtime resources. Pending operations remain unavailable.
+result. Each client handler selects the embedded Edge or Chrome setup from the browser choice. The bundle now contains 20 runtime resources, including the isolated Payment Cron Job tool. Pending operations remain unavailable.
 
 The repository's file-based launcher and client check sources are unchanged.
 Build-Release.ps1 adapts only these delivery boundaries in the emitted script:
@@ -104,7 +104,10 @@ menu smoke test. The same arguments with rollback restore the prior entry only
 if the endpoint still matches the new hash. Older deployments keep their own
 publisher scripts and rollback arguments. No container restart is required.
 
-Reports still write to Desktop/Thorough Check when requested. Explicit Apply
+Reports write to `C:\Thorough Check\` when requested; restore points use its
+`Restore Points` subfolder. Other Tools > Payment Cron Job runs from an isolated
+embedded script, reports in the terminal, and asks Y/N before enabling only SIX.
+It creates no backup, temporary file or HTML report. Explicit Apply
 operations may download/install their actual software and create installation
 logs as before; this change removes project-package storage, not those actions.
 The Windows 10 local Nmap installer is not included in memory delivery; it is
