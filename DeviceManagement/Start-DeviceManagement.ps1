@@ -651,12 +651,30 @@ while (-not $exitRequested) {
                 Write-Host ("  Status  : {0}" -f $lastResult.Status) -ForegroundColor $color
                 Write-Host ("  Details : {0}" -f $lastResult.Message) -ForegroundColor $color
             }
-            Show-DeviceManagementNavigation -AllowMainMenu -AllowBack -AllowExit
+            $canApplyFromResult = $selectedOperation.Id -eq 'ThoroughCheck' -and $selectedMode -eq 'Audit' -and
+                $lastResult.Message -match 'KIOSK Thorough Check completed' -and
+                (Test-OperationSelectionReady -Operation $selectedOperation -ClientId $selectedClient.Id -Device $selectedDevice -Mode 'Apply')
+            Show-DeviceManagementNavigation -AllowApplyFix:$canApplyFromResult -AllowMainMenu -AllowBack -AllowExit
+            $resultChoices = if ($canApplyFromResult) { @('2', '3', '8', '0') } else { @('3', '8', '0') }
             do {
                 $choice = ([string](Read-Host '  Select option')).Trim()
-                if ($choice -notin @('3', '8', '0')) { Write-Host '  Invalid selection. Enter 3, 8 or 0.' -ForegroundColor Yellow }
-            } while ($choice -notin @('3', '8', '0'))
-            if ($choice -eq '3') { $screen = 'Client' }
+                if ($choice -notin $resultChoices) {
+                    $hint = if ($canApplyFromResult) { 'Enter 2, 3, 8 or 0.' } else { 'Enter 3, 8 or 0.' }
+                    Write-Host ('  Invalid selection. ' + $hint) -ForegroundColor Yellow
+                }
+            } while ($choice -notin $resultChoices)
+            if ($choice -eq '2' -and $canApplyFromResult) {
+                $selectedMode = 'Apply'
+                $validated = Assert-RunSelection -ClientsConfiguration $clientsConfiguration -OperationsConfiguration $operationsConfiguration `
+                    -ClientId $selectedClient.Id -Device $selectedDevice -OperationId $selectedOperation.Id -Mode $selectedMode
+                $context = New-DeviceManagementContext -ClientType $validated.Client.Id -DeviceType $selectedDevice `
+                    -Operation $validated.Operation.Id -Mode $selectedMode -ClientLocation $clientLocation -AgentName $agentName -RootPath $architectureRoot `
+                    -SelectedPackage $selectedPackage
+                $lastResult = Invoke-ConfiguredOperation -RootPath $architectureRoot -Operation $validated.Operation -Context $context
+                $lastResult = Update-ThoroughCheckOperationResult -Result $lastResult -DeviceType $selectedDevice -ClientType $selectedClient.DisplayName
+                $screen = 'Result'
+            }
+            elseif ($choice -eq '3') { $screen = 'Client' }
             elseif ($choice -eq '8') {
                 if ($selectedOperation.Id -eq 'PaymentService') { $screen = 'Package' }
                 elseif ($selectedOperation.Id -eq 'KioskInstallation') { $screen = 'Browser' }

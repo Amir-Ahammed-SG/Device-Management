@@ -80,6 +80,18 @@ function Assert-SettingRuleParity {
             $label+'='+[Net.WebUtility]::HtmlDecode(([regex]::Replace($_.Groups['Value'].Value,'<[^>]*>',''))).Trim()
         })
         if(($oldPairs -join '|') -cne ($newPairs -join '|')){
+            # Unverified opaque inventory now has one row per required setting.
+            # Accept only that exact projection: identical reason first, unknown
+            # values afterward, and no invented or removed requirement labels.
+            $oldReason=Convert-ReportHtmlToTerminalText $oldValues
+            if(-not $oldPairs.Count -and $oldReason -match '(?i)\bnot\s+verified\b'){
+                $sourceRows=@($Parameters.Rows|Where-Object { (Get-ThoroughReportComponentName $_.ItemTitle) -eq $name })
+                if($sourceRows.Count -eq 1){
+                    $required=@([regex]::Matches((Get-ReportRequirement $sourceRows[0]),'<span class="kv-label">([^<]+):</span>')|ForEach-Object {[Net.WebUtility]::HtmlDecode($_.Groups[1].Value)})
+                    $expectedPairs=@(for($i=0;$i -lt $required.Count;$i++){$required[$i]+'='+$(if($i -eq 0){$oldReason}else{'Not verified'})})
+                    if($expectedPairs.Count -and ($expectedPairs -join '|') -ceq ($newPairs -join '|')){continue}
+                }
+            }
             # Final no longer has an aggregate Fail badge. Uncertain post-fix
             # properties must explicitly show Not verified instead of a cached
             # positive value. Other observed properties still match exactly.

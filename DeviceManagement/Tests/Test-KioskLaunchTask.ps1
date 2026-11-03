@@ -72,6 +72,10 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
         if($script:TaskMode -eq 'export-denied'){throw 'Fixture export denied'}
         $script:TaskXml
     }
+    function Get-ScheduledTaskInfo {param($TaskName,$TaskPath,$ErrorAction)
+        Assert-Task ($TaskName -eq 'Launch Kiosk' -and $TaskPath) 'History targets an unexpected task'
+        [pscustomobject]@{LastRunTime=[datetime]'2026-11-04T01:20:00';NextRunTime=[datetime]'1899-12-30'}
+    }
     function Open-KioskLaunchTaskScheduler {
         # This mock has no method that forwards registration to native COM.
         $root=[pscustomobject]@{}
@@ -192,15 +196,18 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
         [IO.File]::WriteAllText((Join-Path $outputRoot ($client+'-'+$mode+'.html')),$html,[Text.UTF8Encoding]::new($false))
         if($mode -eq 'Audit'){
             $component=Get-AuditRenderedComponent $html 'Kiosk Launch Task'
-            $taskField=@($component.Fields|Where-Object Setting -EQ 'Task')[0]
-            Assert-Task ($taskField.Found -eq 'Available' -and $taskField.Required -eq 'Available') 'Audit lost task availability or requirement'
+            $taskField=@($component.Fields|Where-Object Setting -EQ 'Task Status')[0]
+            Assert-Task ($taskField.Found -eq 'Active' -and $taskField.Required -eq 'Active') 'Audit lost task availability or requirement'
         }else{
             $component=Get-SettingRenderedComponent $html 'Kiosk Launch Task'
-            $taskField=@($component.Fields|Where-Object Setting -EQ 'Task')[0]
-            Assert-Task ($taskField.Value -eq 'Available') ('Current task state was lost in '+$mode)
+            $taskField=@($component.Fields|Where-Object Setting -EQ 'Task Status')[0]
+            Assert-Task ($taskField.Value -eq 'Active') ('Current task state was lost in '+$mode)
             if($mode -eq 'Fix'){Assert-Task ($taskField.Findings -eq 'Missing') 'Fix lost the before-Apply missing task evidence'}
-            Assert-Task (@($component.Fields|Where-Object {$_.Setting -eq 'Run Level' -and $_.Value -eq 'Limited'}).Count -eq 1) ('Final principal settings missing in '+$mode)
+            Assert-Task (@($component.Fields|Where-Object {$_.Setting -eq 'Target' -and $_.Value -eq $launcher}).Count -eq 1) ('Actual launcher target missing in '+$mode)
         }
+        $labels=@('Task Name','Task Status','Target','Trigger Time','Last Run','Next Run')
+        Assert-Task (@($component.Fields|Where-Object Setting -NotIn $labels).Count -eq 0) ('Unexpected task details in '+$mode)
+        if($mode -ne 'Fix'){Assert-Task ($component.Fields.Count -eq 6) ('Compact task report must have six fields in '+$mode)}
         $caseCount++
     }
     $healthy=New-TaskRow $again
@@ -214,8 +221,8 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
         $snapshot=New-ThoroughReportSnapshot -Rows @((New-TaskRow $result)) -BeforeRows @($before) -AfterApply ($case -ne 'pending') -DisplayMode Fix -AuditSource $identity
         $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
         $component=Get-SettingRenderedComponent $html 'Kiosk Launch Task'
-        $field=@($component.Fields|Where-Object Setting -EQ 'Run Level')[0]
-        $expected=if($case -eq 'pending'){'Not applied'}elseif($case -eq 'readback-denied'){'Not verified'}else{'Limited'}
+        $field=@($component.Fields|Where-Object Setting -EQ 'Target')[0]
+        $expected=if($case -eq 'pending'){'Not applied'}elseif($case -eq 'readback-denied'){'Not verified'}else{$launcher}
         Assert-Task ($field.Value -eq $expected) ('Fix fabricated or hid task evidence in '+$case+': '+$field.Value)
         $caseCount++
     }

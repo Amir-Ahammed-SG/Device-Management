@@ -14,12 +14,14 @@ function Show-DeviceManagementHeader {
 function Show-DeviceManagementNavigation {
     param (
         [switch]$AllowMainMenu,
+        [switch]$AllowApplyFix,
         [switch]$AllowBack,
         [switch]$AllowExit,
         [string]$BackKey = '8',
         [string]$ExitKey = '0'
     )
     $links = @()
+    if ($AllowApplyFix) { $links += '[2] Apply Fix' }
     if ($AllowMainMenu) { $links += '[3] Main Menu' }
     if ($AllowBack) { $links += ('[{0}] Back' -f $BackKey) }
     if ($AllowExit) { $links += ('[{0}] Exit' -f $ExitKey) }

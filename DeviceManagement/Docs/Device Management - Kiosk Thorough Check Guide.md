@@ -31,7 +31,7 @@ The mode menu contains:
 | **[1] Audit Report** | Check the current configuration without changing device settings. Saving the HTML report is optional. |
 | **[2] Apply Fix** | Apply supported repairs, verify the resulting configuration and save the report automatically. |
 
-Use **[8] Back** to return to the previous screen and **[0] Exit** to leave. The completion screen also offers **[3] Main Menu**.
+Use **[8] Back** to return to the previous screen and **[0] Exit** to leave. The completion screen also offers **[3] Main Menu**. After a completed Thorough Check Audit, **[2] Apply Fix** is available directly in this footer.
 
 ## 3. Run Audit first
 
@@ -48,7 +48,7 @@ If the Fix tab says **No fixes required**, you can use the Final tab and print i
 
 ## 4. Apply fixes when needed
 
-1. From the completion screen, select **[8] Back**, then **[2] Apply Fix**.
+1. From the completed Audit screen, select **[2] Apply Fix**. You can also select **[8] Back**, then **[2] Apply Fix**.
 2. Confirm or enter **Hostname**. The suggestion is the current Windows computer name; press Enter to accept it. This prompt appears only in Apply Fix.
 3. Wait for the initial read-only inspection, supported repairs and verification to finish.
 4. Read the saved report path in the terminal, then reopen or refresh that HTML file.

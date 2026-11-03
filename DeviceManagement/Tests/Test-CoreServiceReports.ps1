@@ -27,7 +27,7 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroug
     $paymentExpected=Get-ReportRequirement ([pscustomobject]@{ ItemTitle='Payment Gateway Middleware'; ItemSub='Type: Payment Gateway Middleware' })
     Assert-ServiceReport (((Get-FieldNames $paymentExpected) -join '|') -ceq 'Expected Names|Service State|Startup type|First failure|Second failure|Subsequent failures|Version') 'Payment Expected fields are out of order'
     $expectedNames=if ($sourceName -like 'Subway*') { 'SubwayLocal or AspPaymentSubwayProd' } else { 'AspPaymentSaaSProd' }
-    Assert-ServiceReport ($paymentExpected.Contains($expectedNames) -and $paymentExpected.Contains('0.0.0.0')) 'Payment Expected names or version placeholder missing'
+    Assert-ServiceReport ($paymentExpected.Contains($expectedNames) -and $paymentExpected.Contains('Readable') -and -not $paymentExpected.Contains('0.0.0.0')) 'Payment expected names or Readable version requirement missing'
     $zabbixExpected=Get-ReportRequirement ([pscustomobject]@{ ItemTitle='Zabbix Agent 2'; ItemSub='Type: Infrastructure Monitoring' })
     Assert-ServiceReport (((Get-FieldNames $zabbixExpected) -join '|') -ceq 'Service State|Startup type|First failure|Second failure|Subsequent failures|Host Name') 'Zabbix Expected fields are out of order'
     $wuExpected=Get-ReportRequirement ([pscustomobject]@{ ItemTitle='Windows Update (wuauserv)'; ItemSub='Type: Windows Update Engine' })

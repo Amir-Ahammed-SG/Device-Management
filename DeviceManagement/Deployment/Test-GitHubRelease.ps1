@@ -74,6 +74,7 @@ $fixtures=@(
     'Test-ClientDetailsHeader.ps1',
     'Test-LauncherInspection.ps1',
     'Test-KioskLaunchTask.ps1',
+    'Test-ReportRefinements.ps1',
     'Test-PaymentCronJob.ps1',
     'Test-PaymentCronRuntime.ps1',
     'Test-KioskAccountProperties.ps1'

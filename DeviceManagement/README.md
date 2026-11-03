@@ -366,8 +366,12 @@ commands, mixed results and actual Audit/Apply report rendering for both clients
 Both clients include **Kiosk Launch Task** under Kiosk Application & Policies.
 Audit reads existing `Launch Kiosk` tasks across Task Scheduler folders and
 records their actual principal, logon trigger/user/delay, action, script path,
-enabled state, execution limit and battery settings. The report also records
-launcher-file availability and whether an existing Startup BAT is also present.
+enabled state, execution limit and battery settings. Saved observations retain
+these checks. Audit and Final display six task details: **Task Name, Task Status,
+Target, Trigger Time, Last Run and Next Run**. Fix uses the same fields and keeps
+its existing attention filter. History is read from Task Scheduler; unavailable
+history stays Not verified and a task that has never run shows Not recorded.
+Existing Startup BAT warnings remain in the recorded action details.
 Missing tasks are reported as missing; unavailable inspection stays unverified.
 
 Apply creates `\Launch Kiosk` only when no task with that name exists and the
@@ -394,6 +398,20 @@ This missing-only repair is separate from the read-only Payment Service
 Restart Task check described above.
 `Tests/Test-KioskLaunchTask.ps1` covers both clients using mocked registration
 and native in-memory definitions, without registering or running a real task.
+
+After a completed Thorough Check Audit, the terminal footer offers **[2] Apply
+Fix**, **[3] Main Menu**, **[8] Back** and **[0] Exit**. Apply Fix reuses the selected
+client, device, branch and prepared-by name and runs the normal Apply handler
+with its existing prompts, safety checks and readback verification. Failed
+startup and other operation results keep their ordinary navigation.
+
+When printer or kiosk-account inventory is unavailable, the report still shows
+each required setting separately. The original inspection reason is retained;
+unknown values remain Not verified. Detected administrative accounts use their
+recorded identities rather than the example Admin/Administrator names. Audit
+derived Fix reports continue to show Not applied until an actual Apply run.
+`Tests/Test-ReportRefinements.ps1` renders both clients and all three views with
+unknown inventory, detected administrators and actual firewall observations.
 
 Audit inspects the launcher, profile and Startup without changes or prompts.
 Within Kiosk Application & Policies, Apply may enable the two required kiosk
@@ -575,8 +593,8 @@ missing accounts, failed reads/writes/readback and repeated Apply with isolated
 in-memory accounts. It verifies that only missing password settings or an existing administrative restriction are supplied to a write.
 `Tests/Test-ApplyRequirements.ps1` verifies administrative and service boundaries,
 legacy service recovery, primary protection and recovery action selection with
-in-memory fixtures. Version 0.0.0.0 remains an example in both modes; Findings
-retains the actual detected version. AppSettings is read-only in both modes.
+in-memory fixtures. The version requirement reads Readable; Findings retains
+the actual detected version. AppSettings is read-only in both modes.
 
 Firewall creation/update runs only when no enabled inbound TCP Allow rule is
 found for the required port. A matching rule is retained without widening its

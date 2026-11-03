@@ -152,9 +152,25 @@ try {
     Assert-Memory ($newCalls[0].Agent -ceq 'Interactive Agent' -and $newCalls[1].Agent -ceq 'Interactive Agent' -and $newCalls[2].Agent -ceq 'SaaS Agent') 'Agent input was not forwarded, reused in Apply or isolated across clients.'
     Assert-Memory ([regex]::Matches($ui,'This option is not available yet').Count -eq 1) 'Unavailable selections advanced to another screen.'
     Assert-Memory ($ui -match '\[2\] Payment Service \(Not available\)' -and $ui -notmatch 'KIOSK Installation \(Not available\)') 'Installation readiness or pending payment label is incorrect.'
-    Assert-Memory ($ui -match 'Invalid selection. Enter a displayed option number.' -and $ui -match 'Invalid selection. Enter 3, 8 or 0.') 'Invalid menu/navigation input was not explained.'
+    Assert-Memory ($ui -match 'Invalid selection. Enter a displayed option number.' -and $ui -match 'Invalid selection. Enter 2, 3, 8 or 0.') 'Invalid menu/navigation input was not explained.'
     Assert-Memory ($ui -notmatch 'Review settings. HTML report is optional.|Apply the agreed repairs and verify results.|Select mode:|Select device:|Select operation:') 'Removed help text or inconsistent input prompts remain.'
     Write-Output 'PASS: full menu, unavailable/invalid input stays in place, Back/Main Menu/repeated clients, nested Read-Host, branch input and caller return.'
+    foreach($quickClient in @(@{Key='1';Name='Subway'},@{Key='2';Name='SaaS'})) {
+        $beforeQuick=@(Get-Content -LiteralPath $log).Count
+        $quickInputs=@($quickClient.Key,'1','1','1','Quick Agent','Quick Branch','2','QUICK-HOST','0')
+        $quickUi=$quickInputs|& (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $interactivePath 2>&1|Out-String
+        $quickCalls=@(Get-Content -LiteralPath $log|Select-Object -Skip $beforeQuick|ForEach-Object {$_|ConvertFrom-Json})
+        Assert-Memory ($LASTEXITCODE -eq 0 -and $quickUi -match 'MEMORY_RETURNED_TO_CALLER' -and $quickUi -match 'FIXTURE_HOSTNAME=QUICK-HOST' -and $quickUi -notmatch 'Invalid selection') 'Direct Audit-footer Apply did not complete and return'
+        Assert-Memory ($quickCalls.Count -eq 2 -and $quickCalls[0].Audit -and $quickCalls[1].Apply) 'Audit footer must run exactly Audit then Apply'
+        Assert-Memory (@($quickCalls|Where-Object {$_.Client -ne $quickClient.Name -or $_.Branch -ne 'Quick Branch' -or $_.Agent -ne 'Quick Agent' -or $_.Device -ne 'KIOSK'}).Count -eq 0) 'Audit footer lost the selected client, device, branch or agent'
+        Assert-Memory ([regex]::Matches($quickUi,'\[2\] Apply Fix\s+\[3\] Main Menu').Count -eq 1) 'Apply shortcut must appear only on the completed Audit footer'
+    }
+    Write-Output 'PASS: both clients Audit footer runs Apply directly with retained context; Apply result retains ordinary navigation.'
+    $env:DEVICE_MANAGEMENT_MEMORY_TEST_SCENARIO='incomplete'
+    $failedStartInputs=@('2','1','1','1','Fixture Agent','Fixture Branch','2','0')
+    $failedStartUi=$failedStartInputs|& (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $interactivePath 2>&1|Out-String
+    Assert-Memory ($LASTEXITCODE -eq 0 -and $failedStartUi -match 'Invalid selection. Enter 3, 8 or 0.' -and $failedStartUi -notmatch '\[2\] Apply Fix\s+\[3\] Main Menu') 'Failed startup offered a direct Apply shortcut'
+    $env:DEVICE_MANAGEMENT_MEMORY_TEST_SCENARIO='no-report'
     foreach($answer in @('N','Y')){
         $toolInputs=if($answer -eq 'N'){@('4','1','N','8','0')}else{@('4','1','Y','','8','0')}
         $toolUi=$toolInputs|& (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $interactivePath 2>&1|Out-String

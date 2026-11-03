@@ -563,8 +563,58 @@ function Read-ThoroughAuditFields {
     $events.ToArray()
 }
 
+function Expand-ThoroughUnavailableFields {
+    param([string]$Html,[string]$RequirementHtml)
+    $observed=@(Read-ThoroughAuditFields $Html)
+    $required=@(Read-ThoroughAuditFields $RequirementHtml|Where-Object Kind -EQ 'Field')
+    if(-not $required.Count -or -not $observed.Count -or @($observed|Where-Object {$_.Kind -in @('Field','Group','Record')}).Count){return $Html}
+    $reason=Convert-ReportHtmlToTerminalText $Html
+    if($reason -notmatch '(?i)^(?:Not verified|Account not verified)(?:[.\s]|$)' -or $Html -match 'kv-label|fix-no-change'){return $Html}
+    $parts=for($i=0;$i -lt $required.Count;$i++){
+        $value=if($i -eq 0){$reason}else{'Not verified'}
+        '<div class="finding-value finding-unverified" title="'+[Net.WebUtility]::HtmlEncode($reason)+'"><span class="kv-label">'+[Net.WebUtility]::HtmlEncode($required[$i].Label)+':</span> '+[Net.WebUtility]::HtmlEncode($value)+'</div>'
+    }
+    '<div class="kv-block">'+($parts -join '')+'</div>'
+}
+
+function Get-KioskLaunchTaskReportState {
+    param([string]$Html)
+    $v=Get-ThoroughReportHighlightFields $Html
+    $missing=$v.ContainsKey('Task') -and $v['Task'] -in @('Missing','Not found')
+    $unknown='Not verified'
+    $name=if($v.ContainsKey('Task Name')){$v['Task Name']}else{$unknown}
+    $status=if($missing){'Missing'}elseif($v.ContainsKey('Task Status')){$v['Task Status']}elseif($v['Task Enabled'] -eq 'Yes'){'Active'}elseif($v['Task Enabled'] -eq 'No'){'Disabled'}else{$unknown}
+    $target=if($v.ContainsKey('Target')){$v['Target']}elseif($v.ContainsKey('Script Path')){$v['Script Path']}elseif($missing){'Not configured'}else{$unknown}
+    $trigger=if($v.ContainsKey('Trigger Time')){$v['Trigger Time']}elseif($v.ContainsKey('Trigger')){$v['Trigger']}elseif($missing){'Not configured'}else{$unknown}
+    if($trigger -eq 'At logon'){
+        if($v['Logon User'] -and $v['Logon User'] -notmatch '^(?:Not |Unknown)'){$trigger+=' - '+$v['Logon User']}
+        if($v['Startup Delay'] -and $v['Startup Delay'] -notmatch '^(?:Not |Unknown)'){$trigger+='; Delay: '+$v['Startup Delay']}
+    }
+    $fields=[ordered]@{'Task Name'=$name;'Task Status'=$status;'Target'=$target;'Trigger Time'=$trigger}
+    foreach($label in @('Last Run','Next Run')){$fields[$label]=if($v.ContainsKey($label)){Format-ThoroughReportDateTime -Value $v[$label]}elseif($missing){'Not recorded'}else{$unknown}}
+    ConvertTo-ReportDefinitionHtml $fields
+}
+
+function Get-KioskLaunchTaskHistory {
+    param([object[]]$Tasks)
+    $fields=[ordered]@{'Last Run'='Not recorded';'Next Run'='Not recorded'}
+    if($Tasks.Count -eq 1){
+        try{
+            if(-not [string]$Tasks[0].TaskPath){throw 'Task path unavailable'}
+            $info=Get-ScheduledTaskInfo -TaskName 'Launch Kiosk' -TaskPath ([string]$Tasks[0].TaskPath) -ErrorAction Stop
+            foreach($label in @('Last Run','Next Run')){
+                $property=if($label -eq 'Last Run'){'LastRunTime'}else{'NextRunTime'}
+                $value=$info.$property
+                $fields[$label]=if($value -is [datetime] -and $value.Year -gt 1900){$value.ToString('dd-MMM-yyyy HH:mm:ss',[Globalization.CultureInfo]::InvariantCulture)}elseif($value -is [datetime]){'Not recorded'}else{'Not verified'}
+            }
+        }catch{$fields['Last Run']='Not verified';$fields['Next Run']='Not verified'}
+    }elseif($Tasks.Count -gt 1){$fields['Last Run']='Not verified';$fields['Next Run']='Not verified'}
+    $fields
+}
+
 function ConvertTo-ThoroughAuditRows {
     param($Row,[string]$ComponentHtml,[string]$CommandHtml,[string]$RequirementHtml,[string]$FindingsHtml,$AccountView)
+    $FindingsHtml=Expand-ThoroughUnavailableFields -Html $FindingsHtml -RequirementHtml $RequirementHtml
     $required=@(Read-ThoroughAuditFields $RequirementHtml)
     $observed=@(Read-ThoroughAuditFields $FindingsHtml)
     $specs=[Collections.Generic.List[object]]::new()
@@ -775,6 +825,9 @@ function ConvertTo-ThoroughSettingValue {
 function ConvertTo-ThoroughSettingRows {
     param($Row,[ValidateSet('Fix','Final')][string]$Mode,[string]$ComponentHtml,[string]$CommandHtml,
         [string]$FindingsHtml,[string]$CurrentHtml,[string]$AppliedHtml,[bool]$AfterApply=$false,[bool]$HasBeforeRow=$false)
+    $requirement=Get-ReportRequirement $Row
+    $FindingsHtml=Expand-ThoroughUnavailableFields $FindingsHtml $requirement
+    $CurrentHtml=Expand-ThoroughUnavailableFields $CurrentHtml $requirement
     $records=@(Get-ThoroughSettingRecords $FindingsHtml)
     $currentRecords=@(Get-ThoroughSettingRecords $CurrentHtml)
     $noBaseline=$Mode -eq 'Fix' -and $AfterApply -and -not $HasBeforeRow
@@ -1757,6 +1810,7 @@ function Format-ThoroughReportTriggerDetails {
 
 function Format-ReportState {
     param ([string]$Item, [string]$Html)
+    if($Item -eq 'Kiosk Launch Task'){return Get-KioskLaunchTaskReportState $Html}
     if($Item -in @('Payment Service Restart Task','PaymentService Restart Task')){
         # Project collected task data into the six requested report fields.
         # The original observation, requirements and verification result stay intact.
@@ -2172,6 +2226,10 @@ function Get-AccountReportView {
         $identityParts.Add((ConvertTo-ReportDefinitionHtml $identity))
         $findingParts.Add($(if ($missing) { 'Account Missing. Please create manually.' } elseif ($raw -match '^Not verified\.') { $raw } else { 'Account not verified. Please check manually.' }))
     }
+    if($administrative -and $accountNames.Count -gt 0 -and $Row.PSObject.Properties['AccountResults']){
+        $known=@($accountNames|Where-Object {$identity=$_;@($Row.AccountResults|Where-Object AccountName -IEQ $identity).Count -eq 1})
+        if($known.Count -eq $accountNames.Count){$expectedName=$known -join ', '}
+    }
     $expected=[ordered]@{
         'Account Name'=$(if (-not $administrative -and $accountNames.Count) { $accountNames -join ', ' } else { $expectedName })
         'Account Privilege'=$expectedPrivilege
@@ -2197,6 +2255,12 @@ function Get-ThoroughReportCollectedValueState {
     param($Row,[string]$Label,[string]$Value,[Collections.IDictionary]$Requirements)
     # Classify recorded values only; do not query the device or change check results.
     if($Row.Status -eq 'Bypass'){return ''}
+    if($Row.ItemTitle -eq 'Kiosk Launch Task' -and $Label -in @('Task Name','Trigger Time','Last Run','Next Run')){
+        if($Value -match '(?i)not verified|unknown|unavailable'){return 'unverified'}
+        if($Label -in @('Last Run','Next Run') -and $Value -eq 'Not recorded'){return 'collected'}
+        if($Value -match '^(?:Missing|Not found|Not configured)$' -or -not $Value){return 'missing'}
+        return 'collected'
+    }
     if($Row.SectionTitle -eq 'AppSettings Check'){
         $actual=([string]$Value).Trim()
         # AppSettings colors describe collected data, including False and zero.
@@ -2243,6 +2307,12 @@ function Get-ThoroughReportFindingComparison {
             if($actual -ieq $service.Trim()){return 'match'}
             return 'mismatch'
         }
+    }
+    if($Row.ItemTitle -eq 'Kiosk Launch Task' -and $Label -eq 'Target'){
+        if($actual -match '^(?:Missing|Not found|Not configured)$' -or -not $actual){return 'mismatch'}
+        $source=if($Row.PSObject.Properties['ExpectedHtml']){Get-ThoroughReportHighlightFields $Row.ExpectedHtml}else{@{}}
+        if($source.ContainsKey('Script Path') -and $source['Script Path'] -notmatch '^Not '){return $(if($actual -ieq $source['Script Path']){'match'}else{'mismatch'})}
+        return ''
     }
     $referenceLabel=$Label
     if($Label -eq 'Service Name'){$referenceLabel='Expected Names'}
@@ -2351,6 +2421,9 @@ function Format-ThoroughReportFindingHighlights {
 }
 function Get-ReportRequirement {
     param ($Row)
+    if($Row.ItemTitle -eq 'Kiosk Launch Task'){
+        return ConvertTo-ReportDefinitionHtml ([ordered]@{'Task Name'='Launch Kiosk';'Task Status'='Active';'Target'='Existing kiosk launcher';'Trigger Time'='At user logon';'Last Run'='Informational';'Next Run'='Informational'})
+    }
     if($Row.PSObject.Properties['RecordedRequirementHtml']){return [string]$Row.RecordedRequirementHtml}
     # Task requirements are display examples; verification uses the selected service.
     if($Row.ItemTitle -in @('Payment Service Restart Task','PaymentService Restart Task')){
@@ -2363,7 +2436,7 @@ function Get-ReportRequirement {
     $accountView=Get-AccountReportView $Row
     if ($null -ne $accountView) { return $accountView.ExpectedHtml }
     if ($Row.ItemSub -eq 'Type: Payment Gateway Middleware') {
-        return ConvertTo-ReportDefinitionHtml ([ordered]@{ 'Expected Names'='AspPaymentSaaSProd'; 'Service State'='Running'; 'Startup type'='Automatic'; 'First failure'='Restart the service'; 'Second failure'='Restart the service'; 'Subsequent failures'='Take No Action'; 'Version'='0.0.0.0' })
+        return ConvertTo-ReportDefinitionHtml ([ordered]@{ 'Expected Names'='AspPaymentSaaSProd'; 'Service State'='Running'; 'Startup type'='Automatic'; 'First failure'='Restart the service'; 'Second failure'='Restart the service'; 'Subsequent failures'='Take No Action'; 'Version'='Readable' })
     }
     if ($Row.ItemSub -eq 'Type: Infrastructure Monitoring') {
         return ConvertTo-ReportDefinitionHtml ([ordered]@{ 'Service State'='Running'; 'Startup type'='Automatic'; 'First failure'='Restart the service'; 'Second failure'='Restart the service'; 'Subsequent failures'='Take No Action'; 'Host Name'=$(if ($Row.PSObject.Properties['ExpectedHostName']) {$Row.ExpectedHostName} else {'Not detected'}) })
@@ -3914,6 +3987,8 @@ function Get-KioskLaunchTaskCheck {
         $fields=$snapshot.Fields
     }catch{$note='Task Scheduler verification failed: '+$_.Exception.Message+' No existing task was replaced.';if($created){$note+=' Creation returned, but readback was not verified; manual review required.'}}
     if($context.StartupBat -eq 'Also present (unchanged)'){$note+=' Startup BAT also exists; both logon launch paths remain configured.'}
+    $history=if($fields['Task'] -eq 'Available' -and $tasks.Count -eq 1){Get-KioskLaunchTaskHistory $tasks}elseif($fields['Task'] -eq 'Missing'){Get-KioskLaunchTaskHistory @()}else{[ordered]@{'Last Run'='Not verified';'Next Run'='Not verified'}}
+    foreach($label in $history.Keys){$fields[$label]=$history[$label]}
     $result=New-CheckResult $status $note 'Kiosk launch task inspected'
     $result|Add-Member NoteProperty StateHtml (ConvertTo-ReportDefinitionHtml $fields)
     $result|Add-Member NoteProperty ExpectedHtml (ConvertTo-ReportDefinitionHtml (Get-KioskLaunchTaskRequirements $context))
