@@ -107,8 +107,11 @@ publisher scripts and rollback arguments. No container restart is required.
 Reports write to `C:\Thorough Check\` when requested; restore points use its
 `Restore Points` subfolder. Other Tools > Payment Cron Job runs from an isolated
 embedded script, reports in the terminal, and asks Y/N before enabling only SIX.
-It creates no backup, temporary file or HTML report. Explicit Apply
-operations may download/install their actual software and create installation
+It creates no configuration backup, temporary configuration copy or HTML report.
+The tool also offers a separate Y/N restart of only the selected service, with
+new-process/state readback and fresh process-owned SIX registration log checks.
+Unavailable evidence stays unverified; no test payment/balance is requested.
+Explicit Apply operations may download/install their actual software and create installation
 logs as before; this change removes project-package storage, not those actions.
 The Windows 10 local Nmap installer is not included in memory delivery; it is
 still unprepared and requires manual installation. Existing Nmap detection and

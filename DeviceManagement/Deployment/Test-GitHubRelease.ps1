@@ -75,6 +75,7 @@ $fixtures=@(
     'Test-LauncherInspection.ps1',
     'Test-KioskLaunchTask.ps1',
     'Test-PaymentCronJob.ps1',
+    'Test-PaymentCronRuntime.ps1',
     'Test-KioskAccountProperties.ps1'
 )
 # A separate process prevents one fixture's mocks or preferences leaking to another.

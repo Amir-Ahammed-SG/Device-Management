@@ -55,8 +55,12 @@ command-line configuration overrides and linked paths require manual review.
 When exactly one SIX schedule has Boolean `IsEnabled: false`, the tool asks
 **Enable SIX Cron? [Y/N]**. N returns directly to Other Tools. Y requires an
 administrator, changes only that SIX Boolean to true, verifies the file and
-keeps the result visible until Enter. Already enabled schedules need no prompt
-or write. Invalid JSON, duplicate properties, missing/ambiguous SIX schedules,
+keeps the result visible until Enter. Already enabled schedules need no configuration
+fix prompt or write. SIX Name, UID and CronExpression must be readable. Another
+enabled or unverified schedule with the same UID blocks Apply/restart, including
+providers outside the displayed payment list: Hangfire uses UID as the recurring
+job identifier, so a later enabled record can overwrite an earlier one.
+Invalid JSON, duplicate properties, missing/ambiguous SIX schedules,
 changed service identity, changed file content or an unavailable exclusive file
 lock prevent writing. NETS, NEXIDE and every other setting remain unchanged.
 
@@ -65,11 +69,34 @@ original file's bytes outside the Boolean token, including comments, spacing,
 line endings and supported UTF-8/UTF-16/UTF-32 BOM/encoding. It writes the
 existing file under an exclusive lock and verifies the exact resulting bytes.
 The original bytes are retained only in memory for verification and restoration
-after a caught write/readback failure. No backup, temporary file or HTML report
+after a caught write/readback failure. No configuration backup, temporary
+configuration copy or HTML report
 is created. A crash/power loss cannot be recovered from that memory snapshot.
-The tool does not restart the service or claim that it loaded the changed
-configuration. `Tests/Test-PaymentCronJob.ps1` uses synthetic services and fixture
-files; in-memory menu fixtures cover the single check-then-Y/N flow.
+After saving or finding SIX already enabled, a separate **Restart selected Payment
+Service to load SIX Cron? [Y/N]** prompt explains that active payments may be
+interrupted. N leaves service control untouched and reports runtime pending.
+Y rechecks the selected service/process, configuration bytes and UID safety,
+requests only that service's stop/start through WMI, and uses bounded state
+polling. It never forces dependent services, changes recovery settings or kills
+processes. Failed control responses trigger a selected-service recovery attempt
+only when that service is confirmed stopped with the same executable command.
+
+Reload verification requires a newer process creation time, the same executable path
+and command, a stable Running state, and unchanged configuration. SIX registration
+additionally requires fresh matching Name/UID and completed-registration messages
+from `C:\Logs\Payment_Middleware_*.txt`, after the pre-restart file offsets and new
+process start. The supported log format comes from Payment Middleware source
+`a52d204e8e5d82b3ada0cb74b255d102018ae3c7`. Windows Restart Manager is queried
+read-only to ensure the log has a single owner matching the selected PID and
+process start time. The tool imports no Restart Manager shutdown/restart APIs.
+Unreadable, ambiguous, stale, differently formatted or unowned logs remain
+Not verified; observed startup errors fail verification. Pending verification
+returns Skipped rather than Pass. No test payment/balance job is requested, and
+job execution is not verified. No Payment Middleware source/binary is modified.
+`Tests/Test-PaymentCronJob.ps1` covers byte-safe JSON changes; the separate
+`Tests/Test-PaymentCronRuntime.ps1` uses synthetic service control and disposable
+logs, plus a read-only native owner query on its own test process. In-memory menu
+fixtures cover routing and terminal return behavior.
 
 Thorough Check reports now use `C:\Thorough Check\` for both clients and all
 execution paths. Existing restore-point behavior uses

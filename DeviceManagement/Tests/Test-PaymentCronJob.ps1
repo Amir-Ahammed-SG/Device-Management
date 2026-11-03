@@ -43,6 +43,8 @@ function Read-Host {param($Prompt)
     $script:Answers.Dequeue()
 }
 function Start-Process {throw 'Process execution is forbidden'}
+# Runtime behavior is covered separately; these fixtures isolate JSON mutation.
+function Confirm-PaymentCronRuntime {param($Context,$Snapshot) [pscustomobject]@{Status='Verified'}}
 function Restart-Service {throw 'Service restart is forbidden'}
 function Stop-Service {throw 'Service stop is forbidden'}
 function Start-Service {throw 'Service start is forbidden'}
@@ -63,7 +65,7 @@ $json=@'
   "Number": -1.234e+42,
   "ScheduleConfiguration": {
     "Schedules": [
-      {"Provider":"NETS","Name":"Cron for nets payment balance","UID":"same-uid","CronExpression":"0 3 * * *","IsEnabled":true},
+      {"Provider":"NETS","Name":"Cron for nets payment balance","UID":"nets-uid","CronExpression":"0 3 * * *","IsEnabled":true},
       {"Provider":"SIX","Name":"Cron for six payment balance","UID":"same-uid","CronExpression":"0 3 * * *","IsEnabled": false /* six only */},
       {"Provider":"NEXIDE","Name":"Cron for nexi de payment balance","UID":"same-uid","CronExpression":"0 3 * * *","IsEnabled":false},
       {"Provider":"KitchenTicketPrint","BranchUUID":"keep-this","IsEnabled":false},

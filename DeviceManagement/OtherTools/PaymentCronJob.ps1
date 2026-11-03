@@ -123,22 +123,34 @@ function Get-PaymentCronModel {
     $configuration=Get-PaymentCronMember $root 'ScheduleConfiguration'
     $schedules=Get-PaymentCronMember $configuration 'Schedules'
     if($null -eq $schedules -or $schedules.Kind -ne 'Array'){throw 'ScheduleConfiguration.Schedules array is unavailable; no changes made.'}
-    $records=[Collections.Generic.List[object]]::new();$six=[Collections.Generic.List[object]]::new();$index=0
+    $records=[Collections.Generic.List[object]]::new();$six=[Collections.Generic.List[object]]::new();$all=[Collections.Generic.List[object]]::new();$index=0
     foreach($schedule in $schedules.Items){
         if($schedule.Kind -ne 'Object'){throw 'A schedule record is not an object; manual review required.'}
         $provider=Get-PaymentCronMember $schedule 'Provider'
         if($null -eq $provider -or $provider.Kind -ne 'String'){throw 'A schedule Provider is missing or invalid; manual review required.'}
-        if($provider.Value -in @('SIX','NETS','NEXIDE')){
-            $flag=Get-PaymentCronMember $schedule 'IsEnabled'
-            $record=[pscustomobject]@{Index=$index;Provider=$provider.Value;Name='Not configured';UID='Not configured';CronExpression='Not configured';IsEnabled=$null;Token=$flag}
-            foreach($name in @('Name','UID','CronExpression')){$value=Get-PaymentCronMember $schedule $name;if($null -ne $value -and $value.Kind -eq 'String'){$record.$name=$value.Value}}
-            if($null -ne $flag -and $flag.Kind -eq 'Boolean'){$record.IsEnabled=[bool]$flag.Value}
-            $records.Add($record)
-            if($provider.Value -ieq 'SIX'){$six.Add($record)}
-        }
+        $flag=Get-PaymentCronMember $schedule 'IsEnabled'
+        $record=[pscustomobject]@{Index=$index;Provider=$provider.Value;Name='Not configured';UID='Not configured';CronExpression='Not configured';IsEnabled=$null;Token=$flag}
+        foreach($name in @('Name','UID','CronExpression')){$value=Get-PaymentCronMember $schedule $name;if($null -ne $value -and $value.Kind -eq 'String'){$record.$name=$value.Value}}
+        if($null -ne $flag -and $flag.Kind -eq 'Boolean'){$record.IsEnabled=[bool]$flag.Value}
+        $all.Add($record)
+        if($provider.Value -in @('SIX','NETS','NEXIDE')){$records.Add($record)}
+        if($provider.Value -ieq 'SIX'){$six.Add($record)}
         $index++
     }
-    [pscustomobject]@{Records=$records.ToArray();Six=$six.ToArray()}
+    [pscustomobject]@{Records=$records.ToArray();Six=$six.ToArray();AllSchedules=$all.ToArray()}
+}
+
+function Assert-PaymentCronSixRegistration {
+    param($Model)
+    if($Model.Six.Count -ne 1 -or $Model.Six[0].IsEnabled -isnot [bool]){throw 'Exactly one SIX schedule with a Boolean IsEnabled is required.'}
+    $six=$Model.Six[0]
+    foreach($field in @('Name','UID','CronExpression')){
+        if([string]::IsNullOrWhiteSpace([string]$six.$field) -or $six.$field -eq 'Not configured' -or $six.$field -match '[\x00-\x1F\x7F-\x9F]'){throw 'SIX Name, UID and CronExpression must be readable before enabling or restarting.'}
+    }
+    foreach($record in $Model.AllSchedules){
+        if($record.Index -eq $six.Index -or [string]$record.UID -ine [string]$six.UID){continue}
+        if($record.IsEnabled -isnot [bool] -or $record.IsEnabled){throw 'SIX UID conflicts with another enabled or unverified schedule. Existing settings preserved; manual review required.'}
+    }
 }
 
 function Assert-PaymentCronLocalPath {
@@ -178,7 +190,9 @@ function Get-PaymentCronServiceContext {
     $path=Join-Path ([IO.Path]::GetDirectoryName($executable)) 'appsettings.json'
     Assert-PaymentCronLocalPath $path
     if(-not (Test-Path -LiteralPath $path -PathType Leaf -ErrorAction Stop)){throw 'appsettings.json is unavailable.'}
-    [pscustomobject]@{Name=[string]$Service.Name;ProcessId=$processIdValue;Path=$path;Executable=$executable;Command=$command}
+    $started=$null
+    if($processes[0].PSObject.Properties['CreationDate'] -and $processes[0].CreationDate -is [datetime]){$started=$processes[0].CreationDate.ToUniversalTime()}
+    [pscustomobject]@{Name=[string]$Service.Name;ProcessId=$processIdValue;Path=$path;Executable=$executable;Command=$command;StartedUtc=$started}
 }
 
 function Read-PaymentCronBytes {
@@ -226,7 +240,7 @@ function Enable-PaymentCronSix {
     param($Context,$Snapshot)
     if($WhatIfPreference){throw 'WhatIf is enabled; no configuration was changed.'}
     if(-not (Test-PaymentCronAdministrator)){throw 'Run Windows PowerShell as Administrator to apply this change.'}
-    if($Snapshot.Model.Six.Count -ne 1 -or $Snapshot.Model.Six[0].IsEnabled -isnot [bool]){throw 'Exactly one SIX schedule with a Boolean IsEnabled is required.'}
+    Assert-PaymentCronSixRegistration $Snapshot.Model
     if($Snapshot.Model.Six[0].IsEnabled){return $Snapshot}
     $fresh=@(Get-PaymentCronRunningServices|Where-Object Name -CEQ $Context.Name)
     if($fresh.Count -ne 1){throw 'Selected Payment Service is no longer uniquely running; no changes made.'}
@@ -239,6 +253,7 @@ function Enable-PaymentCronSix {
         $original=Read-PaymentCronBytes $stream
         if(-not (Test-PaymentCronBytesEqual $original $Snapshot.Bytes)){throw 'appsettings.json changed after inspection; no changes made. Run the check again.'}
         $verified=ConvertFrom-PaymentCronBytes $original
+        Assert-PaymentCronSixRegistration $verified.Model
         if($verified.Model.Six.Count -ne 1 -or $verified.Model.Six[0].IsEnabled -isnot [bool] -or $verified.Model.Six[0].IsEnabled){throw 'SIX schedule changed after inspection; no changes made.'}
         $token=$verified.Model.Six[0].Token
         if($verified.Text.Substring($token.Start,$token.Length) -cne 'false'){throw 'The exact SIX Boolean token could not be verified.'}
@@ -264,6 +279,211 @@ function Enable-PaymentCronSix {
         }
         throw $message
     }finally{if($null -ne $stream){$stream.Dispose()}}
+}
+
+function Get-PaymentCronServiceInstance {
+    param([string]$Name)
+    $matches=@(Get-CimInstance -ClassName Win32_Service -OperationTimeoutSec 5 -ErrorAction Stop|Where-Object Name -CEQ $Name)
+    if($matches.Count -ne 1){throw 'Selected service identity is unavailable.'}
+    $matches[0]
+}
+
+function Wait-PaymentCronServiceState {
+    param([string]$Name,[string]$State,[int]$TimeoutSeconds=30)
+    $timer=[Diagnostics.Stopwatch]::StartNew()
+    do{
+        $service=Get-PaymentCronServiceInstance $Name
+        if($service.State -eq $State){return $service}
+        if($timer.Elapsed.TotalSeconds -ge $TimeoutSeconds){break}
+        Start-Sleep -Milliseconds 500
+    }while($timer.Elapsed.TotalSeconds -lt $TimeoutSeconds)
+    throw ('Service did not reach '+$State+' within the verification timeout.')
+}
+
+function Get-PaymentCronLogFiles {
+    if(-not (Test-Path -LiteralPath 'C:\Logs' -PathType Container)){return}
+    Assert-PaymentCronLocalPath 'C:\Logs'
+    @(Get-ChildItem -LiteralPath 'C:\Logs' -File -Filter 'Payment_Middleware_*.txt' -ErrorAction Stop|Sort-Object LastWriteTimeUtc -Descending|Select-Object -First 8)
+}
+
+function Get-PaymentCronLogBaseline {
+    $files=@{}
+    foreach($file in @(Get-PaymentCronLogFiles)){
+        Assert-PaymentCronLocalPath $file.FullName
+        $files[$file.FullName]=[pscustomobject]@{Length=[long]$file.Length;CreatedUtc=$file.CreationTimeUtc}
+    }
+    $files
+}
+
+function Get-PaymentCronLogOwners {
+    param([string]$Path)
+    # Restart Manager is used ONLY to query file owners. No shutdown/restart API
+    # is imported or called. This prevents accepting another service's shared log.
+    if(-not ('Selise.PaymentCronLogOwners' -as [type])){
+        Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+namespace Selise {
+ public static class PaymentCronLogOwners {
+  [StructLayout(LayoutKind.Sequential)] struct UniqueProcess { public uint Pid; public System.Runtime.InteropServices.ComTypes.FILETIME Start; }
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct ProcessInfo {
+   public UniqueProcess Process;
+   [MarshalAs(UnmanagedType.ByValTStr, SizeConst=256)] public string Name;
+   [MarshalAs(UnmanagedType.ByValTStr, SizeConst=64)] public string Service;
+   public uint Type, Status, Session;
+   [MarshalAs(UnmanagedType.Bool)] public bool Restartable;
+  }
+  public sealed class Owner { public uint Pid; public DateTime StartedUtc; }
+  [DllImport("rstrtmgr.dll", CharSet=CharSet.Unicode)] static extern int RmStartSession(out uint session, uint flags, StringBuilder key);
+  [DllImport("rstrtmgr.dll")] static extern int RmEndSession(uint session);
+  [DllImport("rstrtmgr.dll", CharSet=CharSet.Unicode)] static extern int RmRegisterResources(uint session, uint count, string[] files, uint apps, IntPtr processes, uint services, string[] names);
+  [DllImport("rstrtmgr.dll")] static extern int RmGetList(uint session, out uint needed, ref uint count, [In,Out] ProcessInfo[] apps, ref uint reasons);
+  public static Owner[] Query(string path) {
+   uint session; int result=RmStartSession(out session,0,new StringBuilder(33));
+   if(result!=0) throw new InvalidOperationException("Log owner session unavailable: "+result);
+   try {
+    result=RmRegisterResources(session,1,new string[]{path},0,IntPtr.Zero,0,null);
+    if(result!=0) throw new InvalidOperationException("Log owner registration unavailable: "+result);
+    uint needed=0,count=0,reasons=0;
+    result=RmGetList(session,out needed,ref count,null,ref reasons);
+    if(result==0) return new Owner[0];
+    for(int attempt=0;attempt<3 && result==234;attempt++) {
+     if(needed==0 || needed>1024) throw new InvalidOperationException("Ambiguous log owners");
+     count=needed; var apps=new ProcessInfo[count];
+     result=RmGetList(session,out needed,ref count,apps,ref reasons);
+     if(result==0) {
+      var owners=new Owner[count];
+      for(int i=0;i<count;i++) {
+       long stamp=((long)(uint)apps[i].Process.Start.dwHighDateTime<<32)|(uint)apps[i].Process.Start.dwLowDateTime;
+       owners[i]=new Owner{Pid=apps[i].Process.Pid,StartedUtc=DateTime.FromFileTimeUtc(stamp)};
+      }
+      return owners;
+     }
+    }
+    throw new InvalidOperationException("Log owners unavailable: "+result);
+   } finally { RmEndSession(session); }
+  }
+ }
+}
+'@ -ErrorAction Stop
+    }
+    [Selise.PaymentCronLogOwners]::Query($Path)
+}
+
+function Read-PaymentCronFreshLog {
+    param($File,$Baseline,$Context)
+    Assert-PaymentCronLocalPath $File.FullName
+    $owners=@(Get-PaymentCronLogOwners $File.FullName)
+    if($owners.Count -ne 1 -or $owners[0].Pid -ne $Context.ProcessId -or [Math]::Abs(($owners[0].StartedUtc-$Context.StartedUtc).TotalMilliseconds) -gt 2){return ''}
+    $offset=0L
+    if($Baseline.ContainsKey($File.FullName)){
+        $before=$Baseline[$File.FullName]
+        if($before.CreatedUtc -ne $File.CreationTimeUtc -or $File.Length -lt $before.Length){return ''}
+        $offset=[long]$before.Length
+    }elseif($File.CreationTimeUtc -lt $Context.StartedUtc.AddSeconds(-2)){return ''}
+    $stream=[IO.FileStream]::new($File.FullName,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+    try{
+        if($stream.Length-$offset -gt 1MB){return ''}
+        $stream.Position=$offset;$bytes=New-Object byte[] ([int]($stream.Length-$offset));$read=0
+        while($read -lt $bytes.Length){$count=$stream.Read($bytes,$read,$bytes.Length-$read);if($count -eq 0){return ''};$read+=$count}
+    }finally{$stream.Dispose()}
+    $owners=@(Get-PaymentCronLogOwners $File.FullName)
+    if($owners.Count -ne 1 -or $owners[0].Pid -ne $Context.ProcessId -or [Math]::Abs(($owners[0].StartedUtc-$Context.StartedUtc).TotalMilliseconds) -gt 2){return ''}
+    try{[Text.UTF8Encoding]::new($false,$true).GetString($bytes)}catch{return ''}
+}
+
+function Test-PaymentCronRegistrationLog {
+    param([string]$Text,$Schedule,[datetime]$StartedUtc)
+    $expected='++Registering schedule: '+$Schedule.Name+' ('+$Schedule.UID+')'
+    $registered=$false;$complete=$false;$errors=$false
+    foreach($line in ($Text -split '\r?\n')){
+        $match=[regex]::Match($line,'^(?<Time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} [+-]\d{2}:\d{2}) \[(?<Level>[A-Z]{3})\] (?<Message>.*)$')
+        if(-not $match.Success){continue}
+        $stamp=[DateTimeOffset]::MinValue
+        if(-not [DateTimeOffset]::TryParseExact($match.Groups['Time'].Value,'yyyy-MM-dd HH:mm:ss.fff zzz',[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::None,[ref]$stamp)){continue}
+        if($stamp.UtcDateTime -lt $StartedUtc -or $stamp.UtcDateTime -gt [DateTime]::UtcNow.AddSeconds(2)){continue}
+        $message=$match.Groups['Message'].Value
+        if($match.Groups['Level'].Value -in @('ERR','FTL')){$errors=$true}
+        if($match.Groups['Level'].Value -eq 'INF' -and $message -ceq $expected){$registered=$true}
+        if($registered -and $match.Groups['Level'].Value -eq 'INF' -and $message -ceq '++Schdules successfully registered...'){$complete=$true}
+    }
+    [pscustomobject]@{Registered=($registered -and $complete -and -not $errors);Errors=$errors}
+}
+
+function Confirm-PaymentCronRuntime {
+    param($Context,$Snapshot,[int]$VerificationSeconds=15,[int]$StableSeconds=3)
+    Write-Host '  Restarting the selected Payment Service can interrupt an active payment.' -ForegroundColor Yellow
+    do{$answer=([string](Read-Host '  Restart selected Payment Service to load SIX Cron? [Y/N]')).Trim()}while($answer -notin @('Y','N'))
+    if($answer -ieq 'N'){Write-Host '  Service reload: Skipped. SIX registration: Not verified.' -ForegroundColor Yellow;return [pscustomobject]@{Status='Pending'}}
+    $stopAttempted=$false;$restarted=$false
+    try{
+        if($WhatIfPreference -or -not (Test-PaymentCronAdministrator)){throw 'Approved administrator execution without WhatIf is required to restart.'}
+        Assert-PaymentCronSixRegistration $Snapshot.Model
+        $service=Get-PaymentCronServiceInstance $Context.Name
+        $current=Get-PaymentCronServiceContext $service
+        if($null -eq $current.StartedUtc -or $null -eq $Context.StartedUtc){throw 'Process creation time is unavailable; no restart was attempted.'}
+        if($current.ProcessId -ne $Context.ProcessId -or $current.StartedUtc -ne $Context.StartedUtc -or $current.Command -cne $Context.Command){throw 'Selected service process changed; no restart was attempted.'}
+        $actual=Read-PaymentCronSnapshot $Context.Path
+        if(-not (Test-PaymentCronBytesEqual $actual.Bytes $Snapshot.Bytes) -or $actual.Model.Six[0].IsEnabled -ne $true){throw 'Configuration changed or SIX is not enabled; no restart was attempted.'}
+        $baseline=@{};$logsReadable=$true
+        try{$baseline=Get-PaymentCronLogBaseline}catch{$logsReadable=$false}
+        Write-Host '  Stopping selected Payment Service (up to 30 seconds)...'
+        $stopAttempted=$true
+        $response=Invoke-CimMethod -InputObject $service -MethodName StopService -OperationTimeoutSec 5 -ErrorAction Stop
+        if($response.ReturnValue -ne 0){throw ('Stop was refused (code '+$response.ReturnValue+'); no dependent service was forced.')}
+        [void](Wait-PaymentCronServiceState $Context.Name 'Stopped')
+        $stopped=Get-PaymentCronServiceInstance $Context.Name
+        if([Environment]::ExpandEnvironmentVariables([string]$stopped.PathName).Trim() -cne $Context.Command){throw 'Service executable configuration changed while stopped.'}
+        Write-Host '  Starting selected Payment Service (up to 30 seconds)...'
+        $response=Invoke-CimMethod -InputObject $stopped -MethodName StartService -OperationTimeoutSec 5 -ErrorAction Stop
+        if($response.ReturnValue -ne 0){throw ('Start was refused (code '+$response.ReturnValue+').')}
+        $running=Wait-PaymentCronServiceState $Context.Name 'Running'
+        $new=Get-PaymentCronServiceContext $running
+        if($null -eq $new.StartedUtc -or $new.StartedUtc -le $Context.StartedUtc -or $new.Executable -ine $Context.Executable -or $new.Command -cne $Context.Command){throw 'New service process identity could not be verified.'}
+        $restarted=$true
+        Write-Host ('  Service reload: Verified. Running process: '+$new.ProcessId) -ForegroundColor Green
+        Write-Host '  Checking fresh SIX registration logs (up to 15 seconds)...'
+        $timer=[Diagnostics.Stopwatch]::StartNew();$registered=$false
+        do{
+            $observed=Get-PaymentCronServiceContext (Get-PaymentCronServiceInstance $Context.Name)
+            if($observed.ProcessId -ne $new.ProcessId -or $observed.StartedUtc -ne $new.StartedUtc -or $observed.Command -cne $Context.Command){throw 'Service stopped or changed during runtime verification.'}
+            if(-not (Test-PaymentCronBytesEqual (Read-PaymentCronSnapshot $Context.Path).Bytes $Snapshot.Bytes)){throw 'Configuration changed during runtime verification.'}
+            if($logsReadable){
+                try{
+                    foreach($file in @(Get-PaymentCronLogFiles)){
+                        $evidence=Test-PaymentCronRegistrationLog (Read-PaymentCronFreshLog $file $baseline $new) $Snapshot.Model.Six[0] $new.StartedUtc
+                        if($evidence.Errors){throw 'Selected process logged startup errors.'}
+                        if($evidence.Registered){$registered=$true}
+                    }
+                }catch{if($_.Exception.Message -eq 'Selected process logged startup errors.'){throw};$logsReadable=$false;$registered=$false}
+            }
+            if(-not $logsReadable -or ($registered -and $timer.Elapsed.TotalSeconds -ge $StableSeconds)){break}
+            if($timer.Elapsed.TotalSeconds -ge $VerificationSeconds){break}
+            Start-Sleep -Milliseconds 500
+        }while($true)
+        # Even unavailable logs require one final live-state and byte check.
+        $observed=Get-PaymentCronServiceContext (Get-PaymentCronServiceInstance $Context.Name)
+        if($observed.ProcessId -ne $new.ProcessId -or $observed.StartedUtc -ne $new.StartedUtc -or $observed.Command -cne $Context.Command -or -not (Test-PaymentCronBytesEqual (Read-PaymentCronSnapshot $Context.Path).Bytes $Snapshot.Bytes)){throw 'Final runtime state or configuration was not stable.'}
+        if($registered){Write-Host '  SIX registration log: Verified (matching Name/UID, selected process).' -ForegroundColor Green}
+        else{Write-Host '  SIX registration: Not verified. Fresh process-owned registration evidence is unavailable.' -ForegroundColor Yellow}
+        Write-Host '  Job execution: Not tested (no manual payment/balance trigger).'
+        [pscustomobject]@{Status=$(if($registered){'Verified'}else{'Pending'})}
+    }catch{
+        $message=$_.Exception.Message
+        if($stopAttempted -and -not $restarted){
+            try{
+                $recover=Get-PaymentCronServiceInstance $Context.Name
+                if($recover.State -eq 'Stopped' -and [Environment]::ExpandEnvironmentVariables([string]$recover.PathName).Trim() -ceq $Context.Command){
+                    $response=Invoke-CimMethod -InputObject $recover -MethodName StartService -OperationTimeoutSec 5 -ErrorAction Stop
+                    if($response.ReturnValue -ne 0){throw 'Recovery start refused'}
+                    [void](Wait-PaymentCronServiceState $Context.Name 'Running');$message+=' Selected service was started again; runtime remains unverified.'
+                }else{$message+=' Check the selected service manually.'}
+            }catch{$message+=' Selected service recovery was not verified; manual action required.'}
+        }
+        Write-Host ('  Runtime verification failed: '+$message) -ForegroundColor Red
+        [pscustomobject]@{Status='Failed'}
+    }
 }
 
 function Write-PaymentCronSchedules {
@@ -297,15 +517,17 @@ function Invoke-PaymentCronJob {
         Write-Host ('  Service : '+$context.Name+' - Running')
         Write-Host ('  Config  : '+$context.Path)
         Write-PaymentCronSchedules $snapshot.Model
-        if($snapshot.Model.Six.Count -ne 1 -or $snapshot.Model.Six[0].IsEnabled -isnot [bool]){throw 'Exactly one SIX schedule with a Boolean IsEnabled is required. Manual review required.'}
-        if($snapshot.Model.Six[0].IsEnabled){Write-Host "`n  Already enabled - no change needed." -ForegroundColor Green;return [pscustomobject]@{Status='Pass';ReturnToMenu=$false}}
-        do{$answer=([string](Read-Host '  Enable SIX Cron? [Y/N]')).Trim()}while($answer -notin @('Y','N'))
-        if($answer -ieq 'N'){Write-Host '  No changes made.';return [pscustomobject]@{Status='Skipped';ReturnToMenu=$true}}
-        $after=Enable-PaymentCronSix $context $snapshot
-        Write-Host "`n  SIX IsEnabled: False -> True" -ForegroundColor Green
-        Write-Host '  File readback: Verified; all bytes outside the SIX Boolean are unchanged.' -ForegroundColor Green
-        Write-Host '  Setting saved. Service reload/runtime status was not verified.'
-        [pscustomobject]@{Status='Pass';ReturnToMenu=$false}
+        Assert-PaymentCronSixRegistration $snapshot.Model
+        if($snapshot.Model.Six[0].IsEnabled){Write-Host "`n  Already enabled - no configuration change needed." -ForegroundColor Green;$after=$snapshot}
+        else{
+            do{$answer=([string](Read-Host '  Enable SIX Cron? [Y/N]')).Trim()}while($answer -notin @('Y','N'))
+            if($answer -ieq 'N'){Write-Host '  No changes made.';return [pscustomobject]@{Status='Skipped';ReturnToMenu=$true}}
+            $after=Enable-PaymentCronSix $context $snapshot
+            Write-Host "`n  SIX IsEnabled: False -> True" -ForegroundColor Green
+            Write-Host '  File readback: Verified; all bytes outside the SIX Boolean are unchanged.' -ForegroundColor Green
+        }
+        $runtime=Confirm-PaymentCronRuntime $context $after
+        [pscustomobject]@{Status=$(if($runtime.Status -eq 'Verified'){'Pass'}elseif($runtime.Status -eq 'Pending'){'Skipped'}else{'Fail'});ReturnToMenu=$false;RuntimeStatus=$runtime.Status}
     }catch{Write-Host ('  Failed: '+$_.Exception.Message) -ForegroundColor Red;[pscustomobject]@{Status='Fail';ReturnToMenu=$false}}
 }
 
