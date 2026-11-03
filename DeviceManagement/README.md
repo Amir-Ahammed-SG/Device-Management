@@ -254,8 +254,9 @@ uses the professional client-labelled layout and consolidated account results.
 
 Both SaaS and Subway Thorough Check HTML reports use a plain device configuration
 verification layout in Audit and Apply Fix modes. Reports contain device/run
-details and per-check findings. Titles are Thorough Check Audit Report and
-Thorough Check Report for the respective modes, shared with console
+details and per-check findings. Titles are Thorough Check Audit Report,
+Thorough Check Fix Report and Thorough Check Report for Audit, Fix and Final,
+respectively, shared with console
 headers. HTML uses Client Details above metadata and Configuration Check
 above component tables. The report title sits above a divider; the HTML header
 omits SELISE and IT OPERATIONS branding. Audit columns are Component, Shortcut /

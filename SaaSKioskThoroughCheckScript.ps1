@@ -1381,7 +1381,7 @@ function Get-ThoroughReportAppliedHtml {
 function Get-ThoroughReportTitle {
     param ([bool]$IsApply, [bool]$IsFinal=$false)
     if ($IsFinal) { return 'Thorough Check Report' }
-    if ($IsApply) { return 'Thorough Check Report' }
+    if ($IsApply) { return 'Thorough Check Fix Report' }
     'Thorough Check Audit Report'
 }
 

@@ -49,7 +49,7 @@ foreach ($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck
         $reportPath=Join-Path $outputFolder ($client+'-'+$mode+'.html')
         . $render
         $content=$script:consoleLines -join "`n"
-        $expectedTitle=if ($isApply) { 'THOROUGH CHECK REPORT' } else { 'THOROUGH CHECK AUDIT REPORT' }
+        $expectedTitle=if ($isApply) { 'THOROUGH CHECK FIX REPORT' } else { 'THOROUGH CHECK AUDIT REPORT' }
         Assert-ConsoleProgress ($content.Contains('SELISE | '+$expectedTitle) -and $content -match ('Client : '+$client) -and $content -match ('Mode\s+: '+$(if($isApply){'Apply Fix'}else{'Audit'}))) 'Header identity missing'
         Assert-ConsoleProgress ($content -match '\[01\]\s+PASS\s+Receipt Printer') 'Numbered status not aligned'
         Assert-ConsoleProgress ([regex]::Matches($content,'Account Missing\. Please create manually\. Dependent kiosk checks skipped\.').Count -eq 1) 'Missing account explanation missing or duplicated'

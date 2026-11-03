@@ -95,7 +95,7 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1', 'SubwayKioskThorou
         $adminFixture.Shortcut=New-AccountReportCommand -AccountNames @('Administrator','SupportOperator')
         . $render
         $html = [IO.File]::ReadAllText($reportPath)
-        $expectedTitle=if ($mode -eq 'Audit') { 'Thorough Check Audit Report' } else { 'Thorough Check Report' }
+        $expectedTitle=if ($mode -eq 'Audit') { 'Thorough Check Audit Report' } else { 'Thorough Check Fix Report' }
         foreach ($required in @(('<h1>'+$expectedTitle.ToUpperInvariant()+'</h1>'), ('<title>'+$expectedTitle+'</title>'), '<h2>CLIENT DETAILS</h2>', '<h2>CONFIGURATION CHECK</h2>', ('<td>' + $client + '</td>'), '<th>Findings</th>', '<th>Branch</th>', '<th>Hostname</th>', '<th>Device</th><td>Kiosk-1</td>', 'badge-fail', '192.0.2.10', 'Sample site &lt;fixture&gt;', 'Execution &lt;fixture&gt;', 'Partial run', '@media print')) {
             if (-not $html.Contains($required)) { throw "Missing report content '$required' in $reportPath" }
         }
