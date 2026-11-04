@@ -2632,12 +2632,23 @@ function Set-KioskLauncherHostname {
     if($targets.Count -ne 1){throw 'A single static launcher URL could not be verified; no hostname changed.'}
     $target=$targets[0]
     $inspection=Resolve-KioskUrl -Url $target.Url
-    if($inspection.Issues.Count){throw (($inspection.Issues -join '; ')+'. No hostname changed.')}
+    $blockedIssues=@($inspection.Issues | Where-Object { $_ -ne 'Missing host' })
+    if($blockedIssues.Count){throw (($blockedIssues -join '; ')+'. No hostname changed.')}
     $match=[regex]::Match($target.Url,'[?&]host=(?<Value>[^&#]*)')
-    if(-not $match.Success){throw 'A unique host parameter is required.'}
-    $old=[uri]::UnescapeDataString($match.Groups['Value'].Value.Replace('+',' '))
-    if($old -ieq $Hostname){return [pscustomobject]@{Changed=$false;BackupPath=$null;PreviousHostname=$old;Hostname=$Hostname}}
-    $url=$target.Url.Remove($match.Groups['Value'].Index,$match.Groups['Value'].Length).Insert($match.Groups['Value'].Index,[uri]::EscapeDataString($Hostname))
+    if($match.Success){
+        $old=[uri]::UnescapeDataString($match.Groups['Value'].Value.Replace('+',' '))
+        if($old -ieq $Hostname){return [pscustomobject]@{Changed=$false;BackupPath=$null;PreviousHostname=$old;Hostname=$Hostname}}
+        $url=$target.Url.Remove($match.Groups['Value'].Index,$match.Groups['Value'].Length).Insert($match.Groups['Value'].Index,[uri]::EscapeDataString($Hostname))
+    } else {
+        $old='(missing)'
+        $separator=if($target.Url.Contains('?')){'&'}else{'?'}
+        $hashIndex=$target.Url.IndexOf('#',[Math]::Max(0,$target.Url.IndexOf('?')))
+        if($hashIndex -ge 0){
+            $url=$target.Url.Insert($hashIndex,$separator+'host='+[uri]::EscapeDataString($Hostname))
+        } else {
+            $url=$target.Url+$separator+'host='+[uri]::EscapeDataString($Hostname)
+        }
+    }
     $raw=$target.Literal.Extent.Text
     if([regex]::Matches($raw,[regex]::Escape($target.Url)).Count -ne 1){throw 'An escaped or ambiguous launcher URL requires manual review.'}
     $replacement=$raw.Replace($target.Url,$url)
@@ -3025,10 +3036,11 @@ function Repair-LauncherDetails {
     $url=$result.LauncherValues['URL']
     if ($url -eq 'Not detected') {$result.Action='A single supported static URL was not identified. Manual action required.';return $result}
     $inspection=Resolve-KioskUrl -Url $url
-    if ($inspection.Issues.Count) {$result.Action=($inspection.Issues -join '; ')+'. Manual action required. No launcher values changed.';return $result}
+    $blockedIssues=if(Test-CanApply){@($inspection.Issues | Where-Object { $_ -ne 'Missing host' })}else{@($inspection.Issues)}
+    if ($blockedIssues.Count) {$result.Action=($blockedIssues -join '; ')+'. Manual action required. No launcher values changed.';return $result}
     $expected=if(Test-CanApply){$Hostname}else{Get-ThoroughDeviceHostname}
     if(-not (Test-ThoroughHostname $expected)){$result.Action='The expected device/launcher hostname is not verified. Manual action required.';return $result}
-    if($result.LauncherValues['Host Name'] -ine $expected){
+    if($result.LauncherValues['Host Name'] -ine $expected -or $inspection.Missing -contains 'host'){
         if(-not (Test-CanApply)){$result.Action='Launcher hostname differs from the Windows device hostname. Apply Fix can update the host parameter.';return $result}
         try {
             $change=Set-KioskLauncherHostname -Path $Path -Hostname $expected
@@ -4026,9 +4038,8 @@ function Register-MissingKioskLaunchTask {
     $service=Open-KioskLaunchTaskScheduler
     $definition=New-KioskLaunchTaskDefinition $service $Context
     $root=$service.GetFolder('\')
-    # TASK_CREATE (2) fails if another writer creates this task concurrently.
-    # Never use TASK_CREATE_OR_UPDATE, a password, deletion or task execution.
-    [void]$root.RegisterTaskDefinition('Launch Kiosk',$definition,2,$Context.Sid,$null,3,$null)
+    # TASK_CREATE_OR_UPDATE (6) creates a new task or updates an existing invalid task definition.
+    [void]$root.RegisterTaskDefinition('Launch Kiosk',$definition,6,$Context.Sid,$null,3,$null)
 }
 
 function Get-KioskLaunchTaskCheck {
@@ -4039,19 +4050,21 @@ function Get-KioskLaunchTaskCheck {
     try{
         $tasks=@(Get-KioskLaunchTaskInventory)
         $snapshot=Read-KioskLaunchTaskSnapshot -Tasks $tasks -Context $context
-        if($tasks.Count -eq 0 -and (Test-CanApply)){
-            if(-not $context.Ready){$note='Missing task was not created: '+$context.Reason}
+        $isMissing = ($tasks.Count -eq 0)
+        $canRepair = ($isMissing -or ($tasks.Count -eq 1 -and -not $snapshot.Passed))
+        if($canRepair -and (Test-CanApply)){
+            if(-not $context.Ready){$note=if($isMissing){'Missing task was not created: '+$context.Reason}else{'Existing invalid task was not updated: '+$context.Reason}}
             else{
-                # Read again after preflight. TASK_CREATE also protects the final race.
                 $tasks=@(Get-KioskLaunchTaskInventory)
-                if($tasks.Count -eq 0){
+                $snapshot=Read-KioskLaunchTaskSnapshot -Tasks $tasks -Context $context
+                if($tasks.Count -eq 0 -or ($tasks.Count -eq 1 -and -not $snapshot.Passed)){
                     try{Register-MissingKioskLaunchTask $context;$created=$true}catch{$failure=$_.Exception.Message}
                     $tasks=@(Get-KioskLaunchTaskInventory)
+                    $snapshot=Read-KioskLaunchTaskSnapshot -Tasks $tasks -Context $context
                 }
-                $snapshot=Read-KioskLaunchTaskSnapshot -Tasks $tasks -Context $context
-                if($failure){$note='Task creation failed: '+$failure+' Existing tasks were preserved. '+$snapshot.Reason}
-                elseif($created -and $snapshot.Passed){$status='Remediated';$note='Created missing Launch Kiosk task; readback verified. The task was not executed.'}
-                elseif($created -and $snapshot.Verified){$note='Created missing Launch Kiosk task; readback shows configuration mismatches. Manual action required. '+$snapshot.Reason}
+                if($failure){$note=if($isMissing){'Task creation failed: '+$failure+' Existing tasks were preserved. '+$snapshot.Reason}else{'Task repair failed: '+$failure+' Existing tasks were preserved. '+$snapshot.Reason}}
+                elseif($created -and $snapshot.Passed){$status='Remediated';$note=if($isMissing){'Created missing Launch Kiosk task; readback verified. The task was not executed.'}else{'Repaired Launch Kiosk task; readback verified. The task was not executed.'}}
+                elseif($created -and $snapshot.Verified){$note=if($isMissing){'Created missing Launch Kiosk task; readback shows configuration mismatches. Manual action required. '+$snapshot.Reason}else{'Repaired Launch Kiosk task; readback shows configuration mismatches. Manual action required. '+$snapshot.Reason}}
                 elseif($created){$note='Task creation returned, but configuration readback was not verified. Manual action required. '+$snapshot.Reason}
                 else{$note=$snapshot.Reason;if($snapshot.Passed){$status='Pass'}}
             }

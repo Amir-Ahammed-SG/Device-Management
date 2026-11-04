@@ -83,7 +83,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
         $root|Add-Member ScriptMethod RegisterTaskDefinition {
             param($Name,$Definition,$Flags,$User,$Password,$LogonType,$Sddl)
             $script:Writes++
-            Assert-Task ($script:ApplyChanges -and $Name -eq 'Launch Kiosk' -and $Flags -eq 2) 'Registration is not create-only Apply'
+            Assert-Task ($script:ApplyChanges -and $Name -eq 'Launch Kiosk' -and ($Flags -eq 2 -or $Flags -eq 6)) 'Registration is not Apply'
             Assert-Task ($User -eq $script:FreshAccount.SID.Value -and $null -eq $Password -and $LogonType -eq 3 -and $null -eq $Sddl) 'Registration uses an unexpected identity or credential'
             $script:RegisteredXml=$Definition.XmlText
             if($script:TaskMode -eq 'register-failed'){throw 'Fixture registration failed'}
@@ -148,8 +148,20 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
             $beforeXml=$script:TaskXml
             $result=Get-KioskLaunchTaskCheck $account.Name $account
             $pass=$case -in @('healthy','original-no-directory','omitted-defaults')
-            Assert-Task (($result.Status -eq 'Pass') -eq $pass) ('Incorrect existing task status: '+$case+' / '+$result.Action)
-            Assert-Task ($script:Writes -eq 0 -and $script:TaskXml -ceq $beforeXml) ('Existing task was changed: '+$case)
+            if(-not $apply){
+                Assert-Task (($result.Status -eq 'Pass') -eq $pass) ('Incorrect existing task status: '+$case+' / '+$result.Action)
+                Assert-Task ($script:Writes -eq 0 -and $script:TaskXml -ceq $beforeXml) ('Existing task was changed: '+$case)
+            }else{
+                if($pass){
+                    Assert-Task ($result.Status -eq 'Pass' -and $script:Writes -eq 0) ('Healthy task was rewritten: '+$case)
+                }elseif($case -eq 'multiple'){
+                    Assert-Task ($result.Status -eq 'Fail' -and $script:Writes -eq 0) ('Multiple tasks were modified: '+$case)
+                }elseif($case -eq 'export-denied'){
+                    Assert-Task ($result.Status -eq 'Fail' -and $script:Writes -eq 1 -and $result.Action -match 'readback was not verified') ('Unreadable task repair was not disclosed: '+$case)
+                }else{
+                    Assert-Task ($result.Status -eq 'Remediated' -and $script:Writes -eq 1 -and $result.Action -match 'readback verified') ('Invalid task was not repaired in Apply: '+$case+' / '+$result.Action)
+                }
+            }
             Assert-Task (-not $result.StateHtml.Contains('secret-do-not-report')) 'Unrecognized command arguments leaked into report'
             $caseCount++
         }

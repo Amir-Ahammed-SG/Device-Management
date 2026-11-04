@@ -165,7 +165,11 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroug
             if ($urlProblem -eq 'missingScript') { [IO.File]::Delete($script:launchPath) }
             $before=Get-FixtureSnapshot
             $result=Invoke-KioskLauncherConfiguration -UserName 'SELISE-KIOSK' -Hostname 'HOST-01'
-            Assert-Inspection ($result.Status -eq 'Fail' -and $script:saveCalls -eq 0 -and (Get-FixtureSnapshot) -ceq $before) "Launcher problem was changed or hidden: $urlProblem"
+            if (-not $mode -or $urlProblem -ne 'missingHost') {
+                Assert-Inspection ($result.Status -eq 'Fail' -and $script:saveCalls -eq 0 -and (Get-FixtureSnapshot) -ceq $before) "Launcher problem was changed or hidden: $urlProblem"
+            } else {
+                Assert-Inspection ($result.Status -eq 'Pass' -and $script:saveCalls -eq 1 -and $result.LauncherValues['Host Name'] -ceq 'HOST-01') "Missing host was not repaired in Apply: $urlProblem"
+            }
         }
         New-LauncherFixture; [IO.File]::Delete($script:batchPath); $before=Get-FixtureSnapshot -ExcludeShortcut
         $result=Invoke-KioskLauncherConfiguration -UserName 'SELISE-KIOSK' -Hostname 'HOST-01'
