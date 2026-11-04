@@ -210,7 +210,7 @@ function Format-ThoroughFinalServiceRecovery {
     [regex]::Replace($Html,$blockPattern,[Text.RegularExpressions.MatchEvaluator]{
         param($block)
         $body=$block.Groups['Body'].Value
-        if($body.Contains('class="service-recovery-summary"')){return $block.Value}
+        if($body.Contains('class="service-recovery-summary"') -or ($body -match 'class="kv-label">' -and $body -notmatch 'class="kv-label">(?:First failure|Second failure|Subsequent failures):')){return $block.Value}
         $observed=Get-ThoroughReportHighlightFields $body
         $unknown=$false;$mismatched=$false
         if($Row.PSObject.Properties['RecoveryDetails'] -and $Row.RecoveryDetails.PSObject.Properties['Verified'] -and -not $Row.RecoveryDetails.Verified){$unknown=$true}
@@ -592,6 +592,7 @@ function Get-KioskLaunchTaskReportState {
     }
     $fields=[ordered]@{'Task Name'=$name;'Task Status'=$status;'Target'=$target;'Trigger Time'=$trigger}
     foreach($label in @('Last Run','Next Run')){$fields[$label]=if($v.ContainsKey($label)){Format-ThoroughReportDateTime -Value $v[$label]}elseif($missing){'Not recorded'}else{$unknown}}
+    foreach($label in @('Last Run','Next Run')){if($fields[$label] -match '^(?:30 Nov 1999, 12:00 AM|30-Nov-1999 00:00:00)$'){$fields[$label]='Not recorded'}}
     ConvertTo-ReportDefinitionHtml $fields
 }
 
@@ -605,6 +606,8 @@ function Get-KioskLaunchTaskHistory {
             foreach($label in @('Last Run','Next Run')){
                 $property=if($label -eq 'Last Run'){'LastRunTime'}else{'NextRunTime'}
                 $value=$info.$property
+                $notRun=$label -eq 'Last Run' -and $info.PSObject.Properties['LastTaskResult'] -and [int64]$info.LastTaskResult -eq 267011
+                if($notRun -or ($value -is [datetime] -and ($value.Year -le 1900 -or $value -eq [datetime]::new(1999,11,30)))){$fields[$label]='Not recorded';continue}
                 $fields[$label]=if($value -is [datetime] -and $value.Year -gt 1900){$value.ToString('dd-MMM-yyyy HH:mm:ss',[Globalization.CultureInfo]::InvariantCulture)}elseif($value -is [datetime]){'Not recorded'}else{'Not verified'}
             }
         }catch{$fields['Last Run']='Not verified';$fields['Next Run']='Not verified'}
@@ -831,6 +834,9 @@ function ConvertTo-ThoroughSettingRows {
     $CurrentHtml=Expand-ThoroughUnavailableFields $CurrentHtml $requirement
     $records=@(Get-ThoroughSettingRecords $FindingsHtml)
     $currentRecords=@(Get-ThoroughSettingRecords $CurrentHtml)
+    # This component is one aggregate; its port list can legitimately change
+    # from None/Any to explicit ports after a verified repair or fresh readback.
+    if($Row.ItemTitle -eq 'Firewall Inbound Port' -and $records.Count -eq 1 -and $currentRecords.Count -eq 1){$currentRecords[0].Key=$records[0].Key}
     $noBaseline=$Mode -eq 'Fix' -and $AfterApply -and -not $HasBeforeRow
     # A retained repair may have only an old generic no-change summary. Show the
     # recorded post-fix properties without inventing their missing pre-fix values.
@@ -1811,6 +1817,14 @@ function Format-ThoroughReportTriggerDetails {
 
 function Format-ReportState {
     param ([string]$Item, [string]$Html)
+    if($Item -eq 'Nmap Diagnostic Tool' -and $Html -match '^<div'){
+        $values=Get-ThoroughReportHighlightFields $Html
+        $fields=[ordered]@{}
+        if($values.ContainsKey('Tool State')){$fields['Tool State']=$values['Tool State']}
+        elseif($values.ContainsKey('Installed')){$fields['Tool State']=if($values['Installed'] -eq 'Yes'){'Installed'}else{$values['Installed']}}
+        if($values.ContainsKey('Version')){$fields['Version']=$values['Version']}
+        if($fields.Count){return ConvertTo-ReportDefinitionHtml $fields}
+    }
     if($Item -eq 'Kiosk Launch Task'){return Get-KioskLaunchTaskReportState $Html}
     if($Item -in @('Payment Service Restart Task','PaymentService Restart Task')){
         # Project collected task data into the six requested report fields.
@@ -2078,9 +2092,10 @@ function New-ThoroughFirewallReportRow {
             }
         }
         $fields[$field]=if($values.Count){$values -join ', '}else{'Not verified. Please check manually.'}
-        if($values.Count -eq 0){$verified=$false}
+        if($values.Count -eq 0){$verified=$false;if($missing.Count -gt 0 -and $unknown.Count -eq 0){$fields[$field]='None'}}
     }
-    if($fields['Ports'] -like 'Not verified*' -and $missing.Count -gt 0 -and $unknown.Count -eq 0){$fields['Ports']='Not found'}
+    if($fields['Ports'] -like 'Not verified*' -and $missing.Count -gt 0 -and $unknown.Count -eq 0){$fields['Ports']='None'}
+    $fields['Ports']=$fields['Ports'].Replace('Any','All ports (Any)').Replace('*','All ports (Any)')
     if($missing.Count){$fields['Missing Allow Rules (Ports)']=$missing -join ', '}
     if($unknown.Count){$fields['Unverified Ports']='Not verified: '+($unknown -join ', ')+'. Please check manually.'}
     [pscustomobject]@{
@@ -2317,7 +2332,7 @@ function Get-ThoroughReportFindingComparison {
     }
     $referenceLabel=$Label
     if($Label -eq 'Service Name'){$referenceLabel='Expected Names'}
-    elseif($Label -eq 'Tool State' -and $Row.ItemTitle -eq 'Nmap Diagnostic Tool'){$referenceLabel='Installed'}
+    elseif($Label -eq 'Tool State' -and $Row.ItemTitle -eq 'Nmap Diagnostic Tool'){$referenceLabel=if($Requirements.Contains('Tool State')){'Tool State'}else{'Installed'}}
     elseif($Label -eq 'Rebuild State' -and $Row.ItemTitle -like 'lodctr /R*'){$referenceLabel='Apply Fix'}
 
     if($Label -eq 'Rule' -and $Row.ItemTitle -match '^Inbound TCP '){$expected='Available'}
@@ -2355,6 +2370,7 @@ function Get-ThoroughReportFindingComparison {
         return 'mismatch'
     }
     if($Label -eq 'Ports' -and $Row.ItemTitle -eq 'Firewall Inbound Port'){
+        $actual=$actual.Replace('All ports (Any)','Any')
         foreach($portText in ($expected -split ',\s*')){
             $covered=$false
             foreach($token in ($actual -split ',\s*')){
@@ -2422,6 +2438,12 @@ function Format-ThoroughReportFindingHighlights {
 }
 function Get-ReportRequirement {
     param ($Row)
+    if($Row.ItemTitle -eq 'Nmap Diagnostic Tool'){
+        return ConvertTo-ReportDefinitionHtml ([ordered]@{'Tool State'='Installed';'Version'='Readable'})
+    }
+    if($Row.ItemTitle -eq 'System & Browser Policies'){
+        return ConvertTo-ReportDefinitionHtml ([ordered]@{'Local Network Allowlist'='https://kiosk.subway.ch';'Translation'='Disabled';'Visual Search'='Disabled';'Edge Gestures'='Disabled';'Pinch-to-Zoom'='Disabled'})
+    }
     if($Row.ItemTitle -eq 'Kiosk Launch Task'){
         return ConvertTo-ReportDefinitionHtml ([ordered]@{'Task Name'='Launch Kiosk';'Task Status'='Active';'Target'='Existing kiosk launcher';'Trigger Time'='At user logon';'Last Run'='Informational';'Next Run'='Informational'})
     }
@@ -2657,6 +2679,21 @@ function Get-ZabbixHostnameSetting {
     }
     if($settings.Count -ne 1){throw 'A single explicit Zabbix Hostname setting is required; dynamic or multiple settings need manual review.'}
     return $settings[0]
+}
+
+function Update-ZabbixServiceReport {
+    param($Row,[string]$Hostname)
+    try{
+        $freshAgent=Get-AuditService -ServiceName 'Zabbix Agent 2'
+        if(-not $freshAgent){throw 'Zabbix service unavailable after hostname verification.'}
+        $freshRecovery=Get-ServiceRecoveryDetails -ServiceName 'Zabbix Agent 2'
+        $Row.RecoveryDetails=$freshRecovery
+        $Row.FoundStateHtml=ConvertTo-ServiceFindingHtml -ServiceState $freshAgent.State -StartupType $freshAgent.StartMode -Recovery $freshRecovery -HostName $Hostname
+        if($freshAgent.State -ne 'Running' -or $freshAgent.StartMode -ne 'Auto' -or -not $freshRecovery.Verified -or $freshRecovery.First -ne 'Restart the service' -or $freshRecovery.Second -ne 'Restart the service' -or $freshRecovery.Subsequent -ne 'Take No Action'){$Row.Status='Fail';$Row.ActionTaken+='; Final Zabbix service/recovery readback requires attention.'}
+    }catch{
+        $Row.Status='Fail';$Row.ActionTaken+='; Final Zabbix state was not verified: '+$_.Exception.Message
+        $Row.FoundStateHtml=ConvertTo-ServiceFindingHtml -ServiceState 'Not verified' -StartupType 'Not verified' -Recovery ([pscustomobject]@{First='Not verified';Second='Not verified';Subsequent='Not verified'}) -HostName $Hostname
+    }
 }
 
 function Set-ZabbixDeviceHostname {
@@ -3584,6 +3621,34 @@ function ConvertFrom-KioskEdgeArguments {
     return ,$arguments.ToArray()
 }
 
+function Resolve-KioskPinchLiteral {
+    param($Expression,$Ast,$Command,[switch]$Argument)
+    if($Expression -is [Management.Automation.Language.VariableExpressionAst]){
+        $name=$Expression.VariablePath.UserPath
+        if($name -match ':' -or $name -in @('args','input','PSItem','_')){throw 'An automatic or scoped launcher variable requires manual review.'}
+        $assignments=@($Ast.FindAll({param($n)$n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left -is [Management.Automation.Language.VariableExpressionAst] -and $n.Left.VariablePath.UserPath -ieq $name},$true))
+        if($assignments.Count -ne 1 -or $assignments[0].Parent -ne $Ast.EndBlock -or $assignments[0].Operator.ToString() -ne 'Equals' -or $assignments[0].Extent.EndOffset -ge $Command.Extent.StartOffset){throw 'A unique preceding literal launcher assignment could not be verified.'}
+        # No executable prefix may change the meaning of an inferred variable.
+        foreach($statement in $Ast.EndBlock.Statements){
+            if($statement.Extent.StartOffset -ge $Command.Extent.StartOffset){break}
+            if($statement -isnot [Management.Automation.Language.AssignmentStatementAst] -or $statement.Operator.ToString() -ne 'Equals'){throw 'Launcher variable inference requires a static literal prefix.'}
+            $right=$statement.Right
+            if($right -is [Management.Automation.Language.PipelineAst] -and $right.PipelineElements.Count -eq 1){$right=$right.PipelineElements[0]}
+            if($right -isnot [Management.Automation.Language.CommandExpressionAst] -or $right.Expression -isnot [Management.Automation.Language.StringConstantExpressionAst]){throw 'Launcher variable inference requires a static literal prefix.'}
+        }
+        if($Argument){
+            $references=@($Ast.FindAll({param($n)$n -is [Management.Automation.Language.VariableExpressionAst] -and $n.VariablePath.UserPath -ieq $name},$true))
+            if($references.Count -ne 2){throw 'Shared launcher arguments require manual review before editing.'}
+        }
+        $right=$assignments[0].Right
+        if($right -is [Management.Automation.Language.PipelineAst]){$right=$right.PipelineElements[0]}
+        $Expression=$right.Expression
+    }
+    if($Expression -isnot [Management.Automation.Language.StringConstantExpressionAst]){throw 'Launcher value is dynamic or uses an unsupported format.'}
+    if($Argument -and $Expression.StringConstantType.ToString() -notin @('SingleQuoted','DoubleQuoted')){throw 'Launcher arguments must be a quoted literal.'}
+    $Expression
+}
+
 function Get-KioskPinchLaunchState {
     param([string]$Text)
     $tokens=$null;$errors=$null
@@ -3616,6 +3681,8 @@ function Get-KioskPinchLaunchState {
         }elseif($index -eq 1 -and $null -eq $fileExpression){$fileExpression=$element}
         else{throw 'An unbound or splatted Edge launch argument needs manual review.'}
     }
+    $fileExpression=Resolve-KioskPinchLiteral $fileExpression $ast $command
+    $argumentExpression=Resolve-KioskPinchLiteral $argumentExpression $ast $command -Argument
     if($fileExpression -isnot [Management.Automation.Language.StringConstantExpressionAst] -or [IO.Path]::GetFileName($fileExpression.Value) -notin @('msedge','msedge.exe')){throw 'The Edge executable is not a verified literal path.'}
     if($argumentExpression -isnot [Management.Automation.Language.StringConstantExpressionAst] -or $argumentExpression.StringConstantType.ToString() -notin @('SingleQuoted','DoubleQuoted')){throw 'Edge arguments are dynamic or use an unsupported format.'}
     $arguments=ConvertFrom-KioskEdgeArguments $argumentExpression.Value
@@ -3623,7 +3690,7 @@ function Get-KioskPinchLaunchState {
     $kioskPositions=@(for($index=0;$index -lt $arguments.Count;$index++){if($arguments[$index] -ceq '--kiosk'){$index}})
     if($kioskPositions.Count -ne 1 -or $kioskPositions[0]+1 -ge $arguments.Count){throw 'The kiosk URL argument could not be verified.'}
     $url=$arguments[$kioskPositions[0]+1]
-    if((Resolve-KioskUrl -Url $url).Issues.Count){throw 'The kiosk URL or its identifiers need manual review.'}
+    if([string]::IsNullOrWhiteSpace($url) -or $url.StartsWith('--')){throw 'A kiosk URL argument is required.'}
     $pinchArguments=@($arguments | Where-Object {$_ -match '^--(?:disable|enable)-pinch(?:=|$)'})
     if($pinchArguments.Count -gt 1 -or ($pinchArguments.Count -eq 1 -and $pinchArguments[0] -cne '--disable-pinch')){throw 'A nonstandard or conflicting pinch argument needs manual review.'}
     [pscustomobject]@{Disabled=($pinchArguments.Count -eq 1);InsertOffset=($argumentExpression.Extent.EndOffset-1)}
@@ -3883,7 +3950,9 @@ function Read-KioskLaunchTaskSnapshot {
         $ns=[Xml.XmlNamespaceManager]::new($document.NameTable);$ns.AddNamespace('t',$document.DocumentElement.NamespaceURI)
         $text={param([string]$Path) $node=$document.SelectSingleNode($Path,$ns);if($node){$node.InnerText}else{''}}
         $yesNo={param([string]$Value) if($Value -ieq 'true'){'Yes'}elseif($Value -ieq 'false'){'No'}else{'Not verified'}}
-        $fields['Task Enabled']=& $yesNo (& $text '/t:Task/t:Settings/t:Enabled')
+        # Task Scheduler schema defaults omitted Enabled elements to true.
+        $enabledValue=& $text '/t:Task/t:Settings/t:Enabled'
+        $fields['Task Enabled']=if($document.SelectSingleNode('/t:Task/t:Settings/t:Enabled',$ns)){& $yesNo $enabledValue}else{'Yes'}
         if($fields['Task State'] -eq 'Disabled'){$fields['Task Enabled']='No'}
         $principals=@($document.SelectNodes('/t:Task/t:Principals/t:Principal',$ns))
         if($principals.Count -ne 1){throw 'The task principal is missing or ambiguous.'}
@@ -3892,10 +3961,12 @@ function Read-KioskLaunchTaskSnapshot {
         $logon=& $text '/t:Task/t:Principals/t:Principal/t:LogonType'
         $fields['Logon Type']=if($logon -eq 'InteractiveToken'){'Interactive'}elseif($logon){$logon}else{'Not verified'}
         $level=& $text '/t:Task/t:Principals/t:Principal/t:RunLevel'
+        if(-not $document.SelectSingleNode('/t:Task/t:Principals/t:Principal/t:RunLevel',$ns)){$level='LeastPrivilege'}
         $fields['Run Level']=switch($level){'LeastPrivilege'{'Limited'};'HighestAvailable'{'Highest'};default{'Not verified'}}
         $triggers=@($document.SelectNodes('/t:Task/t:Triggers/*',$ns))
         if($triggers.Count -eq 1 -and $triggers[0].LocalName -eq 'LogonTrigger'){
             $enabled=& $text '/t:Task/t:Triggers/t:LogonTrigger/t:Enabled'
+            if(-not $document.SelectSingleNode('/t:Task/t:Triggers/t:LogonTrigger/t:Enabled',$ns)){$enabled='true'}
             $fields['Trigger']=if($enabled -ieq 'true'){'At logon'}elseif($enabled -ieq 'false'){'Disabled logon trigger'}else{'Not verified'}
             $triggerUser=& $text '/t:Task/t:Triggers/t:LogonTrigger/t:UserId'
             $fields['Logon User']=if(Test-KioskLaunchTaskIdentity $triggerUser $Context){$Context.UserId}elseif($triggerUser){$triggerUser}else{'Any user'}
@@ -5264,7 +5335,7 @@ if ($zabbixInstallError) {
             try{$agentHostname=Get-ZabbixConfiguredHostname -CommandLine $zabbixService.PathName}catch{$agentHostname='Not verified'}
         }
     }
-    $zabbixRow.FoundStateHtml += ConvertTo-ReportDefinitionHtml ([ordered]@{'Host Name'=$agentHostname})
+    Update-ZabbixServiceReport -Row $zabbixRow -Hostname $agentHostname
     if ($agentHostname -match 'Not verified|Dynamic /') { $zabbixRow.Status='Fail'; $zabbixRow.ActionTaken += '; Zabbix monitoring hostname was not verified.' }
     elseif ([string]::IsNullOrWhiteSpace($zabbixExpectedHostname) -or $zabbixExpectedHostname -in @('Not verified','Not detected')) { $zabbixRow.Status='Fail'; $zabbixRow.ActionTaken += '; Windows device hostname unavailable; hostname match requires manual verification.' }
     elseif ($agentHostname -cne $zabbixExpectedHostname) { $zabbixRow.Status='Fail'; $zabbixRow.ActionTaken += '; Zabbix hostname differs from the expected hostname; existing configuration preserved. Manual action required.' }
@@ -5354,6 +5425,7 @@ function Get-KioskFirewallState {
         [string]$_.Protocol -in @('TCP', '6') -and (Test-FirewallPortMatch -Ports $_.LocalPort -Port $Port)
     })
     $observations=New-Object 'Collections.Generic.List[object]'
+    $allowObserved=[Collections.Generic.List[object]]::new()
     foreach ($filter in $filters) {
         $rules = @(Get-NetFirewallRule -AssociatedNetFirewallPortFilter $filter -PolicyStore ActiveStore -ErrorAction Stop)
         $allowRules=@($rules | Where-Object {
@@ -5361,9 +5433,15 @@ function Get-KioskFirewallState {
         })
         if ($allowRules.Count -gt 0) {
             $matching=@($allowRules | ForEach-Object { ConvertTo-FirewallRuleObservation -Filter $filter -Rule $_ })
-            return [pscustomobject]@{ Verified = $true; HasAllow = $true; Details = 'Available'; Observations=$matching }
+            foreach($entry in $matching){$allowObserved.Add($entry)}
+            continue
         }
         foreach($rule in $rules){$observations.Add((ConvertTo-FirewallRuleObservation -Filter $filter -Rule $rule))}
+    }
+    if($allowObserved.Count){
+        $specific=@($allowObserved|Where-Object {-not (Test-FirewallAny $_.Ports)})
+        $selected=if($specific.Count){$specific}else{$allowObserved.ToArray()}
+        return [pscustomobject]@{Verified=$true;HasAllow=$true;Details='Available';Observations=@($selected)}
     }
     [pscustomobject]@{ Verified = $false; HasAllow = $false; Details = 'Missing'; Observations=$observations.ToArray() }
 }
@@ -5530,7 +5608,7 @@ $nmapToolState = if (-not $nmapDetectionVerified) { 'Not verified. Please check 
 $nmapDetails = [ordered]@{ 'Tool State'=$nmapToolState }
 if ($nmapPath) {
     $nmapDetails['Version'] = if ($null -ne $nmapVersion) { $nmapVersion.Version } else { 'Not verified. Please check manually.' }
-    $nmapDetails['Executable Path'] = $nmapPath
+
 }
 $nmapFound = ConvertTo-ReportDefinitionHtml $nmapDetails
 Add-AuditEntry -SectionNumber $sec4Num -SectionTitle $sec4Title -ItemTitle 'Nmap Diagnostic Tool' -ItemSub 'Type: Executable / Version Check' -Shortcut '<code>nmap --version</code>' -FoundStateHtml $nmapFound -Status $nmapStatus -ActionTaken ([System.Net.WebUtility]::HtmlEncode($nmapAction))

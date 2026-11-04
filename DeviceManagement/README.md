@@ -377,6 +377,10 @@ and event logs, including missing/unreadable detection and failed readback.
 commands, mixed results and actual Audit/Apply report rendering for both clients.
 
 Both clients include **Kiosk Launch Task** under Kiosk Application & Policies.
+Task and logon-trigger Enabled flags omitted from exported XML use the documented
+Task Scheduler default of true. Apply creates a missing task and verifies its
+definition again; an existing task is preserved. Never-run scheduler timestamps
+are displayed as Not recorded rather than a sentinel date.
 Audit reads existing `Launch Kiosk` tasks across Task Scheduler folders and
 records their actual principal, logon trigger/user/delay, action, script path,
 enabled state, execution limit and battery settings. Saved observations retain
@@ -427,6 +431,17 @@ derived Fix reports continue to show Not applied until an actual Apply run.
 unknown inventory, detected administrators and actual firewall observations.
 
 Audit inspects the launcher, profile and Startup without changes or prompts.
+Pinch-to-Zoom configuration is checked independently of the launcher URL's
+restaurant/kiosk/host validation. A literal `--disable-pinch` remains verifiable
+when a URL identifier is missing. Unique preceding literal assignments for the
+Edge path or argument string are supported without executing the launcher;
+runtime expressions, shared arguments and indirect commands need manual review.
+The Pinch-to-Zoom Required value remains Disabled even for an unknown observation.
+Nmap reports contain Tool State and Version; its executable path is used internally
+for inspection and is omitted from all three report views, including saved rows.
+Zabbix hostname activation restarts the agent and refreshes service state, startup
+and recovery observations afterward. Final renders one recovery summary per
+service and does not invent another summary for a separate hostname block.
 Within Kiosk Application & Policies, Apply may enable the two required kiosk
 account properties, add missing browser-policy values and create a missing desktop
 shortcut. The only authorized launcher-content repair is adding `--disable-pinch`
@@ -609,6 +624,11 @@ legacy service recovery, primary protection and recovery action selection with
 in-memory fixtures. The version requirement reads Readable; Findings retains
 the actual detected version. AppSettings is read-only in both modes.
 
+Firewall observations prefer explicit matching port/range rules over an all-port
+rule when both exist. Multiple matching explicit rules retain their actual values.
+If the only covering rule has LocalPort Any, the report says **All ports (Any)**;
+it does not invent a 5009-only rule. A successfully inspected empty result is
+**None**; unreadable policy remains **Not verified**. These are reporting choices.
 Firewall creation/update runs only when no enabled inbound TCP Allow rule is
 found for the required port. A matching rule is retained without widening its
 profiles. Newly created or repaired managed rules use Profile Any. This is a rule

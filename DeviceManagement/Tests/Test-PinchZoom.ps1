@@ -30,6 +30,9 @@ function New-PinchFixture {
         'extra-positional' {$script:template=$script:template.TrimEnd()+' $extraArguments'}
         'whatif' {$script:template=$script:template.TrimEnd()+' -WhatIf'}
         'dynamic-file' {$script:template=$prefix+'$browser = ''msedge.exe'''+"`r`n"+'Start-Process -FilePath $browser -ArgumentList ''{ARGS}'''}
+        'runtime-arguments' {$script:template=$prefix+'$arguments = Read-Host ''Runtime value'''+"`r`n"+'Start-Process msedge.exe -ArgumentList $arguments'}
+        'runtime-file' {$script:template=$prefix+'$browser = Read-Host ''Runtime browser'''+"`r`n"+'Start-Process -FilePath $browser -ArgumentList ''{ARGS}'''}
+        'shared-arguments' {$script:template=$prefix+'$arguments = ''{ARGS}'''+"`r`n"+'$log = $arguments'+"`r`n"+'Start-Process msedge.exe -ArgumentList $arguments'}
         'syntax' {$script:template='function Broken {'}
     }
     $script:text=$script:template.Replace('{ARGS}',$Arguments)
@@ -50,6 +53,10 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     $script:origin=if($sourceName -like 'Subway*'){'https://kiosk.subway.ch'}else{'https://kiosk.ordermonkey.com'}
     $url=$script:origin+'/#/onboarding/login?restaurantId=Keep%2fR&kioskId=Kiosk-2&host=HOST-02&custom=Preserve%20Me'
     $baseArguments='--kiosk "'+$url+'" --edge-kiosk-type=fullscreen --no-first-run'
+    # Real reported shape: pinch is configured even when the URL has no host= ID.
+    $noHost="Start-Process -FilePath 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe' -ArgumentList '--kiosk "+$script:origin+"/#/onboarding/login?restaurantId=FIXTURE&kioskId=Kiosk-3 --edge-kiosk-type=fullscreen --no-first-run --disable-pinch --disable-features=msEdgeSwipe' -WindowStyle Maximized"
+    Assert-Pinch (Get-KioskPinchLaunchState $noHost).Disabled 'Configured pinch was rejected because the independent launcher URL lacked host='
+    $caseCount++
     $requirement=Get-ReportRequirement ([pscustomobject]@{ItemTitle='System & Browser Policies'})
     Assert-Pinch ($requirement.Contains('Pinch-to-Zoom:</span> Disabled') -and $requirement -notmatch 'Obsolete allowlist entry') 'Policy reference is incorrect'
     function Get-KioskProfilePath {param($UserName) Assert-Pinch ($UserName -ceq 'Custom Kiosk') 'Selected kiosk account was lost'; if($script:profileMissing){return $null}; return $script:profile}
@@ -78,7 +85,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     }
     foreach($isApply in @($false,$true)){
         $script:ApplyChanges=$isApply
-        foreach($format in @('literal','positional','module','comment','unused','double')){
+        foreach($format in @('literal','positional','module','comment','unused','double','dynamic','dynamic-file')){
             foreach($encoding in @([Text.UTF8Encoding]::new($false),[Text.UTF8Encoding]::new($true),[Text.Encoding]::Unicode,[Text.Encoding]::BigEndianUnicode,[Text.Encoding]::UTF32,[Text.UTF32Encoding]::new($true,$true))){
                 $arguments=if($format -eq 'double'){$baseArguments.Replace('"','`"')}else{$baseArguments}
                 New-PinchFixture $arguments $format $encoding
@@ -108,7 +115,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
             if(-not $pass -or $suffix -eq ' --disable-pinch'){Assert-PinchBytes $script:original}
             Assert-PinchFiles;$caseCount++
         }
-        foreach($problem in @('dynamic','multiple','conditional','not-edge','array','splat','extra-positional','whatif','dynamic-file','syntax','signed','missing-bat','wrong-bat','missing-profile','missing-script')){
+        foreach($problem in @('runtime-arguments','runtime-file','shared-arguments','multiple','conditional','not-edge','array','splat','extra-positional','whatif','syntax','signed','missing-bat','wrong-bat','missing-profile','missing-script')){
             New-PinchFixture $baseArguments $problem
             switch($problem){
                 'missing-bat' {[IO.File]::Delete($script:batch)}

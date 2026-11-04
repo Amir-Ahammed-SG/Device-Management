@@ -78,12 +78,12 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroug
         Reset-NmapFixture; $script:ApplyChanges=$apply; $script:installed=$true
         . $checkBlock
         Assert-Nmap ($script:capturedRow.Status -eq 'Pass' -and $script:installCalls -eq 0 -and $script:packageCalls -eq 0 -and $script:osCalls -eq 0 -and $script:versionCalls -eq 1) 'Existing Nmap was reinstalled or not checked'
-        Assert-Nmap ($script:capturedRow.Findings -match 'Tool State:</span> Installed' -and $script:capturedRow.Findings -match 'Version:</span> 7\.992' -and $script:capturedRow.Findings -match 'Executable Path:</span> C:') 'Installed tool, version or executable path was not recorded'
+        Assert-Nmap ($script:capturedRow.Findings -match 'Tool State:</span> Installed' -and $script:capturedRow.Findings -match 'Version:</span> 7\.992' -and $script:capturedRow.Findings -notmatch 'Executable Path:') 'Installed tool/version missing or removed executable path still shown'
     }
     Reset-NmapFixture
     . $checkBlock
     Assert-Nmap ($script:capturedRow.Status -eq 'Pass' -and $script:installCalls -eq 1 -and $script:wingetCalls -eq 0 -and $script:versionCalls -eq 1) ('Local install and version readback failed: ' + $script:capturedRow.Action)
-    Assert-Nmap ($script:capturedRow.Findings -match 'Version:</span> 7\.992' -and $script:capturedRow.Findings -match 'Executable Path:</span> C:' -and $script:capturedRow.Action -match 'local setup wizard') 'Detected version was not recorded'
+    Assert-Nmap ($script:capturedRow.Findings -match 'Version:</span> 7\.992' -and $script:capturedRow.Findings -notmatch 'Executable Path:' -and $script:capturedRow.Action -match 'local setup wizard') 'Detected version missing or removed executable path still shown'
     Reset-NmapFixture; Remove-Item -LiteralPath $fixtureManifest -Force
     . $checkBlock
     Assert-Nmap ($script:capturedRow.Status -eq 'Fail' -and $script:installCalls -eq 0 -and $script:capturedRow.Action -match 'package is missing') 'Missing manifest launched an installer'

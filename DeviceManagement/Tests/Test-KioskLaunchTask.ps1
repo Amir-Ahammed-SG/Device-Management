@@ -74,7 +74,8 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     }
     function Get-ScheduledTaskInfo {param($TaskName,$TaskPath,$ErrorAction)
         Assert-Task ($TaskName -eq 'Launch Kiosk' -and $TaskPath) 'History targets an unexpected task'
-        [pscustomobject]@{LastRunTime=[datetime]'2026-11-04T01:20:00';NextRunTime=[datetime]'1899-12-30'}
+        if($script:TaskMode -eq 'never-run'){return [pscustomobject]@{LastRunTime=[datetime]'1999-11-30';NextRunTime=[datetime]'1999-11-30';LastTaskResult=267011}}
+        [pscustomobject]@{LastRunTime=[datetime]'2026-11-04T01:20:00';NextRunTime=[datetime]'1899-12-30';LastTaskResult=0}
     }
     function Open-KioskLaunchTaskScheduler {
         # This mock has no method that forwards registration to native COM.
@@ -90,6 +91,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
             if($script:TaskMode -eq 'readback-missing'){return}
             $xml=$Definition.XmlText
             if($script:TaskMode -eq 'readback-wrong'){$xml=$xml.Replace('<Delay>PT5S</Delay>','<Delay>PT30S</Delay>')}
+            if($script:TaskMode -eq 'readback-defaults'){$xml=$xml.Replace('<Enabled>true</Enabled>','').Replace('<RunLevel>LeastPrivilege</RunLevel>','')}
             if($script:TaskMode -eq 'readback-invalid'){$xml='<invalid'}
             Set-ExistingTask $xml
         }
@@ -117,7 +119,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     }
     Assert-Task ($script:GoodXml.Contains('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File &quot;') -or $script:GoodXml.Contains('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "')) 'Hidden launcher arguments are incorrect'
     foreach($apply in @($false,$true)){
-        foreach($case in @('healthy','disabled','elevated','system','wrong-user','wrong-trigger-user','wrong-script','wrong-delay','limited-runtime','battery','extra-action','extra-trigger','wrong-folder','multiple','invalid-xml','dtd','unknown-arguments','joined-tokens','export-denied','original-no-directory')){
+        foreach($case in @('healthy','disabled','elevated','system','wrong-user','wrong-trigger-user','wrong-script','wrong-delay','limited-runtime','battery','extra-action','extra-trigger','wrong-folder','multiple','invalid-xml','dtd','unknown-arguments','joined-tokens','export-denied','original-no-directory','omitted-defaults')){
             Reset-TaskFixture;$script:ApplyChanges=$apply
             $xml=$script:GoodXml
             switch($case){
@@ -138,13 +140,14 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
                 'joined-tokens' {$xml=$xml.Replace('-NoProfile -ExecutionPolicy','-NoProfile"-ExecutionPolicy"')}
                 'export-denied' {$script:TaskMode=$case}
                 'original-no-directory' {$xml=[regex]::Replace($xml,'<WorkingDirectory>.*?</WorkingDirectory>','')}
+                'omitted-defaults' {$xml=$xml.Replace('<Enabled>true</Enabled>','').Replace('<RunLevel>LeastPrivilege</RunLevel>','')}
             }
             Set-ExistingTask $xml
             if($case -eq 'wrong-folder'){$script:Tasks[0].TaskPath='\Other\'}
             if($case -eq 'multiple'){$script:Tasks+=@([pscustomobject]@{TaskName='Launch Kiosk';TaskPath='\Other\';State='Ready'})}
             $beforeXml=$script:TaskXml
             $result=Get-KioskLaunchTaskCheck $account.Name $account
-            $pass=$case -in @('healthy','original-no-directory')
+            $pass=$case -in @('healthy','original-no-directory','omitted-defaults')
             Assert-Task (($result.Status -eq 'Pass') -eq $pass) ('Incorrect existing task status: '+$case+' / '+$result.Action)
             Assert-Task ($script:Writes -eq 0 -and $script:TaskXml -ceq $beforeXml) ('Existing task was changed: '+$case)
             Assert-Task (-not $result.StateHtml.Contains('secret-do-not-report')) 'Unrecognized command arguments leaked into report'
@@ -176,6 +179,13 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     Assert-Task ($created.StateHtml.Contains('Also present (unchanged)') -and $created.Action -match 'both logon launch paths') 'Existing Startup BAT was hidden or removed'
     $again=Get-KioskLaunchTaskCheck $account.Name $account
     Assert-Task ($again.Status -eq 'Pass' -and $script:Writes -eq 1) 'Repeated Apply recreated an existing task'
+    $caseCount+=2
+    Reset-TaskFixture;$script:ApplyChanges=$true;$script:TaskMode='readback-defaults'
+    $defaults=Get-KioskLaunchTaskCheck $account.Name $account
+    Assert-Task ($defaults.Status -eq 'Remediated' -and $script:Writes -eq 1 -and $defaults.StateHtml -match 'Task Enabled:</span> Yes' -and $defaults.StateHtml -match 'Trigger:</span> At logon') 'Created task with omitted default XML flags was not verified'
+    $script:TaskMode='never-run'
+    $history=Get-KioskLaunchTaskHistory $script:Tasks
+    Assert-Task ($history['Last Run'] -eq 'Not recorded' -and $history['Next Run'] -eq 'Not recorded') 'Never-run task displayed a sentinel date as real run history'
     $caseCount+=2
     foreach($case in @('race-before','race-during','register-failed','readback-missing','readback-wrong','readback-invalid','readback-denied')){
         Reset-TaskFixture;$script:ApplyChanges=$true;$script:TaskMode=$case

@@ -108,14 +108,14 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         $group=@(Get-ThoroughReportDisplayRows $auditRows.ToArray())[0]
         Assert-FirewallReport ($group.Status -eq $(if($case -in @('range','any')){'Pass'}else{'Fail'})) ('Wrong grouped status: '+$case)
         $fields=Get-ThoroughReportHighlightFields $group.FoundStateHtml
-        if($case -eq 'partial'){Assert-FirewallReport ($fields.Ports -notmatch '4102' -and $fields['Missing Allow Rules (Ports)'] -eq '4102') 'Missing port was shown as available.'}
-        if($case -eq 'missing'){Assert-FirewallReport ($fields.Ports -eq 'Not found') 'Missing rules were shown as verified values.'}
+        if($case -eq 'partial'){Assert-FirewallReport ($fields.Ports -notmatch '4102' -and $fields['Missing Allow Rules (Ports)'] -eq '4102') ('Missing port was shown as available: '+($fields|ConvertTo-Json -Compress))}
+        if($case -eq 'missing'){Assert-FirewallReport ($fields.Ports -eq 'None') 'Missing rules were shown as verified values.'}
         if($case -eq 'disabled'){Assert-FirewallReport ($fields.Enabled -match 'No') 'Actual disabled state was replaced by Yes.'}
         if($case -eq 'blocked'){Assert-FirewallReport ($fields.Action -match 'Block') 'Actual Block action was replaced by Allow.'}
         if($case -eq 'outbound'){Assert-FirewallReport ($fields.Direction -match 'Outbound') 'Actual direction was replaced by Inbound.'}
         if($case -in @('denied','legacy-available')){Assert-FirewallReport ($fields.Direction -like 'Not verified*' -and $fields.ContainsKey('Unverified Ports')) 'Unknown values were invented from expected configuration.'}
         if($case -in @('range','any')){
-            Assert-FirewallReport ($fields.Ports -eq $(if($case -eq 'range'){'5009, 4100-4103'}else{'Any'})) 'Actual range/Any ports were replaced with requested ports.'
+            Assert-FirewallReport ($fields.Ports -eq $(if($case -eq 'range'){'5009, 4100-4103'}else{'All ports (Any)'})) 'Actual range/all-port values were replaced with requested ports.'
             $colored=Format-ThoroughReportFindingHighlights -Row $group -FindingsHtml $group.FoundStateHtml -RequirementHtml $group.ExpectedHtml
             Assert-FirewallReport ($colored -match 'finding-match[^>]*><span class="kv-label">Ports:') 'Covering ranges/Any were incorrectly highlighted as mismatched.'
         }
