@@ -620,6 +620,25 @@ function Get-KioskLaunchTaskHistory {
     $fields
 }
 
+function Get-ThoroughClientUrlNote {
+    param($Row,[string]$Label,[string]$Html)
+    # Annotate rendered URL cells only; observations and comparison stay intact.
+    if(($Row.ItemTitle -ne 'System & Browser Policies' -or $Label -ne 'Local Network Allowlist') -and
+       ($Row.ItemTitle -ne 'Kiosk Launch Architecture' -or $Label -ne 'URL origin')){return ''}
+    $value=Convert-ReportHtmlToTerminalText $Html
+    $uri=$null
+    if(-not [uri]::TryCreate($value.Trim(),[UriKind]::Absolute,[ref]$uri) -or $uri.Scheme -notin @('https','http')){return ''}
+    $origin=$uri.GetLeftPart([UriPartial]::Authority)
+    if($origin -ieq $script:KioskClientSettings.Origin){return ''}
+    $expected=[string]$script:KioskClientSettings.ClientType
+    $detected=@()
+    if($script:KioskClientSettings.ContainsKey('ClientOrigins')){
+        $detected=@($script:KioskClientSettings.ClientOrigins.Keys | Where-Object {$script:KioskClientSettings.ClientOrigins[$_] -ieq $origin})
+    }
+    $message=if($detected.Count -eq 1){'Client mismatch: '+$detected[0]+' URL detected; '+$expected+' expected.'}else{'URL does not match the selected '+$expected+' client.'}
+    '<small class="client-url-note">'+[Net.WebUtility]::HtmlEncode($message)+'</small>'
+}
+
 function ConvertTo-ThoroughAuditRows {
     param($Row,[string]$ComponentHtml,[string]$CommandHtml,[string]$RequirementHtml,[string]$FindingsHtml,$AccountView)
     $FindingsHtml=Expand-ThoroughUnavailableFields -Html $FindingsHtml -RequirementHtml $RequirementHtml
@@ -711,7 +730,8 @@ function ConvertTo-ThoroughAuditRows {
         }else{
             $class=if($entry.State -in @('mismatch','unverified')){' finding-'+$entry.State}else{''}
             $title=if($entry.Description){' title="'+[Net.WebUtility]::HtmlEncode($entry.Description)+'"'}else{''}
-            $rows.Add('<tr class="audit-setting-row">'+$identity+'<td class="audit-setting">'+[Net.WebUtility]::HtmlEncode($entry.Label)+'</td><td class="audit-required">'+$entry.Required+'</td><td class="audit-findings"><span class="audit-observed'+$class+'"'+$title+'>'+$entry.Found+'</span></td></tr>')
+            $urlNote=Get-ThoroughClientUrlNote -Row $Row -Label $entry.Label -Html $entry.Found
+            $rows.Add('<tr class="audit-setting-row">'+$identity+'<td class="audit-setting">'+[Net.WebUtility]::HtmlEncode($entry.Label)+'</td><td class="audit-required">'+$entry.Required+'</td><td class="audit-findings"><span class="audit-observed'+$class+'"'+$title+'>'+$entry.Found+'</span>'+$urlNote+'</td></tr>')
         }
     }
     $rows -join "`n"
@@ -719,6 +739,7 @@ function ConvertTo-ThoroughAuditRows {
 
 function Get-ThoroughAuditColumnStyle {
     @'
+    .client-url-note { display:block; margin-top:4px; font-size:0.85em; line-height:1.35; color:#9b1c1c; }
     .audit-report .audit-setting { background:#f6f7f9; color:#343e49; font-weight:500; }
     .audit-report .audit-required { background:#edf4fb; color:#4b5561; }
     .audit-report .audit-findings { background:#fffbf0; }
@@ -934,8 +955,10 @@ function ConvertTo-ThoroughSettingRows {
             $span=if($Mode -eq 'Fix'){3}else{2}
             '<tr class="setting-record-row">'+$identity+'<td class="setting-record-heading" colspan="'+$span+'">'+$entry.Html+'</td></tr>'
         }else{
-            $before=if($Mode -eq 'Fix'){'<td class="setting-before">'+$entry.Before+'</td>'}else{''}
-            '<tr class="setting-value-row">'+$identity+'<td class="setting-label">'+[Net.WebUtility]::HtmlEncode($entry.Label)+'</td>'+$before+'<td class="setting-current">'+$entry.Value+'</td></tr>'
+            $beforeNote=if($Mode -eq 'Fix'){Get-ThoroughClientUrlNote -Row $Row -Label $entry.Label -Html $entry.Before}else{''}
+            $valueNote=Get-ThoroughClientUrlNote -Row $Row -Label $entry.Label -Html $entry.Value
+            $before=if($Mode -eq 'Fix'){'<td class="setting-before">'+$entry.Before+$beforeNote+'</td>'}else{''}
+            '<tr class="setting-value-row">'+$identity+'<td class="setting-label">'+[Net.WebUtility]::HtmlEncode($entry.Label)+'</td>'+$before+'<td class="setting-current">'+$entry.Value+$valueNote+'</td></tr>'
         }
     }
 }

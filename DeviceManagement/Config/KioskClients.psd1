@@ -8,7 +8,7 @@
             PreferredServiceNames = @()
             PreferredServiceNamePattern = 'SaaSProd'
             PaymentServiceRequirement = 'AspPaymentSaaSProd'
-            LauncherUrlPattern = 'https://kiosk\.ordermonkey\.com/[^\s"'']*'
+            LauncherUrlPattern = 'https://[A-Za-z0-9.-]+/[^\s"'']*'
         }
         Subway = @{
             ClientType = 'Subway'

@@ -20,6 +20,13 @@ function Get-KioskClientSettings {
     if(@($settings.PreferredServiceNames).Count -eq 0 -and [string]::IsNullOrWhiteSpace($settings.PreferredServiceNamePattern)){throw 'A preferred payment service matching rule is required.'}
     [void][regex]::new($settings.LauncherUrlPattern)
     if($settings.PreferredServiceNamePattern){[void][regex]::new($settings.PreferredServiceNamePattern)}
+    # Copy configured origins for report-only client mismatch diagnostics.
+    $settings.ClientOrigins=@{}
+    foreach($name in $Configuration.Clients.Keys){
+        $origin=[string]$Configuration.Clients[$name].Origin
+        if($origin -notmatch '^https://[A-Za-z0-9.-]+$'){throw 'Invalid kiosk client origin.'}
+        $settings.ClientOrigins[$name]=$origin
+    }
     return $settings
 }
 Export-ModuleMember -Function Get-KioskClientSettings
