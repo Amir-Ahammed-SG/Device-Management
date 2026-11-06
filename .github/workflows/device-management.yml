@@ -11,8 +11,48 @@ permissions:
   contents: read
 
 jobs:
+  script-analysis:
+    name: PowerShell static analysis
+    runs-on: windows-2022
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned analyzer
+        run: .\DeviceManagement\Deployment\Install-ScriptAnalyzer.ps1
+      - name: Verify analysis failure and coverage gates
+        run: |
+          & (Join-Path $PSHOME 'powershell.exe') -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\DeviceManagement\Tests\Test-StaticAnalysis.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Static analysis gate fixtures failed.' }
+      - name: Analyze runtime and deployment sources
+        run: .\DeviceManagement\Deployment\Test-ScriptAnalysis.ps1 -Mode Gate
+      - name: Write analysis summary
+        if: always()
+        run: |
+          $path = '.\DeviceManagement\output\script-analysis\report.json'
+          if (Test-Path -LiteralPath $path) {
+            $report = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+            $summary = "PSScriptAnalyzer $($report.AnalyzerVersion): $($report.Status). Files: $($report.FileCount); errors: $($report.ErrorCount); warnings: $($report.WarningCount); blocking: $($report.BlockingCount). Complete: $($report.Complete)."
+          } else {
+            $summary = 'Static analysis did not produce a completed report. Check the setup and fixture steps.'
+          }
+          $summary | Out-File -LiteralPath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+      - name: Retain analysis reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: powershell-analysis-${{ github.run_id }}-${{ github.run_attempt }}
+          path: DeviceManagement/output/script-analysis/
+          if-no-files-found: warn
+          retention-days: 30
+
   build:
     name: Build and verify (Windows PowerShell 5.1)
+    needs: script-analysis
     runs-on: windows-2022
     timeout-minutes: 20
     outputs:

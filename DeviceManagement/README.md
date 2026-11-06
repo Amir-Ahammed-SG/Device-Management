@@ -15,6 +15,13 @@ its parent directory are required. Legacy Pester tests are under `Tests/Legacy`.
 
 ## Shared kiosk architecture
 
+PowerShell static analysis is available for development and CI. Run
+`./Deployment/Install-ScriptAnalyzer.ps1`, then
+`./Deployment/Test-ScriptAnalysis.ps1` from this directory. The pinned analyzer,
+scope, blocking rules, report locations and warning-review process are documented
+in [static analysis](Deployment/ScriptAnalysis/README.md). The GitHub build is
+gated on this analysis; it does not add dependencies to kiosk runtime delivery.
+
 SaaS and Subway use the same implementation. The selected client is passed
 explicitly, and `Config/KioskClients.psd1` supplies the website origin,
 onboarding route, preferred payment-service names/pattern, URL detection rule

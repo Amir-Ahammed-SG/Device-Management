@@ -100,6 +100,12 @@ as `/kiosk/Start-DeviceManagement.ps1` are not changed by this workflow.
 
 ## Local verification
 
+The `PowerShell static analysis` job runs before the Windows release build.
+It uses PSScriptAnalyzer 1.25.0, checks runtime and deployment/tooling sources,
+blocks analyzer Errors and selected credential-handling security rules, and
+uploads Markdown/JSON reports even on an analysis failure. Other warnings remain
+visible for review. See [scope and local commands](ScriptAnalysis/README.md).
+
 From the repository root, in 64-bit Windows PowerShell 5.1:
 
 ```powershell
