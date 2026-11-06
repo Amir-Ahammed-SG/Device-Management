@@ -112,6 +112,11 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
                     if($case.Name -ne 'NoBaseline'){
                         $legacyFields=@(Get-LegacyFieldPairs $legacyCells[2])|ForEach-Object {if($componentName -eq 'Performance Counter'){$_ -replace '^Audit=','Rebuild State='}else{$_}}
                         $currentFields=@($component.Fields|Where-Object Setting -NE 'Details'|ForEach-Object {$_.Setting+'='+$_.Findings})
+                        if($componentName -eq 'Printer'){
+                            # This fixture's Kitchen queue is healthy and unchanged.
+                            $legacyFields=@($legacyFields | Where-Object {$_ -cne 'Printer Name=BIXOLON Kitchen'})
+                            Assert-Setting (-not $component.Text.Contains('BIXOLON Kitchen')) 'Healthy unchanged printer leaked into Fix'
+                        }
                         Assert-Setting (($legacyFields -join '|') -ceq ($currentFields -join '|')) ('Fix changed selected properties or pre-fix values: '+$componentName)
                     }
                     if(-not $case.AfterApply){Assert-Setting (-not @($component.Fields|Where-Object Value -NE 'Not applied').Count) 'An Audit-derived Fix claims applied values.'}

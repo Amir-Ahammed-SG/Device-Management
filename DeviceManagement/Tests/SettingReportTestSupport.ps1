@@ -81,6 +81,18 @@ function Assert-SettingRuleParity {
             if($name -eq 'Performance Counter' -and $label -eq 'Audit'){$label='Rebuild State'}
             $label+'='+[Net.WebUtility]::HtmlDecode(([regex]::Replace($_.Groups['Value'].Value,'<[^>]*>',''))).Trim()
         })
+        # Fix now omits healthy printer siblings from a failed group. Allow
+        # only their old identity-only no-change summaries to disappear.
+        if($Parameters.DisplayMode -eq 'Fix' -and $name -eq 'Printer'){
+            foreach($record in @(Get-ThoroughSettingRecords $oldValues)){
+                $fields=@($record.Fields | Where-Object Kind -EQ 'Field')
+                $summary=@($record.Fields | Where-Object {$_.Html -match 'class="fix-no-change"'})
+                if($record.Identity -and $record.Identity.Label -eq 'Printer Name' -and $fields.Count -eq 1 -and $summary.Count){
+                    $identity='Printer Name='+$record.Identity.Text
+                    if($newPairs -cnotcontains $identity){$oldPairs=@($oldPairs | Where-Object {$_ -cne $identity})}
+                }
+            }
+        }
         if(($oldPairs -join '|') -cne ($newPairs -join '|')){
             # Unverified opaque inventory now has one row per required setting.
             # Accept only that exact projection: identical reason first, unknown

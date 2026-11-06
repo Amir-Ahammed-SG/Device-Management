@@ -25,7 +25,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     function Start-Process {throw 'Rendering launched a process'}
     $client=if($name -like 'Subway*'){'Subway'}else{'SaaS'}
     $printer=New-RefinementRow 1 'Printer' 'Not verified. Please check manually.'
-    $printer|Add-Member NoteProperty ExpectedHtml (ConvertTo-ReportDefinitionHtml ([ordered]@{'Printer Name'='BIXOLON or EPSON';'Printer status'='Active / Idle / Error';'Keep printed documents'='Enabled'}))
+    $printer|Add-Member NoteProperty ExpectedHtml (ConvertTo-ReportDefinitionHtml ([ordered]@{'Printer Name'='BIXOLON or EPSON';'Printer status'='Active / Idle';'Keep printed documents'='Enabled'}))
     $kiosk=New-RefinementRow 2 'KIOSK Account' 'Not verified. Kiosk account could not be identified from the existing setup. Please check manually.'
     $task=New-RefinementRow 2 'Kiosk Launch Task' ([ordered]@{'Task Name'='Launch Kiosk';'Task'='Missing';'Task Enabled'='Not configured';'Run Level'='Not configured';'Script Path'='Not configured';'Trigger'='Not configured';'Last Run'='Not recorded';'Next Run'='Not recorded'})
     $service=New-RefinementRow 3 'Payment Middleware Service' ([ordered]@{'Service Name'='AspPaymentSaaSProd';'Service State'='Running';'Version'='9.0.0.0'}) Pass
@@ -52,7 +52,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
             $k=Get-AuditRenderedComponent $html 'KIOSK Account'
             Assert-Refinement ($k.Fields.Count -eq 5 -and $k.Fields[0].Found -match 'could not be identified') 'Unknown kiosk account lost settings or inspection reason'
             $t=Get-AuditRenderedComponent $html 'Kiosk Launch Task'
-            Assert-Refinement (($t.Fields.Setting -join '|') -eq 'Task Name|Task Status|Target|Trigger Time|Last Run|Next Run') 'Task report is not the compact six-field view'
+            Assert-Refinement (($t.Fields.Setting -join '|') -eq 'Task Name|Task Status|Target|Trigger Time|Last Run') 'Task report is not the compact five-field view'
             Assert-Refinement (@($t.Fields|Where-Object {$_.Setting -eq 'Task Status' -and $_.Found -eq 'Missing'}).Count -eq 1) 'Missing task shown as available'
             $a=Get-AuditRenderedComponent $html 'Administrative Accounts'
             Assert-Refinement (@($a.Fields|Where-Object {$_.Setting -eq 'Account Name' -and $_.Html -match 'finding-mismatch'}).Count -eq 0) 'Detected administrative identity is falsely red'
@@ -74,7 +74,48 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     $target='C:\Users\Fixture & <Desk>\Scripts\LaunchKiosk.ps1'
     $projected=Get-KioskLaunchTaskReportState (ConvertTo-ReportDefinitionHtml ([ordered]@{'Task Name'='Launch Kiosk';'Task'='Available';'Task Enabled'='Yes';'Script Path'=$target;'Trigger'='At logon';'Logon User'='PC\Fixture';'Startup Delay'='5 seconds';'Last Run'='04-Nov-2026 01:20:00';'Next Run'='Not recorded'}))
     $values=Get-ThoroughReportHighlightFields $projected
-    Assert-Refinement ($values.Count -eq 6 -and $values['Target'] -ceq $target -and $values['Trigger Time'] -match '5 seconds' -and $values['Last Run'] -notmatch '^Not') 'Compact task lost escaped target, trigger delay or history'
+    Assert-Refinement ($values.Count -eq 5 -and $values['Target'] -ceq $target -and $values['Trigger Time'] -match '5 seconds' -and $values['Last Run'] -notmatch '^Not') 'Compact task lost escaped target, trigger delay or history'
     Assert-Refinement ((Get-KioskLaunchTaskHistory @([pscustomobject]@{TaskPath='\'}))['Last Run'] -eq 'Not verified') 'Denied history was fabricated'
+    $policyRow=New-RefinementRow 2 'System & Browser Policies' ([ordered]@{'Local Network Allowlist'=$script:KioskClientSettings.Origin;'Translation'='Disabled';'Visual Search'='Disabled';'Edge Gestures'='Disabled';'Additional allowlist entry 2'='https://customer.example.test (preserved)';'Pinch-to-Zoom'='Disabled'}) Pass
+    $policyRow.ActionTaken='Existing policy values preserved; no changes made. Required policy values verified.'
+    foreach($afterApply in @($false,$true)){
+        $snapshot=New-ThoroughReportSnapshot -Rows @($policyRow) -BeforeRows @($policyRow) -DisplayMode Fix -AfterApply $afterApply
+        $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
+        Assert-Refinement (-not $html.Contains('<div class="device-title">System &amp; Browser Policies</div>')) 'Correct policies with a preserved extra permission appeared in Fix'
+    }
+    # Reproduce the mixed-printer screenshot: healthy siblings are not repairs.
+    $printers=@(foreach($queue in @('EPSON Healthy','EPSON Broken')){
+        $p=New-RefinementRow 1 $queue ([ordered]@{'Printer Name'=$queue;'Printer status'=$(if($queue -like '*Broken'){'Error'}else{'Idle'});'Keep printed documents'='Enabled'}) $(if($queue -like '*Broken'){'Fail'}else{'Pass'})
+        $p.ItemSub='Type: Receipt / POS Printer'
+        $p.ActionTaken=if($queue -like '*Broken'){'Check printer status manually'}else{'No changes needed'}
+        $p
+    })
+    $originalPrinters=ConvertTo-Json -InputObject $printers -Depth 12 -Compress
+    foreach($afterApply in @($false,$true)){
+        foreach($mode in @('Audit','Fix','Final')){
+            $snapshot=New-ThoroughReportSnapshot -Rows $printers -BeforeRows $printers -DisplayMode $mode -AfterApply $afterApply
+            $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
+            if($mode -eq 'Audit'){
+                $component=Get-AuditRenderedComponent $html 'Printer'
+                Assert-Refinement (@($component.Fields | Where-Object {$_.Setting -eq 'Printer status' -and $_.Found -eq 'Error' -and $_.Html -match 'finding-mismatch'}).Count -eq 1) 'Printer Error must be shown as a requirement mismatch'
+            }else{
+                $component=Get-SettingRenderedComponent $html 'Printer'
+                Assert-Refinement ($component.Text.Contains('EPSON Broken')) 'Failed printer disappeared'
+                Assert-Refinement ($component.Text.Contains('EPSON Healthy') -eq ($mode -eq 'Final')) 'Healthy printer appeared in Fix or disappeared from Final'
+                if($mode -eq 'Fix'){Assert-Refinement (@($component.Fields | Where-Object Setting -EQ 'Printer status').Count -eq 1) 'Actual printer Error was replaced by a no-change summary'}
+            }
+        }
+    }
+    Assert-Refinement ((ConvertTo-Json -InputObject $printers -Depth 12 -Compress) -ceq $originalPrinters) 'Rendering changed printer observations'
+    # A repaired queue stays visible alongside a still-failing sibling.
+    $beforePrinters=@($printers | ForEach-Object {$_ | Select-Object *})
+    $beforePrinters[0].Status='Fail'
+    $beforePrinters[0].FoundStateHtml=$beforePrinters[0].FoundStateHtml.Replace('Enabled','Disabled')
+    $printers[0].ActionTaken='Enabled Keep printed documents'
+    $snapshot=New-ThoroughReportSnapshot -Rows $printers -BeforeRows $beforePrinters -DisplayMode Fix -AfterApply $true
+    $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
+    $component=Get-SettingRenderedComponent $html 'Printer'
+    Assert-Refinement ($component.Text.Contains('EPSON Healthy') -and $component.Text.Contains('EPSON Broken')) 'A real printer repair or outstanding issue was hidden'
+    Assert-Refinement (@($component.Fields | Where-Object {$_.Setting -eq 'Keep printed documents' -and $_.Findings -eq 'Disabled' -and $_.Value -eq 'Enabled'}).Count -eq 1) 'Printer repair lost its before/after evidence'
     Write-Output ('PASS: '+$client+' unknown inventory fields, compact task, detected administrator identities, actual firewall ports, readable version and immutable Audit/Fix/Final observations.')
 }

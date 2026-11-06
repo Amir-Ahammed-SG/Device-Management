@@ -199,7 +199,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     Assert-Task ($defaults.Status -eq 'Remediated' -and $script:Writes -eq 1 -and $defaults.StateHtml -match 'Task Enabled:</span> Yes' -and $defaults.StateHtml -match 'Trigger:</span> At logon') 'Created task with omitted default XML flags was not verified'
     $script:TaskMode='never-run'
     $history=Get-KioskLaunchTaskHistory $script:Tasks
-    Assert-Task ($history['Last Run'] -eq 'Not recorded' -and $history['Next Run'] -eq 'Not recorded') 'Never-run task displayed a sentinel date as real run history'
+    Assert-Task ($history['Last Run'] -eq 'Not recorded' -and -not $history.Contains('Next Run')) 'Never-run task displayed a sentinel date as real run history'
     $caseCount+=2
     foreach($case in @('race-before','race-during','register-failed','readback-missing','readback-wrong','readback-invalid','readback-denied')){
         Reset-TaskFixture;$script:ApplyChanges=$true;$script:TaskMode=$case
@@ -229,9 +229,9 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
             if($mode -eq 'Fix'){Assert-Task ($taskField.Findings -eq 'Missing') 'Fix lost the before-Apply missing task evidence'}
             Assert-Task (@($component.Fields|Where-Object {$_.Setting -eq 'Target' -and $_.Value -eq $launcher}).Count -eq 1) ('Actual launcher target missing in '+$mode)
         }
-        $labels=@('Task Name','Task Status','Target','Trigger Time','Last Run','Next Run')
+        $labels=@('Task Name','Task Status','Target','Trigger Time','Last Run')
         Assert-Task (@($component.Fields|Where-Object Setting -NotIn $labels).Count -eq 0) ('Unexpected task details in '+$mode)
-        if($mode -ne 'Fix'){Assert-Task ($component.Fields.Count -eq 6) ('Compact task report must have six fields in '+$mode)}
+        if($mode -ne 'Fix'){Assert-Task ($component.Fields.Count -eq 5) ('Compact task report must have five fields in '+$mode)}
         $caseCount++
     }
     $healthy=New-TaskRow $again

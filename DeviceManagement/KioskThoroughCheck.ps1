@@ -596,27 +596,27 @@ function Get-KioskLaunchTaskReportState {
         if($v['Startup Delay'] -and $v['Startup Delay'] -notmatch '^(?:Not |Unknown)'){$trigger+='; Delay: '+$v['Startup Delay']}
     }
     $fields=[ordered]@{'Task Name'=$name;'Task Status'=$status;'Target'=$target;'Trigger Time'=$trigger}
-    foreach($label in @('Last Run','Next Run')){$fields[$label]=if($v.ContainsKey($label)){Format-ThoroughReportDateTime -Value $v[$label]}elseif($missing){'Not recorded'}else{$unknown}}
-    foreach($label in @('Last Run','Next Run')){if($fields[$label] -match '^(?:30 Nov 1999, 12:00 AM|30-Nov-1999 00:00:00)$'){$fields[$label]='Not recorded'}}
+    foreach($label in @('Last Run')){$fields[$label]=if($v.ContainsKey($label)){Format-ThoroughReportDateTime -Value $v[$label]}elseif($missing){'Not recorded'}else{$unknown}}
+    foreach($label in @('Last Run')){if($fields[$label] -match '^(?:30 Nov 1999, 12:00 AM|30-Nov-1999 00:00:00)$'){$fields[$label]='Not recorded'}}
     ConvertTo-ReportDefinitionHtml $fields
 }
 
 function Get-KioskLaunchTaskHistory {
     param([object[]]$Tasks)
-    $fields=[ordered]@{'Last Run'='Not recorded';'Next Run'='Not recorded'}
+    $fields=[ordered]@{'Last Run'='Not recorded'}
     if($Tasks.Count -eq 1){
         try{
             if(-not [string]$Tasks[0].TaskPath){throw 'Task path unavailable'}
             $info=Get-ScheduledTaskInfo -TaskName 'Launch Kiosk' -TaskPath ([string]$Tasks[0].TaskPath) -ErrorAction Stop
-            foreach($label in @('Last Run','Next Run')){
-                $property=if($label -eq 'Last Run'){'LastRunTime'}else{'NextRunTime'}
+            foreach($label in @('Last Run')){
+                $property='LastRunTime'
                 $value=$info.$property
                 $notRun=$label -eq 'Last Run' -and $info.PSObject.Properties['LastTaskResult'] -and [int64]$info.LastTaskResult -eq 267011
                 if($notRun -or ($value -is [datetime] -and ($value.Year -le 1900 -or $value -eq [datetime]::new(1999,11,30)))){$fields[$label]='Not recorded';continue}
                 $fields[$label]=if($value -is [datetime] -and $value.Year -gt 1900){$value.ToString('dd-MMM-yyyy HH:mm:ss',[Globalization.CultureInfo]::InvariantCulture)}elseif($value -is [datetime]){'Not recorded'}else{'Not verified'}
             }
-        }catch{$fields['Last Run']='Not verified';$fields['Next Run']='Not verified'}
-    }elseif($Tasks.Count -gt 1){$fields['Last Run']='Not verified';$fields['Next Run']='Not verified'}
+        }catch{$fields['Last Run']='Not verified'}
+    }elseif($Tasks.Count -gt 1){$fields['Last Run']='Not verified'}
     $fields
 }
 
@@ -886,6 +886,16 @@ function ConvertTo-ThoroughSettingRows {
                 }elseif($currentRecords.Count -gt 1){$trusted=$false}
             }
             if([string]::IsNullOrWhiteSpace($note) -or $note -match '(?i)\breadback\b[^.;]*(?:fail|could not|not verified|unavailable)|(?:fail|could not)[^.;]*\breadback\b|\bnot reverified\b|account-specific results are unavailable'){$trusted=$false}
+        }
+        # A grouped printer failure must not turn healthy sibling printers into
+        # repairs. Keep a sibling only when it has its own issue or recorded work.
+        if($Mode -eq 'Fix' -and $Row.ItemTitle -eq 'Printer' -and $record.Identity -and $record.Identity.Label -eq 'Printer Name'){
+            $noChange=@($record.Fields | Where-Object {$_.Html -match 'class="fix-no-change"'}).Count -gt 0
+            $printerWork=$AfterApply -and $note -match '(?i)Enabled Keep printed documents|not verified|manual|fail|could not|exception'
+            if($noChange -and -not $printerWork){
+                if($record.Heading){$specs.RemoveAt($specs.Count-1)}
+                continue
+            }
         }
         $seen=@{}
         foreach($field in $record.Fields){
@@ -2014,7 +2024,7 @@ function Get-ThoroughAppSettingsReportRows {
 
 function New-ThoroughPrinterReportRow {
     param ([Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][object[]]$Rows)
-    $requirements=ConvertTo-ReportDefinitionHtml ([ordered]@{ 'Printer Name'='BIXOLON or EPSON'; 'Printer status'='Active / Idle / Error'; 'Keep printed documents'='Enabled' })
+    $requirements=ConvertTo-ReportDefinitionHtml ([ordered]@{ 'Printer Name'='BIXOLON or EPSON'; 'Printer status'='Active / Idle'; 'Keep printed documents'='Enabled' })
     $findingParts=[Collections.Generic.List[string]]::new()
     $commands=[Collections.Generic.List[string]]::new()
     $seenCommands=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -2450,7 +2460,7 @@ function Get-ReportRequirement {
         return ConvertTo-ReportDefinitionHtml ([ordered]@{'Local Network Allowlist'=$script:KioskClientSettings.Origin;'Translation'='Disabled';'Visual Search'='Disabled';'Edge Gestures'='Disabled';'Pinch-to-Zoom'='Disabled'})
     }
     if($Row.ItemTitle -eq 'Kiosk Launch Task'){
-        return ConvertTo-ReportDefinitionHtml ([ordered]@{'Task Name'='Launch Kiosk';'Task Status'='Active';'Target'='Existing kiosk launcher';'Trigger Time'='At user logon';'Last Run'='Informational';'Next Run'='Informational'})
+        return ConvertTo-ReportDefinitionHtml ([ordered]@{'Task Name'='Launch Kiosk';'Task Status'='Active';'Target'='Existing kiosk launcher';'Trigger Time'='At user logon';'Last Run'='Informational'})
     }
     if($Row.PSObject.Properties['RecordedRequirementHtml']){return [string]$Row.RecordedRequirementHtml}
     # Task requirements are display examples; verification uses the selected service.
@@ -2498,8 +2508,8 @@ function Get-ReportRequirement {
     }
     if ($null -eq $values) {
         $values = switch ($Row.ItemSub) {
-            'Type: Receipt / POS Printer' { [ordered]@{ 'Printer Name'='BIXOLON or EPSON'; 'Printer status'='Active / Idle / Error'; 'Keep printed documents'='Enabled' } }
-            'Type: Receipt / Hardware' { [ordered]@{ 'Printer Name'='BIXOLON or EPSON'; 'Printer status'='Active / Idle / Error'; 'Keep printed documents'='Enabled' } }
+            'Type: Receipt / POS Printer' { [ordered]@{ 'Printer Name'='BIXOLON or EPSON'; 'Printer status'='Active / Idle'; 'Keep printed documents'='Enabled' } }
+            'Type: Receipt / Hardware' { [ordered]@{ 'Printer Name'='BIXOLON or EPSON'; 'Printer status'='Active / Idle'; 'Keep printed documents'='Enabled' } }
             'Type: Old Payment Service' { [ordered]@{ 'Service State'='Stopped'; 'Startup type'='Manual'; 'First failure'='Take No Action'; 'Second failure'='Take No Action'; 'Subsequent failures'='Take No Action' } }
             { $_ -in @('Type: Payment Gateway Middleware','Type: Infrastructure Monitoring') } { [ordered]@{ 'Service State'='Running'; 'Startup type'='Automatic'; 'Restart recovery'='Configured' } }
             { $_ -in @('Type: Middleware Service','Type: Payment Middleware') } { [ordered]@{ 'Payment service'='Detected'; 'Primary service'='Identified without ambiguity' } }
@@ -3827,9 +3837,14 @@ function Invoke-BrowserPolicyCheck {
         $policyStates.Add($labels[$setting.Name]+': '+[Net.WebUtility]::HtmlEncode($display))
         if (-not $valueExists -or $value -cne $setting.Value -or $key.GetValueKind($setting.Name).ToString() -ne $setting.Type) { $issues.Add($labels[$setting.Name]) }
     }
-    if ((Test-Path -LiteralPath $allow) -and (Get-Item -LiteralPath $allow -ErrorAction Stop).GetValueNames() -contains '2') {
-        $issues.Add('Obsolete allowlist entry 2 (preserved)')
-        $policyStates.Add('Obsolete allowlist entry: Present (preserved)')
+    if (Test-Path -LiteralPath $allow) {
+        $allowKey=Get-Item -LiteralPath $allow -ErrorAction Stop
+        # Extra list values are customer permissions, not evidence of a fault.
+        # Report their actual content without deleting or rewriting any value.
+        foreach($entryName in @($allowKey.GetValueNames() | Where-Object {$_ -ne '1'} | Sort-Object)){
+            $entryValue=[string]$allowKey.GetValue($entryName)
+            $policyStates.Add('Additional allowlist entry '+[Net.WebUtility]::HtmlEncode($entryName)+': '+[Net.WebUtility]::HtmlEncode($entryValue)+' (preserved)')
+        }
     }
     $pinch=Invoke-KioskPinchZoomCheck -UserName $UserName
     $policyStates.Add('Pinch-to-Zoom: '+[Net.WebUtility]::HtmlEncode($pinch.State))
@@ -4079,7 +4094,7 @@ function Get-KioskLaunchTaskCheck {
         $fields=$snapshot.Fields
     }catch{$note='Task Scheduler verification failed: '+$_.Exception.Message+' No existing task was replaced.';if($created){$note+=' Creation returned, but readback was not verified; manual review required.'}}
     if($context.StartupBat -eq 'Also present (unchanged)'){$note+=' Startup BAT also exists; both logon launch paths remain configured.'}
-    $history=if($fields['Task'] -eq 'Available' -and $tasks.Count -eq 1){Get-KioskLaunchTaskHistory $tasks}elseif($fields['Task'] -eq 'Missing'){Get-KioskLaunchTaskHistory @()}else{[ordered]@{'Last Run'='Not verified';'Next Run'='Not verified'}}
+    $history=if($fields['Task'] -eq 'Available' -and $tasks.Count -eq 1){Get-KioskLaunchTaskHistory $tasks}elseif($fields['Task'] -eq 'Missing'){Get-KioskLaunchTaskHistory @()}else{[ordered]@{'Last Run'='Not verified'}}
     foreach($label in $history.Keys){$fields[$label]=$history[$label]}
     $result=New-CheckResult $status $note 'Kiosk launch task inspected'
     $result|Add-Member NoteProperty StateHtml (ConvertTo-ReportDefinitionHtml $fields)

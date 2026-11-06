@@ -51,7 +51,7 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroug
         $requirement=Get-ReportRequirement ([pscustomobject]@{ItemTitle='Printers';ItemSub=$itemSub})
         $labels=@([regex]::Matches($requirement,'kv-label">([^<]+):') | ForEach-Object {$_.Groups[1].Value})
         Assert-Hardware (($labels -join '|') -ceq 'Printer Name|Printer status|Keep printed documents') 'Printer requirements contain removed or missing fields'
-        Assert-Hardware ($requirement -match 'Printer Name:</span> BIXOLON or EPSON' -and $requirement -match 'Printer status:</span> Active / Idle / Error' -and $requirement -match 'Keep printed documents:</span> Enabled') 'Printer name, status examples or retention requirement incorrect'
+        Assert-Hardware ($requirement -match 'Printer Name:</span> BIXOLON or EPSON' -and $requirement -match 'Printer status:</span> Active / Idle' -and $requirement -match 'Keep printed documents:</span> Enabled') 'Printer name, status examples or retention requirement incorrect'
         Assert-Hardware ($requirement -notmatch 'Queue|Readable') 'Removed queue requirement remains'
     }
     foreach ($mode in @($false,$true)) {

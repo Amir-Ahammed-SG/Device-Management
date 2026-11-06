@@ -217,7 +217,8 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroug
         if ($mode) { Invoke-BrowserPolicyCheck | Out-Null; Assert-Inspection ($script:policyWrites -eq 1) 'Added policy was rewritten on repeat Apply' }
         Reset-PolicyFixture; $script:registryKeys[$script:allow].Values['2']='https://customer.example.test'; $script:registryKeys[$script:allow].Kinds['2']='String'
         $result=Invoke-BrowserPolicyCheck
-        Assert-Inspection ($result.Status -eq 'Fail' -and $script:policyWrites -eq 0 -and $script:registryKeys[$script:allow].Values['2'] -eq 'https://customer.example.test') 'Existing allowlist entry was removed'
+        Assert-Inspection ($result.Status -eq 'Pass' -and $script:policyWrites -eq 0 -and $script:registryKeys[$script:allow].Values['2'] -eq 'https://customer.example.test') 'Additional allowlist entry was removed or incorrectly failed'
+        Assert-Inspection ($result.StateHtml.Contains('Additional allowlist entry 2: https://customer.example.test (preserved)') -and $result.StateHtml -notmatch 'Obsolete') 'Extra permission content was hidden or mislabeled'
         Reset-PolicyFixture; $script:registryKeys.Remove($script:allow); $script:registryKeys.Remove($script:edge)
         $result=Invoke-BrowserPolicyCheck
         Assert-Inspection (($result.Status -eq 'Pass') -eq $mode) 'Missing policy keys were not handled correctly'

@@ -52,6 +52,15 @@ allowlist once; the former redundant second Subway policy write was removed.
 Older report-layout restore points target the former separate implementations
 and are rejected against the shared engine before any source write.
 
+Fix reports retain unresolved checks and recorded repairs. Healthy, unchanged
+printer records are omitted even when another printer in the group fails.
+Required printer status is Active or Idle; Error requires manual investigation.
+Extra Edge local-network allowlist values are shown with their contents as
+additional preserved entries in Audit/Final, and do not alone fail the check.
+Required URL/value/type mismatches still require review. The Kiosk Launch Task
+report shows Last Run and omits Next Run, since its trigger is user logon.
+Saved Audit snapshots remain unchanged; run a new Audit to refresh the report.
+
 Run the project from the CDN with:
 
 ```powershell

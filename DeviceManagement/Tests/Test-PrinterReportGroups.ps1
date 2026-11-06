@@ -60,7 +60,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
             $group=$display[0]
             $expectedStatus=if($case -in @('single','multiple')){'Pass'}else{'Fail'}
             Assert-PrinterReport ($group.Status -ceq $expectedStatus) ('A partial/failed/unverified printer was reported healthy: '+$case)
-            Assert-PrinterReport ($group.ExpectedHtml -notmatch 'Printer detection' -and $group.ExpectedHtml -match 'Printer Name:</span> BIXOLON or EPSON' -and $group.ExpectedHtml -match 'Printer status:</span> Active / Idle / Error' -and $group.ExpectedHtml -match 'Keep printed documents:</span> Enabled') 'Printer requirements were incorrect.'
+            Assert-PrinterReport ($group.ExpectedHtml -notmatch 'Printer detection' -and $group.ExpectedHtml -match 'Printer Name:</span> BIXOLON or EPSON' -and $group.ExpectedHtml -match 'Printer status:</span> Active / Idle' -and $group.ExpectedHtml -match 'Keep printed documents:</span> Enabled') 'Printer requirements were incorrect.'
             Assert-PrinterReport ($group.ExpectedHtml -notmatch 'config-item-title|<hr>' -and [regex]::Matches($group.ExpectedHtml,'class="kv-label"').Count -eq 3) 'Printer requirements were repeated or numbered.'
             Assert-PrinterReport ($group.FoundStateHtml -notmatch 'Printer detection|Detected -') 'Legacy printer-detection wording remains.'
             $printerNumber=0
