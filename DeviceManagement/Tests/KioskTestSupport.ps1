@@ -13,7 +13,6 @@ function Read-KioskTestSource {
         $map[(Join-Path $script:KioskTestProjectRoot $checkName)]='KioskThoroughCheck.ps1'
         $map[(Join-Path $script:KioskTestProjectRoot ('Installations\KIOSK\'+$client+'-Install.ps1'))]='Installations\KIOSK\Install.ps1'
         $map[(Join-Path $script:KioskTestProjectRoot ('Installations\KIOSK\'+$client+'\'+$edgeName))]='Installations\KIOSK\Setup-Edge.ps1'
-        $map[(Join-Path $script:KioskTestProjectRoot ('Installations\KIOSK\'+$client+'\Kiosk_Mode_Setup_Chrome.ps1'))]='Installations\KIOSK\Setup-Chrome.ps1'
         if($map.ContainsKey($full)) {
             $script:KioskClientSettings=Get-KioskClientSettings -ClientType $client -ProjectRoot $script:KioskTestProjectRoot
             return [IO.File]::ReadAllText((Join-Path $script:KioskTestProjectRoot $map[$full]))

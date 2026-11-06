@@ -14,12 +14,7 @@ All inputs are collected before setup writes anything. The selected account's
 existing C:\Users\<account> profile and the script's original Edge path must exist.
 IDs accept letters, digits, dots, underscores, dashes and tildes, matching SaaS.
 
-The source is the supplied Subway script. Apart from replacing its four static
-inputs with prompts and renaming ZabbixHostName to HostName, its setup body is
-retained exactly: Subway URL, auto-login, existing policy writes, Explorer
-restart, launcher, Startup BAT and Desktop shortcut. This includes the original
-duplicate policy command and existing-shortcut behaviour. No new policy is added.
-The original empty auto-login DefaultPassword is retained.
+The shared Edge setup uses Subway client configuration, auto-login, browser policies, Explorer restart, launcher, Startup BAT and Desktop shortcut. The allowlist is written once, and existing shortcuts are preserved and verified. The original empty auto-login DefaultPassword is retained.
 
 HostName is a local variable. The URL still uses the same `host=` parameter;
 renaming that variable does not change the URL parameter contract or configure
@@ -33,8 +28,6 @@ run directly; menu context/admin checks and result readback belong to the handle
 
 ## Browser selection
 
-KIOSK Installation offers **Microsoft Edge**. **Google Chrome (Not available)** is temporarily disabled in the browser menu; selecting it keeps you on that menu without starting setup. Back and Exit make no setup changes. The Chrome source `Kiosk_Mode_Setup_Chrome.ps1` is retained for future use.
-See [Chrome kiosk setup](../Chrome-README.md) for commands,
-behavior, verification, and the remaining Edge-only Thorough Check limits.
+KIOSK Installation offers **Microsoft Edge only**. Back and Exit make no setup changes.
 
 Hostname detection reads `Win32_ComputerSystem.DNSHostName` directly. If it is unavailable, enter the full hostname manually; setup does not substitute a shortened environment name.

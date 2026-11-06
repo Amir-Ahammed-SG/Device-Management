@@ -16,7 +16,7 @@ foreach ($name in @('Start-DeviceManagement.ps1','KioskThoroughCheck.ps1','SaaSK
     Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination $copyRoot
 }
 $release = & (Join-Path $copyRoot 'Deployment\Build-Release.ps1') -ReleaseId '20261106-contained-fixture'
-if ($release.Files -ne 18 -or -not (Test-Path -LiteralPath $release.BootstrapPath)) { throw 'Standalone release build failed.' }
+if ($release.Files -ne 17 -or -not (Test-Path -LiteralPath $release.BootstrapPath)) { throw 'Standalone release build failed.' }
 $tokens=$null; $errors=$null
 $launcherAst = [KioskTestSource]::ParseFile((Join-Path $copyRoot 'Start-DeviceManagement.ps1'),[ref]$tokens,[ref]$errors)
 $boundary = @($launcherAst.EndBlock.Statements | Where-Object {

@@ -30,7 +30,6 @@ $files=[ordered]@{
     'DeviceManagement/OtherTools/PaymentCronJob.ps1'=Join-Path $projectRoot 'OtherTools\PaymentCronJob.ps1'
     'DeviceManagement/Installations/KIOSK/Install.ps1'=Join-Path $projectRoot 'Installations\KIOSK\Install.ps1'
     'DeviceManagement/Installations/KIOSK/Setup-Edge.ps1'=Join-Path $projectRoot 'Installations\KIOSK\Setup-Edge.ps1'
-    'DeviceManagement/Installations/KIOSK/Setup-Chrome.ps1'=Join-Path $projectRoot 'Installations\KIOSK\Setup-Chrome.ps1'
     'Deployment/MemoryRuntime.ps1'=Join-Path $PSScriptRoot 'MemoryRuntime.ps1'
 }
 foreach ($folder in @('Core','Config')) {

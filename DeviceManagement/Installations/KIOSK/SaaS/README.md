@@ -36,14 +36,12 @@ The setup file can also be run directly from this folder. The Device Management
 handler adds context/admin checks, native exit handling and result verification.
 The shared handler accepts SaaS or Subway KIOSK/Apply, loading the selected
 client from `Config/KioskClients.psd1`. The files in this client folder are small
-compatibility launchers for `../Setup-Edge.ps1` and `../Setup-Chrome.ps1`.
+compatibility launchers for `../Setup-Edge.ps1`.
 Other client/device installations stay pending.
 
 
 ## Browser selection
 
-KIOSK Installation offers **Microsoft Edge**. **Google Chrome (Not available)** is temporarily disabled in the browser menu; selecting it keeps you on that menu without starting setup. Back and Exit make no setup changes. The Chrome source `Kiosk_Mode_Setup_Chrome.ps1` is retained for future use.
-See [Chrome kiosk setup](../Chrome-README.md) for commands,
-behavior, verification, and the remaining Edge-only Thorough Check limits.
+KIOSK Installation offers **Microsoft Edge only**. Back and Exit make no setup changes.
 
 Hostname detection reads `Win32_ComputerSystem.DNSHostName` directly. If it is unavailable, enter the full hostname manually; setup does not substitute a shortened environment name.

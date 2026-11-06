@@ -30,8 +30,8 @@ try {
     $clientConfiguration=if($clientMemory){$clientMemory.Configurations.KioskClients}else{$null}
     $clientSettings=Get-KioskClientSettings -ClientType $Context.ClientType -ProjectRoot $projectRoot -Configuration $clientConfiguration
     $browser=if($Context.PSObject.Properties['Browser']) { [string]$Context.Browser } else { 'Edge' }
-    if($browser -notin @('Edge','Chrome')) { throw 'Choose Microsoft Edge or Google Chrome for KIOSK Installation.' }
-    $sourceFile=if($browser -eq 'Chrome') { 'Setup-Chrome.ps1' } else { 'Setup-Edge.ps1' }
+    if($browser -ne 'Edge') { throw 'Only Microsoft Edge is supported for KIOSK Installation.' }
+    $sourceFile='Setup-Edge.ps1'
     $sourceName='DeviceManagement/Installations/KIOSK/'+$sourceFile
     $memory=Get-Variable -Name DeviceManagementMemoryBundle -ValueOnly -ErrorAction SilentlyContinue
     if($memory) {
@@ -41,20 +41,7 @@ try {
         $sourcePath=Join-Path $PSScriptRoot $sourceFile
         $setupCode=[IO.File]::ReadAllText($sourcePath)
     }
-    if($browser -eq 'Chrome') {
-        $previousNativeExit=Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
-        $previousNativeValue=if($previousNativeExit) { $previousNativeExit.Value } else { $null }
-        try {
-            $chromeResults=@(& ([scriptblock]::Create($setupCode)) -PassThru -ClientType $Context.ClientType -ClientSettings $clientSettings)
-        } finally {
-            if($previousNativeExit) { $global:LASTEXITCODE=$previousNativeValue }
-            else { Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue }
-        }
-        if($chromeResults.Count -ne 1 -or -not $chromeResults[0].PSObject.Properties['ChromeKioskSetupCompleted'] -or $chromeResults[0].ChromeKioskSetupCompleted -ne $true -or $chromeResults[0].ClientType -cne $Context.ClientType -or [string]::IsNullOrWhiteSpace([string]$chromeResults[0].KioskUser) -or [string]::IsNullOrWhiteSpace([string]$chromeResults[0].HostName)) {
-            throw 'Chrome setup did not return one verified completion result.'
-        }
-        return [pscustomobject]@{Status='Pass';Message=($Context.ClientType+' Chrome KIOSK Installation completed and verified. Kiosk User: '+$chromeResults[0].KioskUser+'; Hostname: '+$chromeResults[0].HostName+'.');Context=$Context}
-    }
+
     # Dot sourcing retains the original script's values for readback. Capture
     # native stdout so the handler returns exactly one structured result.
     $previousNativeExit=Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue

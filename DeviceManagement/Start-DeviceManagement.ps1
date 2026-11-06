@@ -585,8 +585,7 @@ while (-not $exitRequested) {
         'Browser' {
             Show-DeviceManagementHeader -Title 'Select Kiosk Browser' -Breadcrumb ("{0} > {1} > KIOSK Installation" -f $selectedClient.DisplayName, $selectedDevice)
             $browsers = @(
-                [pscustomobject]@{ Id = 'Edge'; DisplayName = 'Microsoft Edge'; Description = '' },
-                [pscustomobject]@{ Id = 'Chrome'; DisplayName = 'Google Chrome'; Description = ''; ImplementationState = 'Pending' }
+                [pscustomobject]@{ Id = 'Edge'; DisplayName = 'Microsoft Edge'; Description = '' }
             )
             $selection = Read-NumberedSelection -Items $browsers -AllowBack -AllowExit -Prompt 'Select option'
             if ($selection -eq '__BACK__') { $screen = 'Operation'; break }

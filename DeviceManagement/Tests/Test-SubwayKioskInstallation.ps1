@@ -116,7 +116,7 @@ function Reset-Installation {
     $script:writeDenied=$false;$script:propertyNoEffect=$false;$script:fileNoEffect=$false;$script:nativeFailure=$false
     $script:shortcuts=@{};$script:shortcutSaves=0;$script:regCalls=0;$script:shortcutDenied=$false;$script:shortcutNoEffect=$false
     $script:DeviceManagementMemoryBundle=$null
-    $script:context=[pscustomobject]@{ClientType='Subway';DeviceType='KIOSK';Operation='KioskInstallation';Mode='Apply'}
+    $script:context=[pscustomobject]@{ClientType='Subway';DeviceType='KIOSK';Operation='KioskInstallation';Mode='Apply';Browser='Edge'}
 }
 function Invoke-InstallationFixture {
     $result=@(& $fixture -Context $script:context)
@@ -185,7 +185,7 @@ try {
         $result=Invoke-InstallationFixture
         Assert-Installation (($result.Status -eq 'Pass') -eq $correct -and $script:shortcutSaves -eq 0) 'Existing Desktop shortcut was rewritten or its readback was guessed.'
     }
-    foreach($invalid in @(@{ClientType='ViCafe'},@{DeviceType='POS'},@{Operation='ThoroughCheck'},@{Mode='Audit'})) {
+    foreach($invalid in @(@{Browser='Chrome'},@{Browser='Firefox'},@{ClientType='ViCafe'},@{DeviceType='POS'},@{Operation='ThoroughCheck'},@{Mode='Audit'})) {
         Reset-Installation
         foreach($key in $invalid.Keys){$script:context.$key=$invalid[$key]}
         $result=Invoke-InstallationFixture

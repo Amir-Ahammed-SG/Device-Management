@@ -31,9 +31,7 @@ $env:COMPUTERNAME='OM-DHK-PAN-KIOS'
 try {
  foreach($entry in @(
   @{Path='Installations\KIOSK\SaaS\Kiosk_Mode_Setup.ps1';Prefix='Kiosk'},
-  @{Path='Installations\KIOSK\Subway\kiosk_mode_setup.ps1';Prefix='Kiosk'},
-  @{Path='Installations\KIOSK\SaaS\Kiosk_Mode_Setup_Chrome.ps1';Prefix='ChromeKiosk'},
-  @{Path='Installations\KIOSK\Subway\Kiosk_Mode_Setup_Chrome.ps1';Prefix='ChromeKiosk'}
+  @{Path='Installations\KIOSK\Subway\kiosk_mode_setup.ps1';Prefix='Kiosk'}
  )) {
   $tokens=$null;$errors=$null
   $ast=[KioskTestSource]::ParseFile((Join-Path $projectRoot $entry.Path),[ref]$tokens,[ref]$errors)

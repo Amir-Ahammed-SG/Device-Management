@@ -59,8 +59,8 @@ Only `main` deploys, including manual runs. Pull requests never receive SSH
 secrets. Deploy jobs run serially and do not cancel an active publication.
 Actions are pinned to reviewed commit SHAs. Checkout credentials are not retained.
 
-`Test-GitHubRelease.ps1` runs thirty independent setup/client/report fixtures and the
-existing 54-case Thorough Check delivery suite plus both clients' Edge/Chrome installation completion/menu cases, including browser Back/Exit and switching browsers. Full hostname fixtures cover the reported 16-character truncation, long DNS names, manual fallback, and read-only report comparisons. Administrator policy fixtures cover Password Never Expires as the sole administrative password requirement, clearing existing restrictions with readback, standard kiosk policy, shared-role administrator priority, classification and per-account report filtering. Account, installer and launcher writes
+`Test-GitHubRelease.ps1` runs twenty-nine independent setup/client/report fixtures and the
+existing 54-case Thorough Check delivery suite plus both clients' Edge-only installation completion/menu cases, including browser Back/Exit, rejection of removed choices and repeated Edge installation. Full hostname fixtures cover the reported 16-character truncation, long DNS names, manual fallback, and read-only report comparisons. Administrator policy fixtures cover Password Never Expires as the sole administrative password requirement, clearing existing restrictions with readback, standard kiosk policy, shared-role administrator priority, classification and per-account report filtering. Account, installer and launcher writes
 use fixtures. A separate Linux job verifies nine publication and rollback
 scenarios using fake SSH, SCP and HTTPS commands. The full older Pester suite is not a passing deployment gate:
 the current recorded baseline is 104 passed and 75 existing failures. Those

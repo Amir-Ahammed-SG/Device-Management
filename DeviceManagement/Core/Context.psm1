@@ -8,7 +8,7 @@ function New-DeviceManagementContext {
         [Parameter(Mandatory = $true)][ValidateSet('Audit', 'Apply', 'Final', 'Uninstall')][string]$Mode,
         [string]$ClientLocation,
         [string]$AgentName,
-        [ValidateSet('Edge', 'Chrome')][string]$Browser = 'Edge',
+        [ValidateSet('Edge')][string]$Browser = 'Edge',
         [Parameter(Mandatory = $true)][string]$RootPath,
         $SelectedPackage
     )

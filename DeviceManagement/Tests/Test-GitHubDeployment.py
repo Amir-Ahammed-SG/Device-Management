@@ -94,7 +94,7 @@ class DeploymentTests(unittest.TestCase):
         (self.root / 'current.ps1').write_bytes(b"# fixture previous\nWrite-Output 'old'\n")
         shutil.copyfile(self.root / 'current.ps1', self.root / 'previous.ps1')
         self.release_id = '20261024-actions-fixture-01'
-        manifest = dict(ReleaseId=self.release_id, Delivery='InMemory', BootstrapSHA256=sha(self.candidate), Files=[{}] * 18)
+        manifest = dict(ReleaseId=self.release_id, Delivery='InMemory', BootstrapSHA256=sha(self.candidate), Files=[{}] * 17)
         (self.release / 'release.json').write_text(json.dumps(manifest), encoding='utf-8')
         for name in ('ssh', 'scp', 'curl', 'sleep', 'python3'):
             script = '#!/usr/bin/env bash\n'

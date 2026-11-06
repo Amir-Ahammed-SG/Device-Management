@@ -222,7 +222,7 @@ if($env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO -eq 'duplicate'){$result}
     $oldInstallScenario=$env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO
     try {
         foreach($installClient in @('SaaS','Subway')) {
-            foreach($browser in @('Edge','Chrome')) {
+            foreach($browser in @('Edge')) {
                 foreach($scenario in @('pass','fail','throw','missing','duplicate','invalid','error')) {
                     $env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO=$scenario
                     $execution=Invoke-DeviceManagementMemoryScript -Code $callCode -Bundle $bundle -RuntimeCode $runtime -Parameters @{Client=$installClient;Mode='Apply';Browser=$browser;OperationId='KioskInstallation'}
@@ -259,17 +259,17 @@ if($env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO -eq 'duplicate'){$result}
             foreach($browserKey in @('1','2')) {
                 $expectedBrowser='Edge'
                 $callsBeforeChoice=@(Get-Content -LiteralPath (Join-Path $fixtureRoot 'install-calls.jsonl')).Count
-                # Chrome remains visible but unavailable; selecting it must stay on the menu.
+                # The removed option 2 must be rejected before selecting Edge.
                 $browserInputs=if($browserKey -eq '2'){@('2','1')}else{@('1')}
                 $installInputs=@($clientKey,'1','3','invalid')+$browserInputs+@('SELISE-KIOSK','RESTAURANT-99','Kiosk-9','HOST-99','8','8','0')
                 $installUi=$installInputs | & (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $interactivePath 2>&1 | Out-String
                 Assert-Memory ($LASTEXITCODE -eq 0 -and $installUi -match 'INSTALL_INPUTS=SELISE-KIOSK\|RESTAURANT-99\|Kiosk-9\|HOST-99' -and $installUi -match 'MEMORY_RETURNED_TO_CALLER') 'Browser installation menu/input/return failed.'
-                Assert-Memory ($installUi -match 'Select Kiosk Browser' -and $installUi -match '\[1\] Microsoft Edge' -and $installUi -match '\[2\] Google Chrome') 'Kiosk browser choices were not displayed.'
+                Assert-Memory ($installUi -match 'Select Kiosk Browser' -and $installUi -match '\[1\] Microsoft Edge' -and $installUi -notmatch 'Chrome') 'Edge-only kiosk browser choice was not displayed.'
                 Assert-Memory ($installUi -notmatch 'KIOSK Installation \(Not available\)|Select Mode|Branch Name') 'Installation used the old unavailable/mode/branch path.'
                 $lastCall=Get-Content -LiteralPath (Join-Path $fixtureRoot 'install-calls.jsonl') | Select-Object -Last 1 | ConvertFrom-Json
                 Assert-Memory ($lastCall.Browser -eq $expectedBrowser) 'Interactive browser choice did not reach the handler.'
-                Assert-Memory (@(Get-Content -LiteralPath (Join-Path $fixtureRoot 'install-calls.jsonl')).Count -eq ($callsBeforeChoice+1)) 'Unavailable Chrome selection started an installation.'
-                Assert-Memory ($installUi -match 'Google Chrome \(Not available\)') 'Chrome is not shown as temporarily unavailable.'
+                Assert-Memory (@(Get-Content -LiteralPath (Join-Path $fixtureRoot 'install-calls.jsonl')).Count -eq ($callsBeforeChoice+1)) 'Removed browser option started an installation.'
+                if($browserKey -eq '2'){Assert-Memory ([regex]::Matches($installUi,'Invalid selection').Count -ge 2) 'Removed option 2 was not rejected.'}
             }
             $callsBeforeCancel=@(Get-Content -LiteralPath (Join-Path $fixtureRoot 'install-calls.jsonl')).Count
             foreach($cancelInputs in @(@($clientKey,'1','3','0'),@($clientKey,'1','3','8','0'),@($clientKey,'1','3','2','0'))) {
@@ -282,9 +282,9 @@ if($env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO -eq 'duplicate'){$result}
         $switchInputs=@('2','1','3','2','1','SELISE-KIOSK','R1','K1','HOST1','8','2','1','SELISE-KIOSK','R2','K2','HOST2','0')
         $switchUi=$switchInputs | & (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $interactivePath 2>&1 | Out-String
         $switchCalls=@(Get-Content -LiteralPath (Join-Path $fixtureRoot 'install-calls.jsonl') | Select-Object -Skip $switchBefore | ForEach-Object {$_ | ConvertFrom-Json})
-        Assert-Memory ($LASTEXITCODE -eq 0 -and $switchCalls.Count -eq 2 -and $switchCalls[0].Browser -eq 'Edge' -and $switchCalls[1].Browser -eq 'Edge') 'Result Back did not preserve Chrome unavailability and allow repeating Edge setup.'
+        Assert-Memory ($LASTEXITCODE -eq 0 -and $switchCalls.Count -eq 2 -and $switchCalls[0].Browser -eq 'Edge' -and $switchCalls[1].Browser -eq 'Edge') 'Result Back did not retain Edge-only setup.'
         [IO.File]::WriteAllText((Join-Path $projectRoot 'Docs\Validation\saas-kiosk-installation-menu.txt'),$installUi,(New-Object Text.UTF8Encoding($false)))
-        Write-Output 'PASS: SaaS/Subway isolated installation sources, Edge menu/four prompts, unavailable Chrome blocked, verified/failed/missing/duplicate/error outcomes, mode isolation, Back/Exit and caller return. Only fixtures executed.'
+        Write-Output 'PASS: SaaS/Subway isolated installation sources, Edge menu/four prompts, removed browser option rejected, verified/failed/missing/duplicate/error outcomes, mode isolation, Back/Exit and caller return. Only fixtures executed.'
     } finally { $env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO=$oldInstallScenario }
 } finally {
     $env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT=$previousRoot

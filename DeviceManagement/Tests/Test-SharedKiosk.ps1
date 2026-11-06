@@ -9,6 +9,19 @@ $fixtureRoot=Join-Path $root ('output\shared-kiosk\'+[guid]::NewGuid().ToString(
 Import-Module (Join-Path $root 'Core\KioskClient.psm1') -Force
 $configuration=Import-PowerShellDataFile (Join-Path $root 'Config\KioskClients.psd1')
 function Assert-Shared([bool]$Condition,[string]$Message){if(-not $Condition){throw $Message}}
+Import-Module (Join-Path $root 'Core\Context.psm1') -Force
+foreach($client in @('SaaS','Subway')){
+    $context=New-DeviceManagementContext -ClientType $client -DeviceType KIOSK -Operation KioskInstallation -Mode Apply -Browser Edge -RootPath $root
+    Assert-Shared ($context.Browser -ceq 'Edge') 'Edge installation context was rejected.'
+    foreach($removedBrowser in @('Chrome','Firefox')){
+        $rejected=$false
+        try{[void](New-DeviceManagementContext -ClientType $client -DeviceType KIOSK -Operation KioskInstallation -Mode Apply -Browser $removedBrowser -RootPath $root)}catch{$rejected=$true}
+        Assert-Shared $rejected 'An unsupported browser context was accepted.'
+    }
+}
+foreach($removedPath in @('Installations\KIOSK\Setup-Chrome.ps1','Installations\KIOSK\SaaS\Kiosk_Mode_Setup_Chrome.ps1','Installations\KIOSK\Subway\Kiosk_Mode_Setup_Chrome.ps1')){
+    Assert-Shared (-not (Test-Path -LiteralPath (Join-Path $root $removedPath))) 'A removed Chrome installation entry remains.'
+}
 $copy=Get-KioskClientSettings -ClientType Subway -Configuration $configuration
 $copy.Origin='https://fixture.example';$copy.PreferredServiceNames[0]='Changed'
 $fresh=Get-KioskClientSettings -ClientType Subway -Configuration $configuration

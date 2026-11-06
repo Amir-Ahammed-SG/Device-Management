@@ -37,15 +37,13 @@ DeviceManagement/
   Checks/KIOSK/ThoroughCheck.ps1     # Local child-process dispatcher
   Installations/KIOSK/Install.ps1   # Shared installation handler
   Installations/KIOSK/Setup-Edge.ps1
-  Installations/KIOSK/Setup-Chrome.ps1
 ```
 
 The previous client-specific script paths remain small compatibility launchers;
 they contain no copied checks, report renderer or setup implementation. The
 normal menu and CDN bundle call shared sources directly. Standalone checks use
 `./KioskThoroughCheck.ps1 -ClientType SaaS -AuditOnly` or `-ClientType Subway`.
-Standalone browser setup accepts the same `-ClientType` selection. Chrome remains
-unavailable in the menu; its shared standalone setup is retained.
+Standalone Edge setup accepts the same `-ClientType` selection. KIOSK installation supports Microsoft Edge only.
 
 Both clients validate their own origin and the onboarding route, create and
 verify installation desktop shortcuts, and use the same running-service fallback
@@ -72,7 +70,7 @@ publishing a new version. It does not enable operations marked Pending.
 4. Mode: Thorough Check displays Audit Report and Apply Fix. Payment Service
    displays each available version followed by Audit Report and Remove Payment Service;
    selecting a version starts its installation directly. Installation operations
-   first ask for Microsoft Edge or Google Chrome for KIOSK, then run the selected setup.
+   offer Microsoft Edge for KIOSK, then run the Edge setup.
 
 Client/device compatibility and operation visibility come from the data files in
 `Config`. They are validated again before dispatch, so a hidden or manually
@@ -168,15 +166,13 @@ when HTML output is requested. Existing Desktop reports and restore points are
 left in place; this location change does not migrate or delete old files.
 
 SaaS and Subway KIOSK Installation offer Microsoft Edge from the browser menu.
-Google Chrome is temporarily marked **Not available**; selecting it keeps the
-operator on the browser menu without starting setup. Chrome setup sources are
-retained for future use. Each setup script prompts
+Each setup script prompts
 for an existing kiosk account, Restaurant ID, Kiosk ID and Hostname before running
 the supplied setup actions. Account and hostname suggestions can be confirmed
-with Enter or changed manually. When a detected value is available, a separate gray hint appears above the input prompt; the bracketed value is the default and is not prefilled input. Hostname suggestions use the full Windows DNS hostname, preserving names longer than 15 characters; unavailable detection requires manual entry. Both browser setups are included in the release bundle.
+with Enter or changed manually. When a detected value is available, a separate gray hint appears above the input prompt; the bracketed value is the default and is not prefilled input. Hostname suggestions use the full Windows DNS hostname, preserving names longer than 15 characters; unavailable detection requires manual entry. The shared Edge setup is included in the release bundle.
 See the [SaaS](Installations/KIOSK/SaaS/README.md) and [Subway](Installations/KIOSK/Subway/README.md) setup guides.
 
-Kiosk ID input follows the same rules in all four SaaS/Subway Edge/Chrome
+Kiosk ID input follows the same rules in the shared SaaS/Subway Edge
 installation scripts: it is required and accepts only ASCII letters (`A-Z`,
 `a-z`), numbers (`0-9`), dots (`.`), underscores (`_`), tildes (`~`) and
 hyphens (`-`), matching `^[A-Za-z0-9._~-]+$`. Leading and trailing whitespace

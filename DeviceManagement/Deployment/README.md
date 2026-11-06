@@ -9,7 +9,7 @@ Run in 64-bit Windows PowerShell 5.1 as Administrator when performing checks:
 irm 'https://cdn-ito.selisesme.com/script/DeviceManagement.ps1' -EA Stop | iex
 ```
 
-Publication history is in [GitHub Actions](https://github.com/Amir-Ahammed/Device-Management-Script/actions/workflows/device-management.yml). The entry includes Edge and Chrome browser choices for the [SaaS](../Installations/KIOSK/SaaS/README.md) and [Subway](../Installations/KIOSK/Subway/README.md) KIOSK setups with prompted inputs. Chrome is temporarily unavailable in the browser menu; Edge remains available. Pushes and merges to `main` build, test and deploy through GitHub Actions.
+Publication history is in [GitHub Actions](https://github.com/Amir-Ahammed-SG/Device-Management/actions/workflows/device-management.yml). The entry offers Microsoft Edge only for the [SaaS](../Installations/KIOSK/SaaS/README.md) and [Subway](../Installations/KIOSK/Subway/README.md) KIOSK setups with prompted inputs. Pushes and merges to `main` build and test; automatic deployment requires the repository's deployment variables and secrets.
 
 `/script/DeviceManagement.ps1` is the standard CDN entry for the shared device
 and tool menu. The previous `/device-management/Start-DeviceManagement.ps1` and
@@ -50,9 +50,9 @@ process, with the existing console host for Read-Host and confirmation prompts.
 This isolates script/global variables, preferences and native exit-code state.
 The checks return a completion result containing their actual exit status and
 exact report path. A missing, duplicate or invalid result fails verification.
-KIOSK Installation runs the shared embedded handler and selected Edge/Chrome
+KIOSK Installation runs the shared embedded handler and Edge
 setup with explicit client settings, validates all four inputs before changes,
-and returns one verified operation result. The bundle contains 18 runtime
+and returns one verified operation result. The bundle contains 17 runtime
 resources, including `KioskClients.psd1`, its loader, and the isolated Payment
 Cron Job tool. Client compatibility launchers are not bundled. Pending operations
 remain unavailable.
