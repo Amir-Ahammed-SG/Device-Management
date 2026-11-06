@@ -630,13 +630,7 @@ function Get-ThoroughClientUrlNote {
     if(-not [uri]::TryCreate($value.Trim(),[UriKind]::Absolute,[ref]$uri) -or $uri.Scheme -notin @('https','http')){return ''}
     $origin=$uri.GetLeftPart([UriPartial]::Authority)
     if($origin -ieq $script:KioskClientSettings.Origin){return ''}
-    $expected=[string]$script:KioskClientSettings.ClientType
-    $detected=@()
-    if($script:KioskClientSettings.ContainsKey('ClientOrigins')){
-        $detected=@($script:KioskClientSettings.ClientOrigins.Keys | Where-Object {$script:KioskClientSettings.ClientOrigins[$_] -ieq $origin})
-    }
-    $message=if($detected.Count -eq 1){'Wrong URL: '+$detected[0]+' URL detected; '+$expected+' expected.'}else{'Wrong URL: does not match the selected '+$expected+' client.'}
-    '<small class="client-url-note">'+[Net.WebUtility]::HtmlEncode($message)+'</small>'
+    '<span class="client-url-note">Wrong URL</span>'
 }
 
 function ConvertTo-ThoroughAuditRows {
@@ -739,7 +733,7 @@ function ConvertTo-ThoroughAuditRows {
 
 function Get-ThoroughAuditColumnStyle {
     @'
-    .client-url-note { display:block; margin-top:4px; font-size:0.85em; line-height:1.35; color:#9b1c1c; }
+    .client-url-note { display:table; margin-top:4px; padding:1px 4px; border:1px solid #d59b9b; border-radius:2px; background:#fdecec; color:#9b1c1c; font-size:0.9em; line-height:1.35; white-space:nowrap; }
     .audit-report .audit-setting { background:#f6f7f9; color:#343e49; font-weight:500; }
     .audit-report .audit-required { background:#edf4fb; color:#4b5561; }
     .audit-report .audit-findings { background:#fffbf0; }

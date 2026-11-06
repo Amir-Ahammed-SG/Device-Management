@@ -40,15 +40,15 @@ foreach($client in @('SaaS','Subway')){
                 $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
                 [IO.File]::WriteAllText((Join-Path $fixtureRoot ($client+'-'+$case+'-'+$applyMode+'-'+$mode+'.html')),$html,[Text.UTF8Encoding]::new($false))
                 if($case -eq 'matching'){
-                    Assert-ClientUrl ($html -notmatch '<small class="client-url-note">') 'Matching URL or optional extra permission was falsely labeled a mismatch'
+                    Assert-ClientUrl ($html -notmatch '<span class="client-url-note">') 'Matching URL or optional extra permission was falsely labeled a mismatch'
                     continue
                 }
-                $expected=if($case -eq 'other-client'){'Wrong URL: '+$other+' URL detected; '+$client+' expected.'}else{'Wrong URL: does not match the selected '+$client+' client.'}
-                Assert-ClientUrl ($html.Contains('<small class="client-url-note">'+$expected+'</small>')) ('Missing visible diagnosis: '+$client+'/'+$case+'/'+$mode)
-                if($case -eq 'lookalike'){Assert-ClientUrl (-not $html.Contains('Wrong URL: '+$other+' URL detected')) 'A lookalike domain was mislabeled as a known client'}
+                $expected='Wrong URL'
+                Assert-ClientUrl ($html.Contains('<span class="client-url-note">'+$expected+'</span>')) ('Missing visible diagnosis: '+$client+'/'+$case+'/'+$mode)
+                Assert-ClientUrl ($html -notmatch 'Wrong URL:|URL detected;|does not match the selected') 'The URL badge contains an explanatory sentence'
                 foreach($componentName in @('Kiosk Launch Script','System & Browser Policies')){
                     $component=if($mode -eq 'Audit'){Get-AuditRenderedComponent $html $componentName}else{Get-SettingRenderedComponent $html $componentName}
-                    $notes=@([regex]::Matches($component.Html,'<small class="client-url-note">'))
+                    $notes=@([regex]::Matches($component.Html,'<span class="client-url-note">'))
                     $expectedCount=if($mode -eq 'Fix' -and $applyMode){2}else{1}
                     Assert-ClientUrl ($component.Count -eq 1 -and $notes.Count -eq $expectedCount) 'Diagnosis was missing, duplicated or attached to an optional entry'
                     Assert-ClientUrl ($component.Html.Contains($origin) -and $component.Html.Contains('finding-mismatch')) 'URL or requirement mismatch styling was lost'
