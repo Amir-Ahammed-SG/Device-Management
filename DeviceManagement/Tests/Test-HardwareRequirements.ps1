@@ -56,15 +56,18 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroug
     }
     foreach ($mode in @($false,$true)) {
         $script:ApplyChanges=$mode
-        foreach ($state in @('Normal','Printing','Paused','Offline','Error',1)) {
+        foreach ($state in @('Normal','Printing','Paused','Offline','NotAvailable','Error',1,4096)) {
             Reset-HardwareFixture; $script:printerState=$state
             . $printerBlock
             $row=$script:rows[-1]
             Assert-Hardware (($row.Status -eq 'Pass') -eq ($state -in @('Normal','Printing'))) "Printer status result incorrect: $state"
             Assert-Hardware ($script:queueWrites -eq 0 -and $script:keepWrites -eq 0) 'Printer status inspection changed printer settings'
             Assert-Hardware ($row.Findings -match 'Printer Name:</span> Receipt' -and $row.Findings -notmatch 'Printer detection|Queue paused|Queue settings') 'Printer Findings omit the printer name or include removed fields'
-            Assert-Hardware ($row.Findings -match 'Printer status:</span> (Active|Idle|Error)</div>' -and $row.Findings -match 'Keep printed documents:</span> Enabled') 'Printer Findings do not use the requested status and retention labels'
-            if ($state -notin @('Normal','Printing')) {Assert-Hardware ($row.Findings -match 'Printer status:</span> Error' -and $row.Status -eq 'Fail') 'Printer error was incorrectly reported healthy'}
+            Assert-Hardware ($row.Findings -match 'Printer status:</span> (Active|Idle|Paused|Offline|Not available|Error)</div>' -and $row.Findings -match 'Keep printed documents:</span> Enabled') 'Printer Findings do not use the requested status and retention labels'
+            if ($state -notin @('Normal','Printing')) {
+                $expected=switch([string]$state){'Paused'{'Paused'};'1'{'Paused'};'Offline'{'Offline'};'NotAvailable'{'Not available'};'4096'{'Not available'};default{'Error'}}
+                Assert-Hardware ($row.Findings.Contains('Printer status:</span> '+$expected+'</div>') -and $row.Status -eq 'Fail') 'An unhealthy printer lost its specific state or was reported healthy'
+            }
         }
         foreach ($state in @('Normal','Paused')) {
             Reset-HardwareFixture; $script:printerState=$state; $script:keepPrinted=$false

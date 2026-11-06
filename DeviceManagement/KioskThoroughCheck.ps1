@@ -3492,9 +3492,12 @@ function Get-PrinterHealth {
     $state = [string]$Printer.PrinterStatus
     [uint32]$statusBits = 0
     $numericStatus = [uint32]::TryParse($state, [ref]$statusBits)
-    $paused = if ($numericStatus) { ($statusBits -band 1) -ne 0 } else { $state -match '(^|,\s*)Paused($|,)' }
-    $offline = ($Printer.WorkOffline -eq $true -or $CimPrinter.WorkOffline -eq $true -or $CimPrinter.PrinterStatus -eq 7 -or $state -match 'Offline' -or ($numericStatus -and ($statusBits -band 128) -ne 0))
-    $reportedError = ($CimPrinter.DetectedErrorState -ge 3)
+    $paused = ($CimPrinter.ExtendedPrinterStatus -eq 7) -or $(if ($numericStatus) { ($statusBits -band 1) -ne 0 } else { $state -match '(^|,\s*)Paused($|,)' })
+    $offline = ($Printer.WorkOffline -eq $true -or $CimPrinter.WorkOffline -eq $true -or $CimPrinter.PrinterStatus -eq 7 -or $CimPrinter.ExtendedPrinterStatus -eq 8 -or $state -match 'Offline' -or ($numericStatus -and ($statusBits -band 128) -ne 0))
+    # MSFT_Printer uses a bit mask; Win32_Printer ExtendedPrinterStatus uses
+    # separate enum values. Preserve unavailable information before generic error.
+    $unavailable = ($state -match '(?i)(^|,\s*)Not\s*Available($|,)' -or ($numericStatus -and ($statusBits -band 4096) -ne 0) -or $CimPrinter.ExtendedPrinterStatus -eq 11)
+    $reportedError = ($CimPrinter.DetectedErrorState -ge 3 -or $CimPrinter.ExtendedPrinterStatus -eq 9)
     # Busy / Printing / Processing are working states, not an offline printer.
     if ($numericStatus) {
         [uint32]$workingBits = 256 + 512 + 1024 + 8192 + 16384 + 32768 + 65536 + 16777216
@@ -3505,7 +3508,7 @@ function Get-PrinterHealth {
     }
     $active = ($state -match 'Printing|Busy|Processing|Initializing|WarmingUp|IOActive' -or
         ($numericStatus -and ($statusBits -band (256 + 512 + 1024 + 16384 + 32768)) -ne 0) -or $CimPrinter.PrinterStatus -in @(4, 5))
-    $displayState = if ($offline) { 'Offline' } elseif ($paused) { 'Paused' } elseif (-not $healthy -or $reportedError) { 'Error' } elseif ($active) { 'Active' } else { 'Idle' }
+    $displayState = if ($unavailable) { 'Not available' } elseif ($offline) { 'Offline' } elseif ($paused) { 'Paused' } elseif (-not $healthy -or $reportedError) { 'Error' } elseif ($active) { 'Active' } else { 'Idle' }
     [PSCustomObject]@{ Paused = [bool]$paused; Healthy = [bool]($displayState -in @('Idle','Active')); State = $displayState }
 }
 
@@ -3528,7 +3531,7 @@ try {
             $cimPrinter = @($cimPrinters | Where-Object { $_.Name -eq $pName }) | Select-Object -First 1
             if (-not $cimPrinter) { throw 'Win32_Printer state is unavailable for this queue.' }
             $health = Get-PrinterHealth -Printer $ptr -CimPrinter $cimPrinter
-            $printerState = if ($health.Healthy) { $health.State } else { 'Error' }
+            $printerState = $health.State
             $keepPrinted = $ptr.KeepPrintedJobs
             if ($null -eq $keepPrinted) { $keepPrinted = $cimPrinter.KeepPrintedJobs }
             if ($null -eq $keepPrinted) { throw 'Cannot read Keep printed documents setting.' }
@@ -3543,10 +3546,10 @@ try {
                 $printerChanges.Add('Enabled Keep printed documents')
             }
 
-            $printerState = if ($health.Healthy) { $health.State } else { 'Error' }
+            $printerState = $health.State
             if ($health.Healthy -and $keepPrinted) { $printerStatus = 'Pass' }
             if (-not $keepPrinted) { $printerChanges.Add('Enable Keep printed documents in Apply Mode') }
-            if ($health.State -eq 'Offline') { $printerChanges.Add('Check printer connection') }
+            if ($health.State -in @('Offline','Not available')) { $printerChanges.Add('Check printer connection and availability') }
             elseif ($printerState -in @('Error','Paused')) { $printerChanges.Add('Check printer status manually') }
             if ($printerChanges.Count -gt 0) { $printerAction = $printerChanges -join '; ' }
         } catch {
