@@ -73,6 +73,7 @@ $fixtures=@(
     'Test-FixFinalSettingLayout.ps1',
     'Test-PayoutScheduler.ps1',
     'Test-ClientDetailsHeader.ps1',
+    'Test-ConsoleKioskIdentity.ps1',
     'Test-LauncherInspection.ps1',
     'Test-KioskLaunchTask.ps1',
     'Test-DiagnosticCorrections.ps1',

@@ -1500,15 +1500,52 @@ function Get-ThoroughReportTitle {
     'Thorough Check Audit Report'
 }
 
+function Get-ThoroughConsoleKioskId {
+    # Read existing profiles and literal launcher URLs only. Never run setup,
+    # account policy checks, launcher repair, or the launcher itself for a header.
+    try {
+        $users=@(Get-LocalUser -ErrorAction Stop)
+        $active=@($users | Where-Object {$_.Enabled})
+        if($active.Count){$users=$active}
+        $autoUser=try {Get-KioskAutoLoginUserName} catch {''}
+        $selected=@($users | Where-Object {$_.Name -ieq $autoUser})
+        $paths=@()
+        if($selected.Count -eq 1){
+            $profilePath=Get-KioskProfilePath -UserName $selected[0].Name
+            if(-not $profilePath){return 'Not verified'}
+            $paths=@(Join-Path $profilePath 'Scripts\LaunchKiosk.ps1')
+        }else{
+            $paths=@(foreach($user in $users){
+                $profilePath=Get-KioskProfilePath -UserName $user.Name
+                if($profilePath){
+                    $candidatePath=Join-Path $profilePath 'Scripts\LaunchKiosk.ps1'
+                    if(Test-Path -LiteralPath $candidatePath -PathType Leaf -ErrorAction Stop){$candidatePath}
+                }
+            })
+        }
+        if($paths.Count -ne 1 -or -not (Test-Path -LiteralPath $paths[0] -PathType Leaf -ErrorAction Stop)){return 'Not verified'}
+        $tokens=$null;$parseErrors=$null
+        [void][Management.Automation.Language.Parser]::ParseFile($paths[0],[ref]$tokens,[ref]$parseErrors)
+        if($parseErrors.Count){return 'Not verified'}
+        $inspection=Add-LauncherReportDetails (New-CheckResult 'Pass' '' '') $paths[0] ''
+        $url=[string]$inspection.LauncherValues['URL']
+        $id=[string]$inspection.LauncherValues['KIOSK ID']
+        if($url -eq 'Not detected' -or $id -in @('','Not detected','Not verified')){return 'Not verified'}
+        $resolved=Resolve-KioskUrl -Url $url
+        if(@($resolved.BlockedIssues).Count){return 'Not verified'}
+        return $id
+    }catch{return 'Not verified'}
+}
+
 function Write-ThoroughConsoleHeader {
-    param ([string]$Client, [string]$Device, [string]$Branch, [bool]$IsApply, [bool]$IsFinal=$false)
+    param ([string]$Client, [string]$Device, [string]$Branch, [bool]$IsApply, [bool]$IsFinal=$false, [string]$KioskId)
     $mode=if ($IsFinal) { 'Thorough Check Report' } elseif ($IsApply) { 'Apply Fix' } else { 'Audit' }
     Write-Host ''
     Write-Host ('-'*60) -ForegroundColor DarkGray
     Write-ThoroughConsoleLine ('SELISE | '+(Get-ThoroughReportTitle -IsApply $IsApply -IsFinal $IsFinal).ToUpperInvariant()) -Indent ' ' -Color Cyan
     Write-Host ('-'*60) -ForegroundColor DarkGray
     Write-ThoroughConsoleLine ('Client : '+$Client) -Indent ' '
-    Write-ThoroughConsoleLine ('Device : '+$Device) -Indent ' '
+    Write-ThoroughConsoleLine ('Device : '+(Get-ThoroughReportDeviceLabel -DeviceType $Device -LauncherKioskId $KioskId)) -Indent ' '
     Write-ThoroughConsoleLine ('Mode   : '+$mode) -Indent ' '
     if (-not [string]::IsNullOrWhiteSpace($Branch) -and $Branch -ne 'Not provided') {
         Write-ThoroughConsoleLine ('Branch : '+$Branch) -Indent ' '
@@ -3417,7 +3454,7 @@ $applyRequested=[bool]$script:ApplyChanges
 $beforeApplyRows=@()
 $script:BeforeApplyInspection=$false
 
-Write-ThoroughConsoleHeader -Client $script:KioskClientSettings.ClientType -Device $DeviceType -Branch $ClientLocation -IsApply $script:ApplyChanges -IsFinal ([bool]$FinalReport)
+Write-ThoroughConsoleHeader -Client $script:KioskClientSettings.ClientType -Device $DeviceType -Branch $ClientLocation -IsApply $script:ApplyChanges -IsFinal ([bool]$FinalReport) -KioskId (Get-ThoroughConsoleKioskId)
 
 # Each component reports local failures. A finalizer also saves partial results after unexpected errors.
 try {
