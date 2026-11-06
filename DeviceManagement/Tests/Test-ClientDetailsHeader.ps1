@@ -1,3 +1,5 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Synthetic observations and report rendering only; no device operations.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -17,7 +19,7 @@ $cases=@(
 foreach($client in @('SaaS','Subway')){
     $name=if($client -eq 'SaaS'){'SaaSKioskThoroughCheckScript.ps1'}else{'SubwayKioskThoroughCheck.ps1'}
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path (Split-Path $projectRoot -Parent) $name),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $projectRoot $name),[ref]$tokens,[ref]$errors)
     if($errors.Count){throw ($errors | Out-String)}
     . ([scriptblock]::Create(($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | ForEach-Object {$_.Extent.Text}) -join "`n"))
     $script:ApplyChanges=$false

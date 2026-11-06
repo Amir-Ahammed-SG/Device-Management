@@ -1,13 +1,15 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 # Run only definitions and the actual report finalizer. Never run device-check bodies.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $fixtureRoot=Join-Path $projectRoot ('output\single-file-reports\integration\'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($fixtureRoot)
 function Assert-Combined {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
 function Load-Definitions {param([string]$Path)
-    $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($Path,[ref]$tokens,[ref]$errors)
+    $tokens=$null;$errors=$null;$ast=[KioskTestSource]::ParseFile($Path,[ref]$tokens,[ref]$errors)
     if($errors.Count){throw ($errors | Out-String)}
     [pscustomobject]@{Ast=$ast;Code=(($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | ForEach-Object {$_.Extent.Text}) -join "`r`n")}
 }
@@ -42,7 +44,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         Assert-Combined (($auditRows.ToArray() | ConvertTo-Json -Depth 6 -Compress) -ceq $before) 'Rendering changed the observed device results.'
         Assert-Combined ((Test-CanApply) -eq ($mode -eq 'Fix')) 'Rendering a Final view changed the execution repair gate.'
         Assert-Combined (@(Get-ChildItem -LiteralPath $outputFolder -File).Count -eq 1) 'Modes created multiple persistent files.'
-        $document=[IO.File]::ReadAllText($reportPath)
+        $document=[KioskTestSource]::ReadAllText($reportPath)
         $state=Read-ThoroughReportBundleState $document
         Assert-Combined ($state.LatestMode -ceq $mode -and $state.ClientType -ceq $client) 'Wrong mode or client was saved.'
         if($mode -eq 'Audit'){
@@ -65,13 +67,13 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         Assert-Combined ((Get-FileHash -LiteralPath $reportPath -Algorithm SHA256).Hash -ceq $hash) 'Launcher rewrote the combined report.'
     }
     $script:ApplyChanges=$false;$FinalReport=$false;$script:GenerateFixtureReport=$false
-    $before=[IO.File]::ReadAllText($reportPath);. $render
-    Assert-Combined ([IO.File]::ReadAllText($reportPath) -ceq $before) 'Declining an Audit report updated the existing file.'
+    $before=[KioskTestSource]::ReadAllText($reportPath);. $render
+    Assert-Combined ([KioskTestSource]::ReadAllText($reportPath) -ceq $before) 'Declining an Audit report updated the existing file.'
     # First-ever Apply has no fabricated Audit; it still provides Fix and Final.
     $script:ApplyChanges=$true;$FinalReport=$false;$outputFolder=Join-Path $fixtureRoot ($client+'-ApplyFirst');[void][IO.Directory]::CreateDirectory($outputFolder)
     $reportPath=Get-KioskReportPath -Folder $outputFolder -Client '' -Computer $env:COMPUTERNAME -IsApply $true -RunId 'FIRST-APPLY'
     . $render
-    $state=Read-ThoroughReportBundleState ([IO.File]::ReadAllText($reportPath))
+    $state=Read-ThoroughReportBundleState ([KioskTestSource]::ReadAllText($reportPath))
     Assert-Combined ($null -eq $state.Reports.Audit -and $null -ne $state.Reports.Fix -and $null -ne $state.Reports.Final) 'Apply-first invented Audit or omitted post-fix Final.'
     Write-Output ('PASS: '+$client+' real finalizer persists one file across modes; Apply creates a post-fix Final; fresh Final is read-only; declined Audit, Apply-first and launcher validation are truthful.')
 }

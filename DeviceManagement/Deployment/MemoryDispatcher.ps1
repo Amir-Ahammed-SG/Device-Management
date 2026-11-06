@@ -10,7 +10,7 @@ function Invoke-ConfiguredOperation {
     }
     if ($Context.Operation -eq 'KioskInstallation' -and $Operation.Id -eq 'KioskInstallation' -and $Context.ClientType -in @('SaaS','Subway') -and $Context.DeviceType -eq 'KIOSK' -and $Context.Mode -eq 'Apply') {
         try {
-            $handlerName='DeviceManagement/Installations/KIOSK/'+$Context.ClientType+'-Install.ps1'
+            $handlerName='DeviceManagement/Installations/KIOSK/Install.ps1'
             if (-not $script:MemoryBundle.Files.ContainsKey($handlerName)) { throw 'The embedded installation handler is missing.' }
             $execution=Invoke-DeviceManagementMemoryScript -Code $script:MemoryBundle.Files[$handlerName] -Bundle $script:MemoryBundle -RuntimeCode $script:MemoryRuntime -Parameters @{Context=$Context}
             $results=@($execution.Output)
@@ -25,8 +25,8 @@ function Invoke-ConfiguredOperation {
     if ($Context.Operation -ne 'ThoroughCheck' -or $Operation.Id -ne 'ThoroughCheck' -or $Context.DeviceType -ne 'KIOSK' -or $Context.ClientType -notin @('SaaS', 'Subway') -or $Context.Mode -notin @('Audit', 'Apply', 'Final')) {
         return New-OperationResult -Status Fail -Message 'Unsupported in-memory operation context. No checks were started.' -Context $Context
     }
-    $sourceName = if ($Context.ClientType -eq 'Subway') { 'SubwayKioskThoroughCheck.ps1' } else { 'SaaSKioskThoroughCheckScript.ps1' }
-    $arguments = @{ ArchitectureRun = $true; DeviceType = 'KIOSK' }
+    $sourceName = 'DeviceManagement/KioskThoroughCheck.ps1'
+    $arguments = @{ ClientType = $Context.ClientType; ArchitectureRun = $true; DeviceType = 'KIOSK' }
     if ($Context.Mode -eq 'Apply') {
         $arguments.Apply = $true
 

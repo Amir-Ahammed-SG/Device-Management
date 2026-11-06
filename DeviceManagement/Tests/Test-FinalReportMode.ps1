@@ -1,8 +1,10 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 # Read definitions and render fixtures only. Never execute device checks.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $previewRoot=Join-Path $projectRoot 'output\final-mode-verification'
 [void][IO.Directory]::CreateDirectory($previewRoot)
 function Assert-Final {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
@@ -21,7 +23,7 @@ $rejected=$false
 try{Assert-RunSelection $clients $operations 'SaaS' 'KIOSK' 'PaymentService' 'Final' | Out-Null}catch{$rejected=$true}
 Assert-Final $rejected 'Final could be routed to a payment installation.'
 
-$handler=[IO.File]::ReadAllText((Join-Path $projectRoot 'Checks\KIOSK\ThoroughCheck.ps1'))
+$handler=[KioskTestSource]::ReadAllText((Join-Path $projectRoot 'Checks\KIOSK\ThoroughCheck.ps1'))
 $argumentStart=$handler.IndexOf('$arguments = @(')
 $argumentEnd=$handler.IndexOf('$startedAt =',$argumentStart)
 $buildArguments=[scriptblock]::Create($handler.Substring($argumentStart,$argumentEnd-$argumentStart))
@@ -34,9 +36,9 @@ Assert-Final (-not (Test-Path -LiteralPath $completionPath)) 'Argument construct
 
 foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $path=Join-Path $sourceRoot $sourceName
-    $text=[IO.File]::ReadAllText($path)
+    $text=[KioskTestSource]::ReadAllText($path)
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile($path,[ref]$tokens,[ref]$errors)
     Assert-Final ($errors.Count -eq 0) 'Client source failed to parse.'
     Assert-Final ($ast.ParamBlock.Parameters.Name.VariablePath.UserPath -contains 'FinalReport') 'Client has no FinalReport parameter.'
     $functions=$ast.FindAll({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
@@ -88,7 +90,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     Assert-Final ($generateReport -and (Test-Path -LiteralPath $reportPath)) 'Final did not save a report automatically.'
     Assert-Final (-not (Test-CanApply)) 'Rendering enabled Apply.'
     Assert-Final (($auditRows.ToArray() | ConvertTo-Json -Depth 8 -Compress) -ceq $before) 'Rendering changed recorded observations.'
-    $html=[IO.File]::ReadAllText($reportPath)
+    $html=[KioskTestSource]::ReadAllText($reportPath)
     Assert-Final ($html.Contains('<h1>THOROUGH CHECK REPORT</h1>')) 'Final title is incorrect.'
     Assert-Final ($html -match '<th>Restaurant ID</th><td>Not detected</td>' -and $html -notmatch '<th>Required Configuration</th>|<th>Findings</th>') 'Final metadata or columns are incorrect.'
     Assert-Final ($html.Contains('final-report setting-report') -and $html.Contains('background:#fffbf0')) 'Final is missing the approved column theme.'

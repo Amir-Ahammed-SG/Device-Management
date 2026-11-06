@@ -1,7 +1,9 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Fixture task definitions only. Never query or execute real scheduled tasks/services.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $fixtureRoot=Join-Path $projectRoot 'output\task-scheduler\fixtures'
 [void][IO.Directory]::CreateDirectory($fixtureRoot)
 function Assert-TaskCheck {param([bool]$Condition,[string]$Message)if(-not $Condition){throw $Message}}
@@ -27,7 +29,7 @@ function New-TaskFixture {
 foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $source=Join-Path $sourceRoot $sourceName
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile($source,[ref]$tokens,[ref]$errors)
     Assert-TaskCheck ($errors.Count -eq 0) 'Client source parse failed.'
     $definitions=$ast.FindAll({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($definitions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
@@ -157,7 +159,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         $rowJson=$auditRows.ToArray() | ConvertTo-Json -Depth 8 -Compress
         $reportPath=Join-Path $outputFolder ($client+'-'+$mode+'.html')
         . $render
-        $html=[IO.File]::ReadAllText($reportPath)
+        $html=[KioskTestSource]::ReadAllText($reportPath)
         Assert-TaskCheck ($html.Contains('3. Core Background Services') -and $html.Contains('Payment Service Restart Task')) 'Task component was lost in rendered output.'
         Assert-TaskCheck ($html.Contains('data-command="taskschd.msc"') -eq ($mode -ne 'Final')) 'Task command box did not follow the report layout.'
         Assert-TaskCheck ($html.Contains('<th>Status</th>') -eq ($mode -eq 'Final')) 'Task component uses the wrong mode columns.'

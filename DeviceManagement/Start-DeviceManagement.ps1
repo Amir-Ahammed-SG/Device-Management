@@ -11,7 +11,7 @@ param ()
 $ErrorActionPreference = 'Stop'
 $architectureRoot = $PSScriptRoot
 $corePath = Join-Path $architectureRoot 'Core'
-foreach ($module in @('Validation.psm1', 'Context.psm1', 'Menu.psm1', 'Reporting.psm1', 'PackageLoader.psm1')) {
+foreach ($module in @('Validation.psm1', 'Context.psm1', 'Menu.psm1', 'Reporting.psm1', 'PackageLoader.psm1', 'KioskClient.psm1')) {
     Import-Module (Join-Path $corePath $module) -Force -ErrorAction Stop
 }
 $clientsConfiguration = Import-PowerShellDataFile (Join-Path $architectureRoot 'Config\Clients.psd1')
@@ -22,15 +22,16 @@ $paymentPackagesConfiguration = Import-PowerShellDataFile (Join-Path $architectu
 $thoroughCheckOperation = @($operationsConfiguration.Operations | Where-Object { $_.Id -eq 'ThoroughCheck' }) | Select-Object -First 1
 if (-not $thoroughCheckOperation) { throw 'The Thorough Check operation is missing from Config\Operations.psd1.' }
 $thoroughCheckHandler = Join-Path $architectureRoot 'Checks\KIOSK\ThoroughCheck.ps1'
-$workspaceRoot = Split-Path $architectureRoot -Parent
+$sourceRoot = $architectureRoot
 $thoroughCheckSources = [ordered]@{
-    SaaS   = Join-Path $workspaceRoot 'SaaSKioskThoroughCheckScript.ps1'
-    Subway = Join-Path $workspaceRoot 'SubwayKioskThoroughCheck.ps1'
+    SaaS   = Join-Path $sourceRoot 'KioskThoroughCheck.ps1'
+    Subway = Join-Path $sourceRoot 'KioskThoroughCheck.ps1'
 }
 if (-not (Test-Path -LiteralPath $thoroughCheckHandler -PathType Leaf)) {
     throw "The Thorough Check handler is missing: $thoroughCheckHandler"
 }
 foreach ($sourceEntry in $thoroughCheckSources.GetEnumerator()) {
+    [void](Get-KioskClientSettings -ClientType $sourceEntry.Key -ProjectRoot $architectureRoot)
     if (-not (Test-Path -LiteralPath $sourceEntry.Value -PathType Leaf)) {
         throw "The $($sourceEntry.Key) Thorough Check source is missing: $($sourceEntry.Value)"
     }

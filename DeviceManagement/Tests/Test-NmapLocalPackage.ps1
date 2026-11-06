@@ -1,9 +1,11 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 $projectRoot = Split-Path $PSScriptRoot -Parent
 # Run isolated check blocks with mocked installers. Never install Nmap or scan.
 $ErrorActionPreference = 'Stop'
-$parent = Split-Path $projectRoot -Parent
+$parent = $projectRoot
 $fixtureRoot = Join-Path $projectRoot ('output\nmap-tests\run-' + [guid]::NewGuid().ToString('N'))
-$fixturePackage = Join-Path $fixtureRoot 'DeviceManagement\Packages\Nmap'
+$fixturePackage = Join-Path $fixtureRoot 'Packages\Nmap'
 New-Item -ItemType Directory -Path $fixturePackage -Force | Out-Null
 $fixtureBytes = [Text.Encoding]::UTF8.GetBytes('Fixture installer bytes. This is not an executable.')
 $fixtureBinary = Join-Path $fixturePackage 'nmap-7.992-setup.exe'
@@ -25,9 +27,9 @@ function Reset-NmapFixture {
 }
 foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')) {
     $sourcePath=Join-Path $parent $sourceName
-    $source=[IO.File]::ReadAllText($sourcePath)
+    $source=[KioskTestSource]::ReadAllText($sourcePath)
     $tokens=$null; $errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile($sourcePath,[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile($sourcePath,[ref]$tokens,[ref]$errors)
     Assert-Nmap ($errors.Count -eq 0) "Parser errors in $sourceName"
     $start=$source.IndexOf('# 4.3 Nmap Tool'); $end=$source.IndexOf('# 4.4 lodctr /R', $start)
     $block=$source.Substring($start,$end-$start)
@@ -150,7 +152,7 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroug
 # Verify acquisition independently with fake downloads and signatures.
 $savePath=Join-Path $projectRoot 'Packages\Nmap\Save-NmapPackage.ps1'
 $tokens=$null; $errors=$null
-$saveAst=[Management.Automation.Language.Parser]::ParseFile($savePath,[ref]$tokens,[ref]$errors)
+$saveAst=[KioskTestSource]::ParseFile($savePath,[ref]$tokens,[ref]$errors)
 Assert-Nmap ($errors.Count -eq 0) 'Preparation script did not parse'
 $saveDefinition=$saveAst.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Save-NmapPackage'},$true)
 . ([scriptblock]::Create($saveDefinition.Extent.Text))
@@ -186,8 +188,8 @@ foreach ($failure in @('digest','signature','download')) {
     Assert-Nmap (-not (Test-Path -LiteralPath (Join-Path $failedDirectory 'NmapPackage.psd1'))) 'Failed acquisition left a manifest'
     Assert-Nmap (@(Get-ChildItem -LiteralPath $failedDirectory -Filter '*.exe' -Force).Count -eq 0) 'Failed acquisition left executable bytes'
 }
-$oldManifest=[IO.File]::ReadAllText((Join-Path $acquisition 'NmapPackage.psd1'))
+$oldManifest=[KioskTestSource]::ReadAllText((Join-Path $acquisition 'NmapPackage.psd1'))
 $rejected=$false
 try { Save-NmapPackage -PackageDirectory $acquisition -Version '7.991' | Out-Null } catch { $rejected=$true }
-Assert-Nmap ($rejected -and [IO.File]::ReadAllText((Join-Path $acquisition 'NmapPackage.psd1')) -ceq $oldManifest) 'Failed preparation changed the existing package manifest'
+Assert-Nmap ($rejected -and [KioskTestSource]::ReadAllText((Join-Path $acquisition 'NmapPackage.psd1')) -ceq $oldManifest) 'Failed preparation changed the existing package manifest'
 Microsoft.PowerShell.Utility\Write-Host 'PASS: Package acquisition, official-source checksum/publisher checks, idempotency, cleanup and preservation after failed downloads'

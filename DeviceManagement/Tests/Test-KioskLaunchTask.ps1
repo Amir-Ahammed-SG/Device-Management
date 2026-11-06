@@ -1,8 +1,10 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Mock Task Scheduler registration; native COM is used only for in-memory definitions.
 # No task is registered, deleted, started, or changed by this fixture.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $outputRoot=Join-Path $projectRoot 'output/kiosk-launch-task'
 $fixtureRoot=Join-Path $outputRoot ('profile-'+[guid]::NewGuid().ToString('N'))
 $launcher=Join-Path $fixtureRoot 'Scripts/LaunchKiosk.ps1'
@@ -34,7 +36,7 @@ $caseCount=0
 foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $tokens=$null;$errors=$null
     $path=Join-Path $sourceRoot $name
-    $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile($path,[ref]$tokens,[ref]$errors)
     Assert-Task ($errors.Count -eq 0) 'Source parsing failed'
     $bytes=[IO.File]::ReadAllBytes($path)
     Assert-Task (-not ($bytes[0] -eq 239 -and $bytes[1] -eq 187 -and $bytes[2] -eq 191)) 'Client source has a BOM'
@@ -42,7 +44,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     . ([scriptblock]::Create(($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|ForEach-Object {$_.Extent.Text}) -join "`n"))
     $registrationCommands=@((Get-Command Register-MissingKioskLaunchTask).ScriptBlock.Ast.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)|ForEach-Object {$_.GetCommandName()})
     Assert-Task (-not @($registrationCommands|Where-Object {$_ -match 'Unregister-|Start-ScheduledTask|Register-ScheduledTask'}).Count) 'Registration can replace or start an existing task'
-    $source=[IO.File]::ReadAllText($path)
+    $source=[KioskTestSource]::ReadAllText($path)
     Assert-Task ($source.Contains('Invoke-KioskLaunchTaskCheck -UserName $kioskUser -Account $kioskAccount')) 'The task check is not connected to the selected account'
     function Get-LocalAccount {param($UserName)
         if($script:ContextMode -eq 'account-missing'){return $null}

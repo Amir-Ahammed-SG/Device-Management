@@ -1,16 +1,18 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 # Functions and recorded fixtures only; never query or change Windows services.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $outputRoot=Join-Path $projectRoot 'output\final-service-recovery\fixtures'
 [void][IO.Directory]::CreateDirectory($outputRoot)
 $utf8=New-Object Text.UTF8Encoding($false)
 function Assert-Recovery([bool]$Condition,[string]$Message){if(-not $Condition){throw $Message}}
 foreach($file in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $path=Join-Path $sourceRoot $file;$hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
-    $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
+    $tokens=$null;$errors=$null;$ast=[KioskTestSource]::ParseFile($path,[ref]$tokens,[ref]$errors)
     Assert-Recovery (-not $errors.Count) 'Client does not parse.'
     $definitions=$ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($definitions | ForEach-Object {$_.Extent.Text}) -join [Environment]::NewLine))

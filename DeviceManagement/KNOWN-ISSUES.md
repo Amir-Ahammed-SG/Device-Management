@@ -15,10 +15,14 @@
    [preparation status](Docs/Validation/Nmap-Package-Status.md). Existing Nmap is
    retained; the public installer requires interaction. Fully silent installation
    requires Nmap OEM.
-6. The last parent regression suite has 36 existing failures; see
+6. The legacy regression suite (now under `Tests/Legacy`) has existing failures; see
    [validation status](Docs/Validation/README.md). Isolated tests do not replace
    a controlled test-PC run for services, registry, profiles and installers.
 
-The local launcher requires both client check sources beside the parent of its
-project directory. CDN memory delivery embeds these sources. It does not include
+7. Existing report-layout restore records target the former separate client
+   sources. The restore tool rejects them against the shared engine before
+   writing. They must be reviewed and migrated before future layout restoration.
+
+The local launcher uses the shared kiosk engine and client configuration inside
+its own project directory. CDN memory delivery embeds these sources. It does not include
 a local Windows 10 Nmap installer; that installer remains a separate manual step.

@@ -1,10 +1,10 @@
 # Chrome kiosk setup copies
 
-Choose **SaaS or Subway > KIOSK > KIOSK Installation > Google Chrome**. The browser menu also offers **Microsoft Edge**, with Back and Exit before any setup starts. The release bundle embeds both browser setups for both clients. The Chrome scripts can still run directly. Thorough Check still expects Edge for browser-specific checks and fixes, so it cannot validate these Chrome settings.
+Google Chrome is currently **Not available** in the installation menu. The release bundle retains both browser setups for both clients, and the Chrome scripts can still run directly. Thorough Check still expects Edge for browser-specific checks and fixes, so it cannot validate these Chrome settings.
 
 | Client | Standalone Chrome setup | Kiosk origin | Desktop shortcut |
 | --- | --- | --- | --- |
-| SaaS | `Installations\KIOSK\SaaS\Kiosk_Mode_Setup_Chrome.ps1` | `https://kiosk.ordermonkey.com` | No, matching SaaS setup |
+| SaaS | `Installations\KIOSK\SaaS\Kiosk_Mode_Setup_Chrome.ps1` | `https://kiosk.ordermonkey.com` | `LaunchKiosk.lnk`, updated and verified |
 | Subway | `Installations\KIOSK\Subway\Kiosk_Mode_Setup_Chrome.ps1` | `https://kiosk.subway.ch` | `LaunchKiosk.lnk`, updated and verified |
 
 Run the appropriate command from the DeviceManagement folder in **Administrator, 64-bit Windows PowerShell 5.1**:
@@ -29,13 +29,13 @@ The account, Restaurant ID, Kiosk ID, and Hostname prompts match the Edge copies
 - Uses Chrome `--kiosk`, `--incognito`, `--disable-pinch`, and `--overscroll-history-navigation=0`, with quoted URL and profile arguments. `Scripts\ChromeKioskProfile` is a separate profile directory, created by Chrome on first launch. Chrome opens an Incognito kiosk session; existing Edge sessions and Chrome's ordinary profile are not migrated. Re-run Chrome KIOSK Installation on existing kiosks to update their saved launcher, then close existing Chrome kiosk windows and relaunch.
 - Disables Chrome translation and allows the appropriate kiosk origin to access the local network under `HKLM:\SOFTWARE\Policies\Google\Chrome`. Other allowlist entries are retained. These browser policies apply to Chrome machine-wide. Local-network permission is distinct from general popup blocking.
 - Sets local-account auto-login username, computer/domain, and AutoAdminLogon. Existing DefaultPassword values are preserved. A stored nonempty password for another account stops setup before writes. If DefaultPassword is absent, setup uses an empty value as in the original passwordless-account setup. A password-protected account needs correctly configured auto-login credentials separately; saved registry settings alone do not prove sign-in works.
-- For Subway, saves and verifies the desktop shortcut targeting the startup BAT, including when a shortcut already exists.
+- For both clients, saves and verifies the desktop shortcut targeting the startup BAT, including when a shortcut already exists.
 
 Chrome setup does not write Edge policies, Edge Visual Search settings, Windows swipe/touchpad settings, or restart Explorer. Browser gestures are handled by Chrome launch arguments. Chrome fullscreen kiosk mode does not configure Windows Assigned Access or prevent Windows keyboard shortcuts.
 
 ## Verification and recovery
 
-All prerequisites and in-memory snapshots precede writes. Setup verifies the saved registry values and types, launcher bytes, and Subway shortcut properties before reporting success. On failure it attempts to restore the prior registry values and exact file bytes; rollback failures are reported. Newly created empty directories and registry keys may remain. No credential snapshot is written to disk.
+All prerequisites and in-memory snapshots precede writes. Setup verifies the saved registry values and types, launcher bytes, and desktop shortcut properties before reporting success. On failure it attempts to restore the prior registry values and exact file bytes; rollback failures are reported. Newly created empty directories and registry keys may remain. No credential snapshot is written to disk.
 
 Local validation covers both clients, all three Chrome locations, input retries, launcher quoting, existing credentials and allowlists, repeated setup, missing prerequisites, ineffective writes, rollback, and WhatIf. Existing Edge installation tests are also retained. These tests simulate Windows mutations and do not install anything on the development computer.
 

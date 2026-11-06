@@ -17,9 +17,9 @@ if (-not [Environment]::Is64BitProcess) {
     return New-OperationResult -Status Fail -Message 'Run the device-management launcher from 64-bit Windows PowerShell.' -Context $Context
 }
 
-$workspaceRoot = Split-Path ([IO.Path]::GetFullPath($Context.RootPath)) -Parent
-$sourceName = if ($Context.ClientType -eq 'Subway') { 'SubwayKioskThoroughCheck.ps1' } else { 'SaaSKioskThoroughCheckScript.ps1' }
-$legacyScript = Join-Path $workspaceRoot $sourceName
+$sourceRoot = [IO.Path]::GetFullPath($Context.RootPath)
+$sourceName = 'KioskThoroughCheck.ps1'
+$legacyScript = Join-Path $sourceRoot $sourceName
 if (-not (Test-Path -LiteralPath $legacyScript -PathType Leaf)) {
     return New-OperationResult -Status Fail -Message "$($Context.ClientType) KIOSK Thorough Check source is missing: $legacyScript" -Context $Context
 }
@@ -28,6 +28,7 @@ $arguments = @(
     '-NoProfile',
     '-ExecutionPolicy', 'Bypass',
     '-File', $legacyScript,
+    '-ClientType', $Context.ClientType,
     '-ArchitectureRun',
     '-DeviceType', 'KIOSK'
 )

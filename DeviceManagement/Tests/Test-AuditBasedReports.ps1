@@ -1,14 +1,16 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 # Real renderer and report persistence, disposable data only. No device checks.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $fixtureRoot=Join-Path $projectRoot ('output\audit-based-reports\fixtures\'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($fixtureRoot)
 function Assert-AuditView {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
 function Decode-View {param($Snapshot) [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Snapshot.HtmlBase64))}
 foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
-    $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $name),[ref]$tokens,[ref]$errors)
+    $tokens=$null;$errors=$null;$ast=[KioskTestSource]::ParseFile((Join-Path $sourceRoot $name),[ref]$tokens,[ref]$errors)
     Assert-AuditView ($errors.Count -eq 0) 'Source failed parsing.'
     . ([scriptblock]::Create((($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | ForEach-Object {$_.Extent.Text}) -join "`r`n")))
     Use-SettingLayoutRuleAssertions -SourceName $name
@@ -27,7 +29,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     $fix=New-ThoroughReportSnapshot -Rows $rows -DisplayMode Fix -AuditSource $audit -ClientLocation 'Audit branch' -DeviceType KIOSK -Hostname 'AUDIT-HOST'
     $final=New-ThoroughReportSnapshot -Rows $rows -DisplayMode Final -AuditSource $audit -ClientLocation 'Audit branch' -DeviceType KIOSK -Hostname 'AUDIT-HOST'
     [void](Save-ThoroughReportBundle $path $client 'FIXTURE-PC' @($audit,$fix,$final) Audit)
-    $document=[IO.File]::ReadAllText($path);$state=Read-ThoroughReportBundleState $document
+    $document=[KioskTestSource]::ReadAllText($path);$state=Read-ThoroughReportBundleState $document
     [IO.File]::WriteAllText((Join-Path $projectRoot ('output\audit-based-reports\'+$client+'-Audit-Based-Report.html')),$document,(New-Object Text.UTF8Encoding($false)))
     Assert-AuditView (-not $document.Contains('<select id="bundle-client"')) 'Production report still has a Client selector.'
     foreach($mode in @('Fix','Final')){
@@ -48,18 +50,18 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     $second=New-ThoroughReportSnapshot -Rows $rows -DisplayMode Audit -Hostname 'SECOND-AUDIT'
     $derived=@($second;(New-ThoroughReportSnapshot -Rows $rows -DisplayMode Fix -AuditSource $second -Hostname 'SECOND-AUDIT');(New-ThoroughReportSnapshot -Rows $rows -DisplayMode Final -AuditSource $second -Hostname 'SECOND-AUDIT'))
     [void](Save-ThoroughReportBundle $path $client 'FIXTURE-PC' $derived Audit)
-    $state=Read-ThoroughReportBundleState ([IO.File]::ReadAllText($path))
+    $state=Read-ThoroughReportBundleState ([KioskTestSource]::ReadAllText($path))
     Assert-AuditView ($state.Reports.Fix.ReportId -ceq $second.ReportId -and (Decode-View $state.Reports.Final).Contains('SECOND-AUDIT')) 'A newer Audit did not refresh derived views.'
     # Fix updates the two views from actual post-fix observations and preserves Audit.
     $row.Status='Pass';$row.ActionTaken='Added Visual Search; readback verified';$row.FoundStateHtml=ConvertTo-ReportDefinitionHtml ([ordered]@{'Translation'='Disabled';'Visual Search'='Disabled';'Edge Gestures'='Disabled'})
     $realFix=New-ThoroughReportSnapshot -Rows $rows -DisplayMode Fix -AfterApply $true -Hostname 'POST-FIX'
     $realFinal=New-ThoroughReportSnapshot -Rows $rows -DisplayMode Final -AfterApply $true -Hostname 'POST-FIX'
     [void](Save-ThoroughReportBundle $path $client 'FIXTURE-PC' @($realFix,$realFinal) Fix)
-    $state=Read-ThoroughReportBundleState ([IO.File]::ReadAllText($path))
+    $state=Read-ThoroughReportBundleState ([KioskTestSource]::ReadAllText($path))
     Assert-AuditView ($state.Reports.Audit.HtmlBase64 -ceq $second.HtmlBase64 -and $state.Reports.Final.Origin -eq 'Apply Fix readback' -and (Decode-View $state.Reports.Fix).Contains('No further fix needed.') -and (Decode-View $state.Reports.Fix).Contains('>Completed</strong>')) 'Actual Fix lost the saved Audit, recorded actions or final readback.'
     Copy-Item -LiteralPath $path -Destination (Join-Path $projectRoot ('output\audit-based-reports\'+$client+'-After-Fix-Report.html')) -Force
     [void](Save-ThoroughReportBundle $path $client 'FIXTURE-PC' $derived Audit)
-    $state=Read-ThoroughReportBundleState ([IO.File]::ReadAllText($path))
+    $state=Read-ThoroughReportBundleState ([KioskTestSource]::ReadAllText($path))
     Assert-AuditView ($state.Reports.Fix.HtmlBase64 -ceq $realFix.HtmlBase64 -and $state.Reports.Final.HtmlBase64 -ceq $realFinal.HtmlBase64) 'Audit-derived data overwrote an actual Fix run.'
     # Failed readback and unstructured failures are retained, never changed into No fix needed.
     $failed=$row.PSObject.Copy();$failed.Status='Fail';$failed.FoundStateHtml='Service query failed. Please check manually.'

@@ -1,6 +1,9 @@
 # Definitions and disposable files only. Never run a production client script.
 [CmdletBinding()]
-param([string]$SourceRoot=(Split-Path (Split-Path $PSScriptRoot -Parent) -Parent))
+param([string]$SourceRoot)
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
+if([string]::IsNullOrWhiteSpace($SourceRoot)){$SourceRoot=Split-Path $PSScriptRoot -Parent}
+
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.ServiceProcess
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -20,7 +23,7 @@ function Cells-Approved {
 }
 foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $SourceRoot $sourceName),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $SourceRoot $sourceName),[ref]$tokens,[ref]$errors)
     Assert-Approved ($errors.Count -eq 0) 'Client parse failed'
     $definitions=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true))
     . ([scriptblock]::Create(($definitions|ForEach-Object {$_.Extent.Text}) -join [Environment]::NewLine))
@@ -148,8 +151,8 @@ $auditRows.Add([pscustomobject]@{SectionNumber=1;SectionTitle='Fixture';ItemTitl
     $launcher=Join-Path $script:root 'LaunchKiosk.ps1'
     [IO.File]::WriteAllText($launcher,$launcherText,$utf8)
     $change=Set-KioskLauncherHostname -Path $launcher -Hostname 'DEVICE-01' -BackupFolder $script:backupRoot
-    Assert-Approved ($change.Changed -and [IO.File]::ReadAllText($launcher) -ceq $launcherText.Replace('host=OLD-DEVICE','host=DEVICE-01')) 'Launcher edit changed unrelated arguments/query parameters'
-    Assert-Approved ([IO.File]::ReadAllText($change.BackupPath) -ceq $launcherText) 'Launcher backup does not match the prior file'
+    Assert-Approved ($change.Changed -and [KioskTestSource]::ReadAllText($launcher) -ceq $launcherText.Replace('host=OLD-DEVICE','host=DEVICE-01')) 'Launcher edit changed unrelated arguments/query parameters'
+    Assert-Approved ([KioskTestSource]::ReadAllText($change.BackupPath) -ceq $launcherText) 'Launcher backup does not match the prior file'
     Assert-Approved (-not (Set-KioskLauncherHostname -Path $launcher -Hostname 'DEVICE-01').Changed) 'Compliant hostname was rewritten'
     $script:ApplyChanges=$false;$before=[IO.File]::ReadAllBytes($launcher)
     $blocked=$false;try{[void](Set-KioskLauncherHostname -Path $launcher -Hostname 'OTHER')}catch{$blocked=$true}
@@ -158,7 +161,7 @@ $auditRows.Add([pscustomobject]@{SectionNumber=1;SectionTitle='Fixture';ItemTitl
     $ambiguous=$launcherText+[Environment]::NewLine+'$another = "'+$url+'"'
     [IO.File]::WriteAllText($launcher,$ambiguous,$utf8)
     $blocked=$false;try{[void](Set-KioskLauncherHostname -Path $launcher -Hostname 'OTHER')}catch{$blocked=$true}
-    Assert-Approved ($blocked -and [IO.File]::ReadAllText($launcher) -ceq $ambiguous) 'Ambiguous launcher was changed'
+    Assert-Approved ($blocked -and [KioskTestSource]::ReadAllText($launcher) -ceq $ambiguous) 'Ambiguous launcher was changed'
 
     function Get-Service {
         [CmdletBinding()]param($Name)
@@ -180,7 +183,7 @@ $auditRows.Add([pscustomobject]@{SectionNumber=1;SectionTitle='Fixture';ItemTitl
     [IO.File]::WriteAllText($config,$configText,$utf8)
     $script:restarts=0;$script:restartFailure=0
     $change=Set-ZabbixDeviceHostname -CommandLine $command -Hostname 'DEVICE-01' -BackupFolder $script:backupRoot
-    Assert-Approved ($change.Changed -and $script:restarts -eq 1 -and [IO.File]::ReadAllText($config) -ceq $configText.Replace('Hostname=OLD-DEVICE','Hostname=DEVICE-01')) 'Zabbix hostname edit modified server settings or skipped service activation'
+    Assert-Approved ($change.Changed -and $script:restarts -eq 1 -and [KioskTestSource]::ReadAllText($config) -ceq $configText.Replace('Hostname=OLD-DEVICE','Hostname=DEVICE-01')) 'Zabbix hostname edit modified server settings or skipped service activation'
     Assert-Approved (-not (Set-ZabbixDeviceHostname -CommandLine $command -Hostname 'DEVICE-01').Changed -and $script:restarts -eq 1) 'Compliant Zabbix config was rewritten/restarted'
     [IO.File]::WriteAllText($config,$configText.Replace('OLD-DEVICE','device-01'),$utf8)
     $change=Set-ZabbixDeviceHostname -CommandLine $command -Hostname 'DEVICE-01'
@@ -188,15 +191,15 @@ $auditRows.Add([pscustomobject]@{SectionNumber=1;SectionTitle='Fixture';ItemTitl
     [IO.File]::WriteAllText($config,$configText,$utf8)
     $script:restartFailure=1;$blocked=$false
     try{[void](Set-ZabbixDeviceHostname -CommandLine $command -Hostname 'DEVICE-02')}catch{$blocked=$true}
-    Assert-Approved ($blocked -and [IO.File]::ReadAllText($config) -ceq $configText) 'Failed Zabbix activation did not restore the previous config'
+    Assert-Approved ($blocked -and [KioskTestSource]::ReadAllText($config) -ceq $configText) 'Failed Zabbix activation did not restore the previous config'
     $duplicate=$configText+'Hostname=ANOTHER'+[Environment]::NewLine
     [IO.File]::WriteAllText($config,$duplicate,$utf8)
     $blocked=$false;try{[void](Set-ZabbixDeviceHostname -CommandLine $command -Hostname 'DEVICE-02')}catch{$blocked=$true}
-    Assert-Approved ($blocked -and [IO.File]::ReadAllText($config) -ceq $duplicate) 'Multiple Zabbix Hostname directives were overwritten'
+    Assert-Approved ($blocked -and [KioskTestSource]::ReadAllText($config) -ceq $duplicate) 'Multiple Zabbix Hostname directives were overwritten'
     $multi=$configText.Replace('OLD-DEVICE','DEVICE-01,OTHER-DEVICE')
     [IO.File]::WriteAllText($config,$multi,$utf8)
     $blocked=$false;try{[void](Set-ZabbixDeviceHostname -CommandLine $command -Hostname 'DEVICE-01')}catch{$blocked=$true}
-    Assert-Approved ($blocked -and [IO.File]::ReadAllText($config) -ceq $multi) 'An existing Zabbix multi-host list was overwritten'
+    Assert-Approved ($blocked -and [KioskTestSource]::ReadAllText($config) -ceq $multi) 'An existing Zabbix multi-host list was overwritten'
 
     function New-ApprovedRow {
         param([int]$Section,[string]$Title,[string]$Item,[Collections.IDictionary]$Values,[string]$Status='Fail',[string]$Action='Audit only')
@@ -308,7 +311,7 @@ $auditRows.Add([pscustomobject]@{SectionNumber=1;SectionTitle='Fixture';ItemTitl
     $existing=Find-ThoroughExistingBundle -Path $desiredPath -ClientType $client -ComputerName 'DEVICE-01'
     Assert-Approved ($existing.Path -ceq $legacyPath -and (Get-FileHash -LiteralPath $legacyPath).Hash -ceq $hash) 'Existing Windows identity report was lost, guessed or rewritten during discovery'
     [void](Save-ThoroughReportBundle -Path $existing.Path -ClientType $client -ComputerName 'DEVICE-01' -Snapshots @($previewFix,$previewFinal) -PreferredMode Fix)
-    $saved=Read-ThoroughReportBundleState ([IO.File]::ReadAllText($legacyPath))
+    $saved=Read-ThoroughReportBundleState ([KioskTestSource]::ReadAllText($legacyPath))
     Assert-Approved ($saved.Reports.Audit.HtmlBase64 -ceq $previewAudit.HtmlBase64 -and @(Get-ChildItem -LiteralPath $reportFolder -File).Count -eq 1) 'Apply replaced Audit or created a separate report after hostname correction'
     $duplicate=Join-Path $reportFolder ('Thorough Check Reports - '+$client+' - ANOTHER.html')
     [IO.File]::WriteAllBytes($duplicate,[IO.File]::ReadAllBytes($legacyPath))

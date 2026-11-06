@@ -1,10 +1,12 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 $projectRoot = Split-Path $PSScriptRoot -Parent
 # Execute the generated child command against fixture ZIPs and fake service APIs.
 # No network, MSI executable or real Windows service operation is allowed.
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 Add-Type -AssemblyName System.IO.Compression
-$root=Split-Path $projectRoot -Parent
+$root=$projectRoot
 $fixtureRoot=Join-Path $projectRoot ('output\zabbix-command\run-'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($fixtureRoot)
 function Assert-InstallerCommand {param([bool]$Condition,[string]$Message) if (-not $Condition) {throw $Message}}
@@ -41,7 +43,7 @@ function Start-Service {throw 'Unexpected start path for running fixture'}
 '@
 foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')) {
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root $sourceName),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $root $sourceName),[ref]$tokens,[ref]$errors)
     $definition=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'New-ZabbixInstallCommand'},$true)
     . ([scriptblock]::Create($definition.Extent.Text))
     foreach ($case in @('success','failure','badArchive','missingParameter')) {
@@ -77,11 +79,11 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroug
         $ErrorActionPreference=$priorPreference
         Assert-InstallerCommand (($code -eq 0) -eq ($case -eq 'success')) "Incorrect installer child completion: $case"
         if ($case -in @('success','failure')) {
-            $called=[IO.File]::ReadAllText($record) | ConvertFrom-Json
+            $called=[KioskTestSource]::ReadAllText($record) | ConvertFrom-Json
             Assert-InstallerCommand ($called.Hostname -ceq $hostname -and $called.MsiPresent -and $called.MonitoringPresent) 'Installer did not receive exact hostname and package paths'
         } else {Assert-InstallerCommand (-not [IO.File]::Exists($record)) 'Invalid package installer ran'}
         Assert-InstallerCommand ([IO.File]::Exists($restartRecord) -eq ($case -eq 'success')) 'Agent restart occurred after failed install or was omitted after success'
-        $stage=[IO.File]::ReadAllText($stageRecord)
+        $stage=[KioskTestSource]::ReadAllText($stageRecord)
         Assert-InstallerCommand ([IO.Directory]::Exists($stage) -eq ($case -ne 'success')) 'Success cleanup or failure-log retention incorrect'
         Assert-InstallerCommand (-not [IO.File]::Exists((Join-Path $stage 'escaped.txt'))) 'Archive wrote outside package folder'
         if ([IO.Directory]::Exists($stage)) {

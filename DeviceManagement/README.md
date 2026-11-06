@@ -5,12 +5,47 @@ navigation with validated operation routing.
 
 Deferred production findings are tracked in [KNOWN-ISSUES.md](KNOWN-ISSUES.md).
 
-Runtime code is in `Start-DeviceManagement.ps1`, `Core`, `Config`, `Checks`, `Installations` and `OtherTools`.
+Runtime code is in `Start-DeviceManagement.ps1`, `KioskThoroughCheck.ps1`, `Core`,
+`Config`, `Checks`, `Installations` and `OtherTools`.
 Development tests are grouped under `Tests`; reference documents, validation
 evidence and deployment records are under [Docs](Docs/README.md). Generated
 `output` files are disposable test artifacts and are excluded from deployment.
-The two client-specific Thorough Check sources currently live in the parent
-`System Check` folder and must accompany any deployment of this launcher.
+Copy `DeviceManagement` as a unit for local deployments; no source files from
+its parent directory are required. Legacy Pester tests are under `Tests/Legacy`.
+
+## Shared kiosk architecture
+
+SaaS and Subway use the same implementation. The selected client is passed
+explicitly, and `Config/KioskClients.psd1` supplies the website origin,
+onboarding route, preferred payment-service names/pattern, URL detection rule
+and payment report requirement. `Core/KioskClient.psm1` validates and loads those
+settings for both local and embedded execution. Report labels, filenames and
+saved-report identity always use the selected client.
+
+```text
+DeviceManagement/
+  Config/KioskClients.psd1
+  Core/KioskClient.psm1
+  KioskThoroughCheck.ps1             # Shared Audit/Apply/Final engine
+  Checks/KIOSK/ThoroughCheck.ps1     # Local child-process dispatcher
+  Installations/KIOSK/Install.ps1   # Shared installation handler
+  Installations/KIOSK/Setup-Edge.ps1
+  Installations/KIOSK/Setup-Chrome.ps1
+```
+
+The previous client-specific script paths remain small compatibility launchers;
+they contain no copied checks, report renderer or setup implementation. The
+normal menu and CDN bundle call shared sources directly. Standalone checks use
+`./KioskThoroughCheck.ps1 -ClientType SaaS -AuditOnly` or `-ClientType Subway`.
+Standalone browser setup accepts the same `-ClientType` selection. Chrome remains
+unavailable in the menu; its shared standalone setup is retained.
+
+Both clients validate their own origin and the onboarding route, create and
+verify installation desktop shortcuts, and use the same running-service fallback
+after client-specific preferred matches. The shared Edge setup writes its
+allowlist once; the former redundant second Subway policy write was removed.
+Older report-layout restore points target the former separate implementations
+and are rejected against the shared engine before any source write.
 
 Run the project from the CDN with:
 
@@ -44,6 +79,14 @@ selecting one displays a notice and stays on the same menu. Back and Exit use
 preserved above the navigation footer.
 
 ## Current implementation
+
+SaaS payment discovery first considers Windows services whose service name
+contains `SaaSProd` (case-insensitive), including `AspPaymentSaaSProd`. If any
+preferred service is running, that preferred group is used. Otherwise it looks
+for running Payment Middleware services using executable, service-name and
+display-name detection. If no running fallback exists, stopped preferred
+services remain available for status checks. Multiple running candidates still
+use the existing version selection and ambiguity checks.
 
 The main menu also offers **Other Tools > Payment Cron Job**. Selecting it
 automatically reads the running Payment Service's `appsettings.json` and prints
@@ -144,8 +187,7 @@ takes precedence over a supplied `-KioskId`; if neither is available, Device
 displays `Kiosk (number not verified)`. Non-numeric IDs retain their text.
 
 SaaS and Subway KIOSK Thorough Check are Ready for Audit and Apply. Hostname display and launcher/monitoring comparisons use the full Windows DNS hostname; unavailable detection remains unverified. Final is a report tab generated from their observations. The shared
-KIOSK dispatcher selects the client-isolated source: `SaaSKioskThoroughCheckScript.ps1`
-for SaaS and `SubwayKioskThoroughCheck.ps1` for Subway. Each source runs in a
+KIOSK dispatcher runs `KioskThoroughCheck.ps1` with the selected `-ClientType` in a
 child 64-bit Windows PowerShell process when run locally and returns a verified completion signal
 and report path to the launcher.
 
@@ -302,7 +344,7 @@ separately, and any failed/unverified required port keeps the group Fail. Values
 are never filled from requirements when rule observations are unavailable.
 Per-port checks and the agreed Apply repairs remain unchanged.
 
-The Subway source is based on the current approved Thorough Check implementation.
+The shared kiosk engine retains the approved Thorough Check implementation.
 For NETS or NEXIDE selected in the discovered Payment Service's appsettings.json,
 Core Background Services includes **Payment Service Restart Task**. In all three
 modes this check only reads existing Task Scheduler definitions and run history.
@@ -459,7 +501,9 @@ shortcut is read back; a failed readback removes only that newly created shortcu
 Existing launcher IDs, hostname, syntax and static URL are inspected only.
 The Kiosk Launch Script row has five fields in Required Configuration
 and Findings: Launch Script (Launcher Path in Findings), Restaurant ID, Kiosk ID,
-Host name and URL origin. Findings shows the script path, collected identifiers and the URL origin without
+Host name and URL origin. Both SaaS and Subway require their own origin followed
+by `/#/onboarding/login`; incorrect routes are reported for manual review without
+rewriting the route. Findings shows the script path, collected identifiers and the URL origin without
 its route or query. Shortcut and Startup BAT evidence remains internal to the
 existing checks, with Startup Folder retaining its separate report row.
 The complete URL remains available internally for verification and collecting

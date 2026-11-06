@@ -1,7 +1,9 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Isolated metadata prompts and synthetic report rendering only. No device checks.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $fixtureRoot=Join-Path $projectRoot ('output\report-agent-name\fixtures\'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($fixtureRoot)
 $utf8=New-Object Text.UTF8Encoding($false)
@@ -13,7 +15,7 @@ $agent='Amir & O''Brien <script>alert("fixture")</script> '+[char]0x0986
 $branch='Sample & Branch'
 foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $name),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $sourceRoot $name),[ref]$tokens,[ref]$errors)
     Assert-AgentName ($errors.Count -eq 0) 'Client source has parser errors.'
     . ([scriptblock]::Create((($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | ForEach-Object {$_.Extent.Text}) -join "`r`n")))
     $client=if($name -like 'Subway*'){'Subway'}else{'SaaS'}
@@ -47,7 +49,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
         Assert-AgentName (-not $footer.Contains('<script>') -and $footer.Contains('Retain with the device configuration records.')) 'Agent input injected markup or displaced the existing footer.'
     }
     [void](Save-ThoroughReportBundle $reportPath $client $env:COMPUTERNAME $snapshots Audit)
-    $saved=Read-ThoroughReportBundleState ([IO.File]::ReadAllText($reportPath))
+    $saved=Read-ThoroughReportBundleState ([KioskTestSource]::ReadAllText($reportPath))
     Assert-AgentName ($saved.Reports.Audit.AgentName -ceq $agent) 'Saved report lost the agent name.'
     $auditBytes=$saved.Reports.Audit.HtmlBase64
     $hash=(Get-FileHash -LiteralPath $reportPath).Hash
@@ -55,7 +57,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     Assert-AgentName ($AgentName -ceq $agent -and (Get-FileHash -LiteralPath $reportPath).Hash -ceq $hash) 'Fresh Apply did not read saved Audit identity without writing.'
     $post=@(foreach($mode in @('Fix','Final')){New-ThoroughReportSnapshot -Rows @($row) -DisplayMode $mode -AfterApply $true -AgentName $AgentName -ClientLocation $branch})
     [void](Save-ThoroughReportBundle $reportPath $client $env:COMPUTERNAME $post Fix)
-    $saved=Read-ThoroughReportBundleState ([IO.File]::ReadAllText($reportPath))
+    $saved=Read-ThoroughReportBundleState ([KioskTestSource]::ReadAllText($reportPath))
     Assert-AgentName ($saved.Reports.Audit.HtmlBase64 -ceq $auditBytes -and $saved.Reports.Fix.AgentName -ceq $agent -and $saved.Reports.Final.AgentName -ceq $agent) 'Apply changed Audit attribution or lost the agent name.'
     $other=if($client -eq 'SaaS'){'Subway'}else{'SaaS'}
     Assert-AgentName ($null -eq (Get-ThoroughAuditAgentName $reportPath $other $env:COMPUTERNAME)) 'Agent reused across clients.'
@@ -90,7 +92,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     Write-Output ('PASS: '+$client+' agent-before-branch input, blank retry, escaped footer, all views, saved/session identity, Apply preserves Audit, legacy/conflict isolation and no device changes.')
 }
 # Named local child-process arguments, including a name containing special characters.
-$handler=[IO.File]::ReadAllText((Join-Path $projectRoot 'Checks\KIOSK\ThoroughCheck.ps1'))
+$handler=[KioskTestSource]::ReadAllText((Join-Path $projectRoot 'Checks\KIOSK\ThoroughCheck.ps1'))
 $start=$handler.IndexOf('$arguments = @(');$end=$handler.IndexOf('$startedAt =',$start)
 $build=[scriptblock]::Create($handler.Substring($start,$end-$start))
 $legacyScript='C:\Fixture\Client.ps1'

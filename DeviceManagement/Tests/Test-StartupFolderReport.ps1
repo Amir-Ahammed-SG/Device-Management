@@ -1,7 +1,9 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Inspect fixture files only. Never execute a launcher or change a device profile.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $previewRoot=Join-Path $projectRoot 'output\startup-folder'
 $fixtureRoot=Join-Path $previewRoot ('fixtures-'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($fixtureRoot)
@@ -14,7 +16,7 @@ function Get-StartupSnapshot {
 $caseCount=0
 foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
     Assert-Startup ($errors.Count -eq 0) 'Client source did not parse.'
     $definitions=$ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($definitions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
@@ -87,7 +89,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
                 $reportPath=Join-Path $previewRoot ($client+'-'+$mode+'-preview.html')
                 $runId='SAMPLE-STARTUP';$clientLocation='Sample branch';$deviceType='KIOSK';$reportHostname='SAMPLE-KIOSK-01';$reportKioskId='Kiosk-1';$KioskId=$null
                 . $render
-                $html=[IO.File]::ReadAllText($reportPath)
+                $html=[KioskTestSource]::ReadAllText($reportPath)
                 Assert-Startup ($html.Contains($row.FoundStateHtml) -and $html.Contains($requirement) -and $html.Contains('device-title">Startup Folder</div>')) 'Rendered report lost Startup fields.'
                 Assert-Startup (($html -match '<th>Status</th>') -eq $isApply) 'Audit/Apply column layout changed.'
             }

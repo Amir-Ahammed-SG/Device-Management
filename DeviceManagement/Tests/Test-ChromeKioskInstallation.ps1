@@ -1,3 +1,5 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # In-memory Windows fixtures only. Never execute a kiosk installer against this computer.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -109,7 +111,7 @@ function Get-ChromeFixtureLocalSource {
  Assert-Chrome ($Path -ceq $script:expectedLocalSource) 'Handler selected the wrong local Chrome source.'
  return $script:chromeSetupFixtureCode
 }
-function Invoke-ChromeFixture { & $script:fixture -Confirm:$false }
+function Invoke-ChromeFixture { & $script:fixture -ClientType $client -ClientSettings $script:KioskClientSettings -Confirm:$false }
 function Assert-ChromeFailure {
  param([string]$Message)
  $failed=$false
@@ -121,7 +123,7 @@ $env:COMPUTERNAME='FIXTURE-KIOSK01'
 try {
  foreach($client in @('SaaS','Subway')) {
      $sourcePath=Join-Path $projectRoot ('Installations\KIOSK\'+$client+'\Kiosk_Mode_Setup_Chrome.ps1')
-     $source=[IO.File]::ReadAllText($sourcePath)
+     $source=[KioskTestSource]::ReadAllText($sourcePath)
      $tokens=$null;$errors=$null
      $ast=[Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$errors)
      Assert-Chrome ($errors.Count -eq 0) ($client+' source parse failure.')
@@ -159,7 +161,7 @@ try {
          & ([scriptblock]::Create($launcher.TrimStart([char]0xFEFF)))
          Assert-Chrome ([regex]::Matches($script:launchedArguments,'(?:^|\s)--incognito(?:\s|$)').Count -eq 1) 'Generated kiosk launcher must pass --incognito exactly once.'
          Assert-Chrome ($script:launchedPath -eq $chrome -and $script:launchedArguments.Contains('--kiosk "'+$origin+'/#/onboarding/login?restaurantId=BRANCH-1&kioskId=KIOSK-2&host=FIXTURE-KIOSK01"')) 'Generated launcher changed runtime arguments.'
-         Assert-Chrome (($script:savedShortcut -ne $null) -eq ($client -eq 'Subway')) 'Desktop shortcut scope changed.'
+         Assert-Chrome ($script:savedShortcut -ne $null) 'Desktop shortcut missing.'
      }
      Reset-Chrome
      $env:COMPUTERNAME='OM-DHK-PAN-KIOS';$script:dnsHostName='OM-DHK-PAN-KIOSK'
@@ -201,7 +203,6 @@ try {
      Assert-ChromeFailure 'Other account credentials allowed replacement.'
      Assert-Chrome ($script:writes -eq 0) 'Credential conflict mutated state.'
      foreach($failure in @('registryNoEffect','fileNoEffect','failSecondFile','shortcutNoEffect')) {
-         if($failure -eq 'shortcutNoEffect' -and $client -ne 'Subway'){continue}
          Reset-Chrome
          Set-Variable -Scope Script -Name $failure -Value $true
          Assert-ChromeFailure ('Unverified setup succeeded: '+$failure)
@@ -215,27 +216,27 @@ try {
      Assert-Chrome ([Convert]::ToBase64String($script:files[$launch]) -ceq '//4BAA==' -and [Convert]::ToBase64String($script:files[$batch]) -ceq 'CQgH') 'Existing launcher bytes were not restored.'
      Assert-Chrome ($script:registry.Count -eq 1 -and $script:registry[$reg+'|DefaultUserName'].Value -ceq 'OldUser') 'Existing registry value was not restored.'
      Reset-Chrome
-     & $script:fixture -WhatIf
+     & $script:fixture -ClientType $client -ClientSettings $script:KioskClientSettings -WhatIf
      Assert-Chrome ($script:writes -eq 0 -and $script:prompts.Count -eq 0) 'WhatIf requested input or mutated state.'
      # Run the real per-client handler through both source loaders, with the same
      # isolated setup body used above. No registry, file, account, or COM access is live.
      $handlerPath=Join-Path $projectRoot ('Installations\KIOSK\'+$client+'-Install.ps1')
-     $handlerCode=[IO.File]::ReadAllText($handlerPath)
+     $handlerCode=[KioskTestSource]::ReadAllText($handlerPath)
      $handlerAst=[Management.Automation.Language.Parser]::ParseInput($handlerCode,[ref]$tokens,[ref]$errors)
      Assert-Chrome ($errors.Count -eq 0) 'Handler parse failure.'
-     $adminName='Test-'+$client+'KioskInstallationAdministrator'
+     $adminName='Test-KioskInstallationAdministrator'
      $adminFn=@($handlerAst.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $adminName},$true))[0]
      $handlerCode=$handlerCode.Remove($adminFn.Extent.StartOffset,$adminFn.Extent.EndOffset-$adminFn.Extent.StartOffset).Insert($adminFn.Extent.StartOffset,('function '+$adminName+' { Mock-ChromeAdmin }'))
      $handlerCode=$handlerCode.Replace('[IO.File]::ReadAllText($sourcePath)','(Get-ChromeFixtureLocalSource $sourcePath)')
      $handlerAst=[Management.Automation.Language.Parser]::ParseInput($handlerCode,$handlerPath,[ref]$tokens,[ref]$errors)
      $handlerFixture=$handlerAst.GetScriptBlock()
-     $script:expectedLocalSource=$sourcePath
+     $script:expectedLocalSource=Join-Path $projectRoot 'Installations\KIOSK\Setup-Chrome.ps1'
      $script:chromeSetupFixtureCode=$source
      $context=[pscustomobject]@{ClientType=$client;DeviceType='KIOSK';Operation='KioskInstallation';Mode='Apply';Browser='Chrome'}
-     $resource='DeviceManagement/Installations/KIOSK/'+$client+'/Kiosk_Mode_Setup_Chrome.ps1'
+     $resource='DeviceManagement/Installations/KIOSK/Setup-Chrome.ps1'
      foreach($loader in @('local','embedded')) {
          Reset-Chrome
-         $script:DeviceManagementMemoryBundle=if($loader -eq 'embedded'){@{Files=@{$resource=$source}}}else{$null}
+         $script:DeviceManagementMemoryBundle=if($loader -eq 'embedded'){@{Configurations=@{KioskClients=$script:KioskTestConfiguration};Files=@{$resource=$source}}}else{$null}
          $global:LASTEXITCODE=487
          $result=@(& $handlerFixture -Context $context)
          Assert-Chrome ($result.Count -eq 1 -and $result[0].Status -eq 'Pass' -and $result[0].Message.Contains('Chrome KIOSK Installation')) ('Chrome handler failed through '+$loader+' source loader.')
@@ -243,7 +244,7 @@ try {
      }
      foreach($failure in @('registryNoEffect','fileNoEffect','failSecondFile')) {
          Reset-Chrome
-         $script:DeviceManagementMemoryBundle=@{Files=@{$resource=$source}}
+         $script:DeviceManagementMemoryBundle=@{Configurations=@{KioskClients=$script:KioskTestConfiguration};Files=@{$resource=$source}}
          Set-Variable -Scope Script -Name $failure -Value $true
          $result=@(& $handlerFixture -Context $context)
          Assert-Chrome ($result.Count -eq 1 -and $result[0].Status -eq 'Fail') ('Handler hid Chrome setup failure: '+$failure)
@@ -256,17 +257,17 @@ try {
          'param([switch]$PassThru) 1;2'
      )) {
          Reset-Chrome
-         $script:DeviceManagementMemoryBundle=@{Files=@{$resource=$badSource}}
+         $script:DeviceManagementMemoryBundle=@{Configurations=@{KioskClients=$script:KioskTestConfiguration};Files=@{$resource=$badSource}}
          $result=@(& $handlerFixture -Context $context)
          Assert-Chrome ($result.Count -eq 1 -and $result[0].Status -eq 'Fail' -and $script:writes -eq 0) 'Handler accepted unverified Chrome completion.'
      }
      Reset-Chrome
-     $script:DeviceManagementMemoryBundle=@{Files=@{}}
+     $script:DeviceManagementMemoryBundle=@{Configurations=@{KioskClients=$script:KioskTestConfiguration};Files=@{}}
      $result=@(& $handlerFixture -Context $context)
      Assert-Chrome ($result.Count -eq 1 -and $result[0].Status -eq 'Fail' -and $script:writes -eq 0) 'Missing embedded Chrome script was accepted.'
      foreach($badSelection in @(@{Browser='Firefox'},@{Mode='Audit'},@{ClientType='ViCafe'},@{DeviceType='POS'})) {
          Reset-Chrome
-         $script:DeviceManagementMemoryBundle=@{Files=@{$resource=$source}}
+         $script:DeviceManagementMemoryBundle=@{Configurations=@{KioskClients=$script:KioskTestConfiguration};Files=@{$resource=$source}}
          $invalid=[pscustomobject]@{ClientType=$client;DeviceType='KIOSK';Operation='KioskInstallation';Mode='Apply';Browser='Chrome'}
          foreach($key in $badSelection.Keys){$invalid.$key=$badSelection[$key]}
          $result=@(& $handlerFixture -Context $invalid)

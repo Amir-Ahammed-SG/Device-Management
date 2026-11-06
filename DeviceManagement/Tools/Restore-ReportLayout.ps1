@@ -12,7 +12,7 @@
 param(
     [switch]$List,
     [ValidatePattern('^[0-9]{8}-[A-Za-z0-9-]+$')][string]$RestorePoint,
-    [string]$SourceRoot=(Split-Path (Split-Path $PSScriptRoot -Parent) -Parent)
+    [string]$SourceRoot=(Split-Path $PSScriptRoot -Parent)
 )
 $ErrorActionPreference='Stop'
 $backupRoot=Join-Path (Split-Path $PSScriptRoot -Parent) 'Backups\ReportLayouts'
@@ -52,6 +52,9 @@ $recordPath=Join-Path $backupRoot ($RestorePoint+'.json')
 $record=[IO.File]::ReadAllText($recordPath) | ConvertFrom-Json
 if($record.Version -ne 1 -or $record.Id -cne $RestorePoint -or @($record.Clients).Count -ne 2){throw 'Invalid report layout restore point.'}
 $sourceDirectory=[IO.Path]::GetFullPath($SourceRoot)
+if(Test-Path -LiteralPath (Join-Path $sourceDirectory 'KioskThoroughCheck.ps1') -PathType Leaf){
+    throw 'This restore point targets separate client scripts and cannot be applied to the shared kiosk engine. No files were changed.'
+}
 $plans=New-Object 'Collections.Generic.List[object]'
 $seen=New-Object 'Collections.Generic.HashSet[string]'
 # Validate both clients and every saved block before writing either file.

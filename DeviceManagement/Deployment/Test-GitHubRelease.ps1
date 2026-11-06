@@ -9,10 +9,9 @@ if ($PSVersionTable.PSEdition -ne 'Desktop' -or $PSVersionTable.PSVersion.Major 
     throw 'Run this build with 64-bit Windows PowerShell 5.1.'
 }
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 [void][IO.Directory]::CreateDirectory((Join-Path $projectRoot 'Docs\Validation'))
 $sourceFiles=@(
-    Get-Item -LiteralPath (Join-Path $sourceRoot 'SaaSKioskThoroughCheckScript.ps1'),(Join-Path $sourceRoot 'SubwayKioskThoroughCheck.ps1')
     Get-ChildItem -LiteralPath $projectRoot -Recurse -File | Where-Object {
         $_.Extension -in '.ps1','.psm1','.psd1' -and
         $_.FullName -notlike ($projectRoot+'\output\*') -and
@@ -43,9 +42,9 @@ $assignments=@($ast.FindAll({param($node) $node -is [Management.Automation.Langu
 if ($assignments.Count -ne 1) { throw 'Expected one embedded resource map.' }
 $resourceAst=[Management.Automation.Language.Parser]::ParseInput($assignments[0].Right.Extent.Text,[ref]$tokens,[ref]$parseErrors)
 $resources=$resourceAst.EndBlock.Statements[0].PipelineElements[0].Expression.SafeGetValue()
-if ($resources.Count -ne $manifest.Files.Count -or $resources.Count -ne 20) { throw 'Runtime resource inventory changed; review the build manifest.' }
+if ($resources.Count -ne $manifest.Files.Count -or $resources.Count -ne 18) { throw 'Runtime resource inventory changed; review the build manifest.' }
 foreach ($file in $manifest.Files) {
-    $relative=if ($file.Path -eq 'Deployment/MemoryRuntime.ps1') {'DeviceManagement/'+$file.Path} else {$file.Path}
+    $relative=$file.Path -replace '^DeviceManagement/', ''
     $source=Join-Path $sourceRoot $relative
     if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ine $file.SourceSHA256) { throw ('Source changed during build: '+$file.Path) }
     if (-not $resources.ContainsKey($file.Path)) { throw ('Missing resource '+$file.Path) }
@@ -54,8 +53,11 @@ foreach ($file in $manifest.Files) {
     try { $actual=[BitConverter]::ToString($hash.ComputeHash([Convert]::FromBase64String($resource.Data))).Replace('-','') } finally { $hash.Dispose() }
     if ($actual -ine $resource.SHA256 -or $actual -ine $file.RuntimeSHA256) { throw ('Runtime checksum mismatch: '+$file.Path) }
 }
-Write-Output 'PASS: release bytes, manifest, current sources and all 20 runtime resources match.'
+Write-Output 'PASS: release bytes, manifest, current sources and all 18 runtime resources match.'
 $fixtures=@(
+    'Test-SharedKiosk.ps1',
+    'Test-SaaSPaymentDiscovery.ps1',
+    'Test-SelfContainedProject.ps1',
     'Test-AdministrativeAccountPolicy.ps1',
     'Test-AccountClassification.ps1',
     'Test-FullHostname.ps1',

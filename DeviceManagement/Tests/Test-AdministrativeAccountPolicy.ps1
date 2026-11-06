@@ -1,11 +1,13 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # In-memory ADSI/account fixtures only. Never modify a real account.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
 function Assert-AdminPolicy {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
 foreach($file in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')) {
- $path=Join-Path (Split-Path $projectRoot -Parent) $file
+ $path=Join-Path $projectRoot $file
  $tokens=$null;$errors=$null
- $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
+ $ast=[KioskTestSource]::ParseFile($path,[ref]$tokens,[ref]$errors)
  Assert-AdminPolicy ($errors.Count -eq 0) 'Source does not parse.'
  $functions=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true))
  . ([scriptblock]::Create(($functions | ForEach-Object {$_.Extent.Text}) -join "`n"))

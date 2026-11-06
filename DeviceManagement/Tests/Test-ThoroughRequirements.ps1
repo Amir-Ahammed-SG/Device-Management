@@ -1,13 +1,15 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 $projectRoot = Split-Path $PSScriptRoot -Parent
 # Exercise definitions and selected guarded blocks only, with in-memory accounts.
 # Never run either production script or contact a Windows account/service API.
 $ErrorActionPreference = 'Stop'
-$root = Split-Path $projectRoot -Parent
+$root = $projectRoot
 function Assert-Check { param([bool]$Condition, [string]$Message) if (-not $Condition) { throw $Message } }
 foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1', 'SubwayKioskThoroughCheck.ps1')) {
     $tokens = $null; $parseErrors = $null
-    $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root $sourceName), [ref]$tokens, [ref]$parseErrors)
-    $sourceText=[IO.File]::ReadAllText((Join-Path $root $sourceName))
+    $ast = [KioskTestSource]::ParseFile((Join-Path $root $sourceName), [ref]$tokens, [ref]$parseErrors)
+    $sourceText=[KioskTestSource]::ReadAllText((Join-Path $root $sourceName))
     Assert-Check ($parseErrors.Count -eq 0) 'PowerShell parsing failed'
     $definitions = $ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $true)
     . ([scriptblock]::Create(($definitions | ForEach-Object { $_.Extent.Text }) -join "`r`n"))

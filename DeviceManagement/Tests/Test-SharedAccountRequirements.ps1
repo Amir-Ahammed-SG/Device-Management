@@ -1,14 +1,16 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Render report fixtures only. Never contact account, printer or service APIs.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $previewRoot=Join-Path $projectRoot 'output\shared-requirements'
 [void][IO.Directory]::CreateDirectory($previewRoot)
 function Assert-SharedRequirement {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
 
 foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
     Assert-SharedRequirement ($errors.Count -eq 0) 'Client source parse failed.'
     $functions=$ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($functions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
@@ -93,7 +95,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
             $reportHostname='SAMPLE-KIOSK-01';$reportKioskId='Kiosk-1';$KioskId=$null
             . $render
             Assert-SharedRequirement (($rawRows | ConvertTo-Json -Depth 5 -Compress) -ceq $before) 'Report formatting changed original observations or statuses.'
-            $html=[IO.File]::ReadAllText($reportPath)
+            $html=[KioskTestSource]::ReadAllText($reportPath)
             $rows=@([regex]::Matches($html,'(?is)<tr\b[^>]*>.*?</tr>') | Where-Object {$_.Value -match '<div class="device-title">(?:Printer|KIOSK Account|Administrative Accounts)</div>'})
             Assert-SharedRequirement ($rows.Count -eq 3) 'Report no longer has one row per component.'
             foreach($rowMatch in $rows){

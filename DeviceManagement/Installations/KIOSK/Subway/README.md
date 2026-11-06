@@ -25,7 +25,7 @@ HostName is a local variable. The URL still uses the same `host=` parameter;
 renaming that variable does not change the URL parameter contract or configure
 a Zabbix Agent. Windows itself is not renamed.
 
-The separate handler verifies resulting registry/files and Desktop shortcut
+The shared handler verifies resulting registry/files and Desktop shortcut
 properties before reporting success. An incorrect existing shortcut is retained
 as in the original script and reported for manual review. The script can also
 run directly; menu context/admin checks and result readback belong to the handler.

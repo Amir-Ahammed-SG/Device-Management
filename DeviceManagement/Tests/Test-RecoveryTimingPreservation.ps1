@@ -1,8 +1,10 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 $projectRoot = Split-Path $PSScriptRoot -Parent
 # Compile the native helper but exercise only managed planning and fixture policies.
 # Never query/change a real service or start sc.exe.
 $ErrorActionPreference='Stop'
-$root=Split-Path $projectRoot -Parent
+$root=$projectRoot
 function Assert-RecoveryTiming {param([bool]$Condition,[string]$Message) if (-not $Condition) {throw $Message}}
 function New-RecoveryFixture {
     param([uint32]$Reset,[int[]]$Types,[uint32[]]$Delays)
@@ -12,7 +14,7 @@ function New-RecoveryFixture {
 }
 foreach ($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')) {
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root $name),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $root $name),[ref]$tokens,[ref]$errors)
     Assert-RecoveryTiming ($errors.Count -eq 0) 'Source parser errors'
     . ([scriptblock]::Create(($ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
     $loader=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-ServiceRecoverySnapshot'},$true)

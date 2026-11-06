@@ -1,7 +1,9 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Render recorded observations only. All device and task access is prohibited.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $outputRoot=Join-Path $projectRoot 'output/report-refinements'
 [void][IO.Directory]::CreateDirectory($outputRoot)
 . (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
@@ -13,7 +15,7 @@ function New-RefinementRow {
 }
 foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')) {
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $name),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $sourceRoot $name),[ref]$tokens,[ref]$errors)
     Assert-Refinement ($errors.Count -eq 0) 'Source parsing failed'
     . ([scriptblock]::Create(($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|ForEach-Object {$_.Extent.Text}) -join "`n"))
     function Get-CimInstance {throw 'Rendering queried the device'}

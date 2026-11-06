@@ -31,7 +31,7 @@
             Devices             = @('KIOSK')
             ReadyDevices        = @()
             ReadySelections     = @('SaaS|KIOSK|Apply','Subway|KIOSK|Apply')
-            HandlerTemplate     = 'Installations\KIOSK\{Client}-Install.ps1'
+            HandlerTemplate     = 'Installations\KIOSK\Install.ps1'
             ImplementationState = 'Ready'
         }
         @{

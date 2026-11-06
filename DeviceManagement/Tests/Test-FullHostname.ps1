@@ -1,3 +1,5 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Isolated hostname and temporary launcher fixtures. No production client, account, service or registry writes.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -28,13 +30,13 @@ $oldEnvironmentName=$env:COMPUTERNAME
 $env:COMPUTERNAME='OM-DHK-PAN-KIOS'
 try {
  foreach($entry in @(
-  @{Path='Installations\KIOSK\SaaS\Kiosk_Mode_Setup.ps1';Prefix='SaaSKiosk'},
-  @{Path='Installations\KIOSK\Subway\kiosk_mode_setup.ps1';Prefix='SubwayKiosk'},
+  @{Path='Installations\KIOSK\SaaS\Kiosk_Mode_Setup.ps1';Prefix='Kiosk'},
+  @{Path='Installations\KIOSK\Subway\kiosk_mode_setup.ps1';Prefix='Kiosk'},
   @{Path='Installations\KIOSK\SaaS\Kiosk_Mode_Setup_Chrome.ps1';Prefix='ChromeKiosk'},
   @{Path='Installations\KIOSK\Subway\Kiosk_Mode_Setup_Chrome.ps1';Prefix='ChromeKiosk'}
  )) {
   $tokens=$null;$errors=$null
-  $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $projectRoot $entry.Path),[ref]$tokens,[ref]$errors)
+  $ast=[KioskTestSource]::ParseFile((Join-Path $projectRoot $entry.Path),[ref]$tokens,[ref]$errors)
   Assert-FullHost ($errors.Count -eq 0) 'Setup parser failure.'
   $names=@(('Get-'+$entry.Prefix+'FullHostname'),('Test-'+$entry.Prefix+'HostName'),('Read-'+$entry.Prefix+'HostName'))
   $functions=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -in $names},$true))
@@ -64,8 +66,8 @@ try {
  [void][IO.Directory]::CreateDirectory($fixtureRoot)
  foreach($client in @('SaaS','Subway')) {
   $file=if($client -eq 'SaaS'){'SaaSKioskThoroughCheckScript.ps1'}else{'SubwayKioskThoroughCheck.ps1'}
-  $path=Join-Path (Split-Path $projectRoot -Parent) $file
-  $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
+  $path=Join-Path $projectRoot $file
+  $ast=[KioskTestSource]::ParseFile($path,[ref]$tokens,[ref]$errors)
   $functions=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true))
   . ([scriptblock]::Create(($functions | ForEach-Object {$_.Extent.Text}) -join "`n"))
   Set-HostFixture

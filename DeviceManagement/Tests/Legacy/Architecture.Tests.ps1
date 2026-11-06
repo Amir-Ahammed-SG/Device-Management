@@ -1,4 +1,6 @@
-$script:ArchitectureRoot = Join-Path (Split-Path $PSScriptRoot -Parent) 'DeviceManagement'
+
+. (Join-Path (Split-Path $PSScriptRoot -Parent) 'KioskTestSupport.ps1')
+$script:ArchitectureRoot = (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent)
 $script:Clients = Import-PowerShellDataFile (Join-Path $script:ArchitectureRoot 'Config\Clients.psd1')
 $script:Operations = Import-PowerShellDataFile (Join-Path $script:ArchitectureRoot 'Config\Operations.psd1')
 
@@ -14,9 +16,14 @@ Import-Module (Join-Path $script:ArchitectureRoot 'Core\KioskInstallation.psm1')
 
 Describe 'Device-management source and configuration' {
     It 'parses every PowerShell architecture file' {
-        foreach ($file in (Get-ChildItem $script:ArchitectureRoot -Recurse -Include *.ps1,*.psm1)) {
+        $sourceFiles = Get-ChildItem $script:ArchitectureRoot -Recurse -Include *.ps1,*.psm1 | Where-Object {
+            $_.FullName -notlike ($script:ArchitectureRoot+'\output\*') -and
+            $_.FullName -notlike ($script:ArchitectureRoot+'\Backups\*') -and
+            $_.FullName -notlike ($script:ArchitectureRoot+'\Docs\*')
+        }
+        foreach ($file in $sourceFiles) {
             $tokens = $null; $errors = $null
-            [Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            [KioskTestSource]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
             @($errors).Count | Should Be 0
         }
     }
@@ -113,7 +120,7 @@ Describe 'Safe Phase 1 dispatch' {
         Test-Path -LiteralPath $handler -PathType Leaf | Should Be $true
     }
     It 'passes explicit mode and architecture-run switches to the current script' {
-        $handlerText = [IO.File]::ReadAllText((Join-Path $script:ArchitectureRoot 'Checks\KIOSK\ThoroughCheck.ps1'))
+        $handlerText = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot 'Checks\KIOSK\ThoroughCheck.ps1'))
         $handlerText | Should Match "'-ArchitectureRun'"
         $handlerText | Should Match "arguments \+= '-Apply'"
         $handlerText | Should Match "arguments \+= '-AuditOnly'"
@@ -148,7 +155,7 @@ Describe 'Safe Phase 1 dispatch' {
 
 Describe 'Client-specific KIOSK installation routing' {
     It 'dispatches KIOSK Installation directly in Apply mode without a mode screen' {
-        $launcherText = [IO.File]::ReadAllText((Join-Path $script:ArchitectureRoot 'Start-DeviceManagement.ps1'))
+        $launcherText = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot 'Start-DeviceManagement.ps1'))
         $launcherText | Should Match "selectedOperation\.Id -eq 'KioskInstallation'"
         $launcherText | Should Match "selectedMode = 'Apply'"
         $launcherText | Should Match "Invoke-ConfiguredOperation"
@@ -176,21 +183,19 @@ Describe 'Client-specific KIOSK installation routing' {
         Test-Path -LiteralPath $result.LaunchPath -PathType Leaf | Should Be $true
         Test-Path -LiteralPath $result.BatchPath -PathType Leaf | Should Be $true
         Test-Path -LiteralPath $result.ShortcutPath -PathType Leaf | Should Be $true
-        [IO.File]::ReadAllText($result.LaunchPath) | Should Match '--edge-kiosk-type=fullscreen'
+        [KioskTestSource]::ReadAllText($result.LaunchPath) | Should Match '--edge-kiosk-type=fullscreen'
         (New-Object -ComObject WScript.Shell).CreateShortcut($result.ShortcutPath).TargetPath | Should Be $result.BatchPath
     }
 }
 
 Describe 'Subway KIOSK Thorough Check isolation' {
-    It 'uses only the Subway kiosk origin while the SaaS source stays on OrderMonkey' {
-        $subwayPath = Join-Path (Split-Path $script:ArchitectureRoot -Parent) 'SubwayKioskThoroughCheck.ps1'
-        $saasPath = Join-Path (Split-Path $script:ArchitectureRoot -Parent) 'SaaSKioskThoroughCheckScript.ps1'
-        $subwayText = [IO.File]::ReadAllText($subwayPath)
-        $saasText = [IO.File]::ReadAllText($saasPath)
-        $subwayText | Should Match 'https://kiosk\.subway\.ch'
-        $subwayText | Should Not Match 'https://kiosk\.ordermonkey\.com'
-        $saasText | Should Match 'https://kiosk\.ordermonkey\.com'
-        $saasText | Should Not Match 'https://kiosk\.subway\.ch'
+    It 'keeps Subway and SaaS origins isolated in shared client configuration' {
+        $subway=Get-KioskClientSettings -ClientType Subway -ProjectRoot $script:ArchitectureRoot
+        $saas=Get-KioskClientSettings -ClientType SaaS -ProjectRoot $script:ArchitectureRoot
+        $subway.Origin | Should Be 'https://kiosk.subway.ch'
+        $saas.Origin | Should Be 'https://kiosk.ordermonkey.com'
+        $subway.ClientType | Should Be 'Subway'
+        $saas.ClientType | Should Be 'SaaS'
     }
 }
 
@@ -379,7 +384,7 @@ Describe 'SaaS Payment Service v9 installation contract' {
     }
 
     It 'keeps vendor console output out of the installation result pipeline' {
-        $installText = [IO.File]::ReadAllText((Join-Path $script:ArchitectureRoot 'Core\PaymentInstall.psm1'))
+        $installText = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot 'Core\PaymentInstall.psm1'))
         $installText.Contains('& $powerShellPath -NoProfile -ExecutionPolicy Bypass -File $deployScript 2>&1 | Out-Host') | Should Be $true
         $installText.Contains('$deployExitCode = $LASTEXITCODE') | Should Be $true
     }
@@ -494,7 +499,7 @@ Describe 'Safe Payment Service uninstall' {
 
 Describe 'Payment Service menu routing' {
     It 'shows versions with Audit and Uninstall without a separate Install screen' {
-        $launcherText = [IO.File]::ReadAllText((Join-Path $script:ArchitectureRoot 'Start-DeviceManagement.ps1'))
+        $launcherText = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot 'Start-DeviceManagement.ps1'))
         $launcherText.Contains("if (`$selectedOperation.Id -eq 'PaymentService') { 'Package' } else { 'Mode' }") | Should Be $true
         $launcherText.Contains("DisplayName = 'Audit Report'") | Should Be $true
         $launcherText.Contains("DisplayName = 'Remove Payment Service'") | Should Be $true
@@ -505,14 +510,14 @@ Describe 'Payment Service menu routing' {
     }
 
     It 'requires an exact service-name confirmation and uses the backup root' {
-        $handlerText = [IO.File]::ReadAllText((Join-Path $script:ArchitectureRoot 'Payments\SaaS\KIOSK\PaymentService.ps1'))
+        $handlerText = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot 'Payments\SaaS\KIOSK\PaymentService.ps1'))
         $handlerText | Should Match 'Type service name'
         $handlerText | Should Match '-cne \$selectedInventory\.Name'
         $handlerText.Contains("-BackupRoot 'C:\PaymentServiceBackups'") | Should Be $true
     }
 
     It 'returns one layer at a time from the result screen' {
-        $launcherText = [IO.File]::ReadAllText((Join-Path $script:ArchitectureRoot 'Start-DeviceManagement.ps1'))
+        $launcherText = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot 'Start-DeviceManagement.ps1'))
         $launcherText.Contains("Write-Host '  [8] Back' -ForegroundColor DarkGray") | Should Be $true
         $launcherText.Contains('Back to Operations') | Should Be $false
         $launcherText.Contains("if (`$selectedOperation.Id -eq 'PaymentService') { `$screen = 'Package' }") | Should Be $true
@@ -521,10 +526,10 @@ Describe 'Payment Service menu routing' {
     }
 
     It 'uses zero as the Exit key in every menu layer' {
-        $launcherText = [IO.File]::ReadAllText((Join-Path $script:ArchitectureRoot 'Start-DeviceManagement.ps1'))
-        $menuText = [IO.File]::ReadAllText((Join-Path $script:ArchitectureRoot 'Core\Menu.psm1'))
-        $saasThoroughText = [IO.File]::ReadAllText((Join-Path $script:ArchitectureRoot '..\SaaSKioskThoroughCheckScript.ps1'))
-        $subwayThoroughText = [IO.File]::ReadAllText((Join-Path $script:ArchitectureRoot '..\SubwayKioskThoroughCheck.ps1'))
+        $launcherText = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot 'Start-DeviceManagement.ps1'))
+        $menuText = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot 'Core\Menu.psm1'))
+        $saasThoroughText = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot 'SaaSKioskThoroughCheckScript.ps1'))
+        $subwayThoroughText = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot 'SubwayKioskThoroughCheck.ps1'))
 
         $menuText.Contains("[string]`$ExitKey = '0'") | Should Be $true
         $launcherText.Contains("Write-Host '  [0] Exit' -ForegroundColor DarkGray") | Should Be $true
@@ -542,7 +547,7 @@ Describe 'KIOSK Thorough Check handler boundary' {
         $script:FixtureArchitecture = Join-Path $script:FixtureWorkspace 'DeviceManagement'
         $script:FixtureReports = Join-Path $TestDrive 'reports'
         New-Item -ItemType Directory -Path $script:FixtureArchitecture, $script:FixtureReports -Force | Out-Null
-        $script:FixtureLegacy = Join-Path $script:FixtureWorkspace 'SaaSKioskThoroughCheckScript.ps1'
+        $script:FixtureLegacy = Join-Path $script:FixtureArchitecture 'SaaSKioskThoroughCheckScript.ps1'
         $script:Handler = Join-Path $script:ArchitectureRoot 'Checks\KIOSK\ThoroughCheck.ps1'
     }
     It 'returns Pass and the generated report from a successful child run' {
@@ -571,13 +576,13 @@ Describe 'KIOSK Thorough Check handler boundary' {
         $result.Message | Should Be 'KIOSK Thorough Check could not start or complete. Review the PowerShell error and retry.'
     }
     It 'omits ClientLocation from the Audit child-process arguments' {
-        $handlerText = [IO.File]::ReadAllText($script:Handler)
+        $handlerText = [KioskTestSource]::ReadAllText($script:Handler)
         $handlerText | Should Match 'if \(\$Context.Mode -eq ''Apply''\)[\s\S]*arguments \+= @\(''-ClientLocation'''
         $handlerText | Should Not Match "'-DeviceType', 'KIOSK',\s*'-ClientLocation'"
     }
     It 'streams child output to the terminal before capturing the native exit code' {
         foreach ($handlerName in @('ThoroughCheck.ps1', 'SaaS-ThoroughCheck.ps1', 'Subway-ThoroughCheck.ps1')) {
-            $handlerText = [IO.File]::ReadAllText((Join-Path $script:ArchitectureRoot "Checks\KIOSK\$handlerName"))
+            $handlerText = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot "Checks\KIOSK\$handlerName"))
             $handlerText | Should Match '& \$powershell @arguments 2>&1 \| Out-Host\s+\$operationExitCode = \$LASTEXITCODE'
         }
     }
@@ -585,23 +590,23 @@ Describe 'KIOSK Thorough Check handler boundary' {
 
 Describe 'KIOSK Thorough Check audit console flow' {
     It 'bypasses Client and Branch input during Audit but keeps it for Apply' {
-        $launcherText = [IO.File]::ReadAllText((Join-Path $script:ArchitectureRoot 'Start-DeviceManagement.ps1'))
+        $launcherText = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot 'Start-DeviceManagement.ps1'))
         $launcherText | Should Match 'selectedMode -eq ''Apply''.*selectedOperation\.Id -ne ''PaymentService'''
         foreach ($name in @('SaaSKioskThoroughCheckScript.ps1', 'SubwayKioskThoroughCheck.ps1')) {
-            $source = [IO.File]::ReadAllText((Join-Path (Split-Path $script:ArchitectureRoot -Parent) $name))
+            $source = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot $name))
             $source | Should Match 'if \(\$script:ApplyChanges\)[\s\S]*Read-Host ''Client & Branch''[\s\S]*\$ClientLocation = ''Not provided'''
         }
     }
 
     It 'preserves completed Thorough Check logs in Audit and Apply' {
-        $launcherText = [IO.File]::ReadAllText((Join-Path $script:ArchitectureRoot 'Start-DeviceManagement.ps1'))
+        $launcherText = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot 'Start-DeviceManagement.ps1'))
         $launcherText | Should Match 'preserveOperationOutput = .*selectedOperation\.Id -eq ''ThoroughCheck'''
         $launcherText | Should Match 'if \(-not \$preserveOperationOutput\)'
     }
 
     It 'prints only the save location for Y and no report message for N' {
         foreach ($name in @('SaaSKioskThoroughCheckScript.ps1', 'SubwayKioskThoroughCheck.ps1')) {
-            $source = [IO.File]::ReadAllText((Join-Path (Split-Path $script:ArchitectureRoot -Parent) $name))
+            $source = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot $name))
             $source | Should Match 'Audit report saved to:'
             $source | Should Not Match 'HTML report was not generated\.'
             $source | Should Not Match 'Review the terminal results\.'
@@ -611,7 +616,7 @@ Describe 'KIOSK Thorough Check audit console flow' {
 
 Describe 'Payment Service audit console and report flow' {
     It 'shows Send Ping and uses the same optional HTML report interaction' {
-        $handlerText = [IO.File]::ReadAllText((Join-Path $script:ArchitectureRoot 'Payments\SaaS\KIOSK\PaymentService.ps1'))
+        $handlerText = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot 'Payments\SaaS\KIOSK\PaymentService.ps1'))
         $handlerText | Should Match 'Payment Service Audit Results'
         $handlerText | Should Match 'Generate HTML report\? \[Y/N\]'
         $handlerText | Should Match 'Payment_Service_Audit_Report_'
@@ -620,7 +625,7 @@ Describe 'Payment Service audit console and report flow' {
     }
 
     It 'preserves Payment Service Audit results when returning to the menu' {
-        $launcherText = [IO.File]::ReadAllText((Join-Path $script:ArchitectureRoot 'Start-DeviceManagement.ps1'))
+        $launcherText = [KioskTestSource]::ReadAllText((Join-Path $script:ArchitectureRoot 'Start-DeviceManagement.ps1'))
         $launcherText | Should Match 'selectedMode -eq ''Audit'' -and \$selectedOperation\.Id -eq ''PaymentService'''
     }
 }

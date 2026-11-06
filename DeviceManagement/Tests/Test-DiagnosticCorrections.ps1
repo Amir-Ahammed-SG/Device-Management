@@ -1,6 +1,8 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Synthetic observations and service/firewall fixtures only. No live device writes.
 $ErrorActionPreference='Stop'
-$projectRoot=Split-Path $PSScriptRoot -Parent;$sourceRoot=Split-Path $projectRoot -Parent
+$projectRoot=Split-Path $PSScriptRoot -Parent;$sourceRoot=$projectRoot
 $output=Join-Path $projectRoot 'output/diagnostic-corrections';[void][IO.Directory]::CreateDirectory($output)
 . (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
@@ -9,7 +11,7 @@ function New-DiagnosticRow {param([string]$Name,[string]$Html,[string]$Sub='')
     [pscustomobject]@{SectionNumber=4;SectionTitle='Diagnostic corrections';ItemTitle=$Name;ItemSub=$Sub;Shortcut=(New-ReportCommand @('services.msc'));FoundStateHtml=$Html;Status='Fail';ActionTaken='Recorded fixture'}
 }
 foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
-    $t=$null;$e=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $name),[ref]$t,[ref]$e)
+    $t=$null;$e=$null;$ast=[KioskTestSource]::ParseFile((Join-Path $sourceRoot $name),[ref]$t,[ref]$e)
     Assert-Diagnostic ($e.Count -eq 0) 'Source parse failed'
     . ([scriptblock]::Create(($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|ForEach-Object {$_.Extent.Text}) -join "`n"))
     $client=if($name -like 'Subway*'){'Subway'}else{'SaaS'}

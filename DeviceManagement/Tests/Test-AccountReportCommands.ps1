@@ -1,12 +1,14 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 $projectRoot = Split-Path $PSScriptRoot -Parent
 # Exercise only definitions using in-memory accounts. No Windows account API runs.
 $ErrorActionPreference='Stop'
-$parent=Split-Path $projectRoot -Parent
+$parent=$projectRoot
 function Assert-AccountCommand { param([bool]$Condition,[string]$Message) if (-not $Condition) { throw $Message } }
 function Get-CommandText { param([string]$Html) @([regex]::Matches($Html,'(?is)<code\b[^>]*>(.*?)</code>') | ForEach-Object { [Net.WebUtility]::HtmlDecode($_.Groups[1].Value) }) }
 foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')) {
     $tokens=$null; $errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $parent $sourceName),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $parent $sourceName),[ref]$tokens,[ref]$errors)
     Assert-AccountCommand ($errors.Count -eq 0) 'Source parsing failed'
     $definitions=$ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($definitions | ForEach-Object { $_.Extent.Text }) -join "`r`n"))

@@ -1,3 +1,5 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Inspect rendered field rows independently of the production field parser.
 function Get-SettingRenderedComponent {
     param([string]$Html,[string]$Name)
@@ -115,7 +117,7 @@ function Use-SettingLayoutRuleAssertions {
     # commands and property values first. Return the captured old presentation
     # only for those historical assertions. The new layout, Applied readback,
     # columns, styles and saved HTML are tested directly in Test-FixFinalSettingLayout.
-    $fixture=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Fixtures/SettingLayoutLegacyRenderer.json'))|ConvertFrom-Json
+    $fixture=[KioskTestSource]::ReadAllText((Join-Path $PSScriptRoot 'Fixtures/SettingLayoutLegacyRenderer.json'))|ConvertFrom-Json
     $captured=@($fixture|Where-Object FileName -EQ $SourceName)[0]
     $script:SettingRuleActualRenderer=(Get-Command New-ThoroughReportSnapshot).ScriptBlock
     $script:SettingRuleLegacyRenderer=& { . ([scriptblock]::Create($captured.Renderer)); (Get-Command New-ThoroughReportSnapshot).ScriptBlock }

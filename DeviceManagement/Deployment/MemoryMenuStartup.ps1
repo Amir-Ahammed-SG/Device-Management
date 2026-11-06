@@ -12,7 +12,7 @@ $operationsConfiguration = $DeviceManagementMemoryBundle.Configurations.Operatio
 $paymentPackagesConfiguration = $DeviceManagementMemoryBundle.Configurations.PaymentPackages
 $thoroughCheckOperation = @($operationsConfiguration.Operations | Where-Object { $_.Id -eq 'ThoroughCheck' }) | Select-Object -First 1
 if (-not $thoroughCheckOperation) { throw 'The Thorough Check operation is missing from the in-memory configuration.' }
-foreach ($requiredSource in @('SaaSKioskThoroughCheckScript.ps1', 'SubwayKioskThoroughCheck.ps1')) {
+foreach ($requiredSource in @('DeviceManagement/KioskThoroughCheck.ps1','DeviceManagement/Core/KioskClient.psm1')) {
     if (-not $DeviceManagementMemoryBundle.Files.ContainsKey($requiredSource)) { throw ('The in-memory client source is missing: ' + $requiredSource) }
 }
 $thoroughCheckOperation.ReadySelections = @('SaaS|KIOSK|Audit', 'SaaS|KIOSK|Apply', 'SaaS|KIOSK|Final', 'Subway|KIOSK|Audit', 'Subway|KIOSK|Apply', 'Subway|KIOSK|Final')

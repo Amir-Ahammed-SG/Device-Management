@@ -1,4 +1,9 @@
 # Shared by the generated entry and its isolated, interactive runspaces.
+$runtimeBundle=Get-Variable -Name DeviceManagementMemoryBundle -ValueOnly -ErrorAction SilentlyContinue
+if($runtimeBundle -and $runtimeBundle.Files.ContainsKey('DeviceManagement/Core/KioskClient.psm1')) {
+    $clientModule=New-Module -Name DeviceManagementMemory.KioskClient -ScriptBlock ([scriptblock]::Create($runtimeBundle.Files['DeviceManagement/Core/KioskClient.psm1']))
+    Import-Module -ModuleInfo $clientModule -Scope Local -Force -ErrorAction Stop
+}
 function Invoke-DeviceManagementMemoryScript {
     param (
         [Parameter(Mandatory = $true)][string]$Code,

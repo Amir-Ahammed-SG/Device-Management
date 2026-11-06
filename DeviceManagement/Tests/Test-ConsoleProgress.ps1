@@ -1,14 +1,16 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 $projectRoot = Split-Path $PSScriptRoot -Parent
 # Load definitions and the report finalizer only. No production checks execute.
 $ErrorActionPreference='Stop'
 $VerbosePreference='SilentlyContinue'
-$parent=Split-Path $projectRoot -Parent
+$parent=$projectRoot
 $previewFolder=Join-Path $projectRoot 'output\console-progress'
 New-Item -ItemType Directory -Path $previewFolder -Force | Out-Null
 function Assert-ConsoleProgress { param([bool]$Condition,[string]$Message) if (-not $Condition) { throw $Message } }
 foreach ($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')) {
     $tokens=$null; $errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $parent $name),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $parent $name),[ref]$tokens,[ref]$errors)
     Assert-ConsoleProgress ($errors.Count -eq 0) 'Source parse failed'
     $functions=$ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($functions | ForEach-Object { $_.Extent.Text }) -join "`r`n"))
@@ -63,7 +65,7 @@ foreach ($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck
         if ($isApply) {
             Assert-ConsoleProgress ($content -match 'FIXED\s+Repaired service' -and $content -notmatch 'Generate HTML report') 'Apply status or report flow incorrect'
             Assert-ConsoleProgress ($content.IndexOf('Report saved:') -lt $content.IndexOf($completion)) 'Apply completion appeared before report saving'
-            Assert-ConsoleProgress ([IO.File]::ReadAllText($reportPath).Contains('<th>Status</th>')) 'Fix status missing from HTML report'
+            Assert-ConsoleProgress ([KioskTestSource]::ReadAllText($reportPath).Contains('<th>Status</th>')) 'Fix status missing from HTML report'
         } else {
             Assert-ConsoleProgress ($content -match 'SKIP\s+Performance Counter' -and $content -match 'health not verified') 'Skipped work reported as verified'
             Assert-ConsoleProgress (-not (Test-Path -LiteralPath $outputFolder)) 'Declining HTML created output'
@@ -88,7 +90,7 @@ foreach ($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck
 }
 # Evaluate only the launcher's preservation expression against both modes.
 $tokens=$null; $errors=$null
-$launcher=[Management.Automation.Language.Parser]::ParseFile((Join-Path $projectRoot 'Start-DeviceManagement.ps1'),[ref]$tokens,[ref]$errors)
+$launcher=[KioskTestSource]::ParseFile((Join-Path $projectRoot 'Start-DeviceManagement.ps1'),[ref]$tokens,[ref]$errors)
 Assert-ConsoleProgress ($errors.Count -eq 0) 'Launcher parse failed'
 $assignment=$launcher.FindAll({param($node) $node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -eq '$preserveOperationOutput'},$true) | Select-Object -First 1
 foreach ($fixture in @(

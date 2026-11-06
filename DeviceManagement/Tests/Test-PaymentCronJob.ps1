@@ -1,3 +1,5 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Synthetic services and real disposable JSON bytes only. Never inspect a device service.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -6,7 +8,7 @@ $root=Join-Path $projectRoot ('output/payment-cron-job/fixture-'+[guid]::NewGuid
 $exe=Join-Path $root 'Kiosk Payment Middleware.exe';$config=Join-Path $root 'appsettings.json'
 [IO.File]::WriteAllText($exe,'Fixture executable - never run')
 $path=Join-Path $projectRoot 'OtherTools/PaymentCronJob.ps1'
-$tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
+$tokens=$null;$errors=$null;$ast=[KioskTestSource]::ParseFile($path,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 . ([scriptblock]::Create(($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|ForEach-Object {$_.Extent.Text}) -join "`n"))
 $realWrite=(Get-Command Write-PaymentCronBytes).ScriptBlock
@@ -162,7 +164,7 @@ foreach($case in @('decline','invalid-then-decline','already','yes','no-admin','
         if($case -eq 'already'){Assert-Cron ($script:Prompts.Count -eq 0 -and $script:Writes -eq 0) 'Already true acquired a fix prompt or write'}
     }
     if($case -eq 'missing-file'){[IO.File]::Move(($config+'.fixture-hidden'),$config)}
-    if($case -eq 'yes'){Assert-Cron ([IO.File]::ReadAllText($config) -ceq $expected) 'Confirmed fix did not preserve the exact text'}
+    if($case -eq 'yes'){Assert-Cron ([KioskTestSource]::ReadAllText($config) -ceq $expected) 'Confirmed fix did not preserve the exact text'}
     elseif($case -ne 'restore-failed'){Assert-Cron (Test-PaymentCronBytesEqual $before ([IO.File]::ReadAllBytes($config))) ('Unexpected bytes after failure/decline: '+$case)}
     if($case -in @('partial','readback')){Assert-Cron ($script:Writes -eq 2) 'Failed write was not restored from memory'}
     $cases++
@@ -181,15 +183,15 @@ Import-Module (Join-Path $projectRoot 'Core/Context.psm1') -Force
 $runContext=New-DeviceManagementContext -ClientType SaaS -DeviceType KIOSK -Operation ThoroughCheck -Mode Audit -RootPath $projectRoot
 Assert-Cron ($runContext.ReportFolder -ceq 'C:\Thorough Check') 'Launcher report location is not C:\Thorough Check'
 foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
-    $source=Join-Path (Split-Path $projectRoot -Parent) $name
-    $sourceAst=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
+    $source=Join-Path $projectRoot $name
+    $sourceAst=[KioskTestSource]::ParseFile($source,[ref]$tokens,[ref]$errors)
     $assignment=@($sourceAst.FindAll({param($n)$n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$outputFolder'},$true))
     Assert-Cron ($assignment.Count -eq 1) 'Client report root is ambiguous'
     . ([scriptblock]::Create($assignment[0].Extent.Text))
     $pathFunction=$sourceAst.Find({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-KioskReportPath'},$true)
     . ([scriptblock]::Create($pathFunction.Extent.Text))
     $report=Get-KioskReportPath -Folder $outputFolder -Client Fixture -Computer FIXTURE-PC -RunId Test
-    Assert-Cron ((Split-Path $report -Parent) -ceq $runContext.ReportFolder -and [IO.File]::ReadAllText($source).Contains("`$BackupFolder='C:\Thorough Check\Restore Points'")) 'Client report/restore paths do not match launcher lookup'
+    Assert-Cron ((Split-Path $report -Parent) -ceq $runContext.ReportFolder -and [KioskTestSource]::ReadAllText($source).Contains("`$BackupFolder='C:\Thorough Check\Restore Points'")) 'Client report/restore paths do not match launcher lookup'
 }
 Import-Module (Join-Path $projectRoot 'Core/PackageLoader.psm1') -Force
 $localRoot=Join-Path $projectRoot ('output/payment-cron-job/dispatcher-'+[guid]::NewGuid().ToString('N'))
@@ -203,7 +205,7 @@ foreach($case in @('valid','missing-output','duplicate-output','invalid-output')
     if($case -eq 'valid'){Assert-Cron ($result.Status -eq 'Skipped' -and $result.ReturnToMenu) 'Local tool result lost its immediate return'}
     $cases++
 }
-$toolText=[IO.File]::ReadAllText($path)
+$toolText=[KioskTestSource]::ReadAllText($path)
 $entry=$toolText.LastIndexOf('$result=Invoke-PaymentCronJob',[StringComparison]::Ordinal)
 foreach($status in @('Pass','Fail')){
     $stub='function Invoke-PaymentCronJob { [pscustomobject]@{Status="'+$status+'";ReturnToMenu=$false} }'+"`n"

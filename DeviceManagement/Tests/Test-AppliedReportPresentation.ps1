@@ -1,7 +1,9 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Report definitions only; never run device checks or repairs.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 function Assert-Applied {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
 function New-AppliedFixture {
     param([string]$Title,[string]$Status,[string]$Note,[string]$Section='Kiosk Application & Policies',[string]$Sub='Verified configuration')
@@ -33,7 +35,7 @@ $cases=@(
 foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $path=Join-Path $sourceRoot $sourceName
     $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
-    $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
+    $tokens=$null;$errors=$null;$ast=[KioskTestSource]::ParseFile($path,[ref]$tokens,[ref]$errors)
     Assert-Applied (-not $errors.Count) 'Client source does not parse.'
     $functions=$ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($functions | ForEach-Object {$_.Extent.Text}) -join [Environment]::NewLine))

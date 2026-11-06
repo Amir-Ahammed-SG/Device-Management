@@ -1,6 +1,8 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $ErrorActionPreference='Stop'
-$parent=Split-Path $projectRoot -Parent
+$parent=$projectRoot
 $fixtureRoot=Join-Path $projectRoot ('output\kiosk-verification\run-'+[guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
 function Assert-Kiosk {param([bool]$Condition,[string]$Message) if (-not $Condition) {throw $Message}}
@@ -15,7 +17,7 @@ function New-LauncherCase {
 }
 foreach ($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')) {
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $parent $name),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $parent $name),[ref]$tokens,[ref]$errors)
     Assert-Kiosk ($errors.Count -eq 0) 'Source parser errors'
     . ([scriptblock]::Create(($ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
     $actualAutoLoginName=${function:Get-KioskAutoLoginUserName}
@@ -189,7 +191,7 @@ foreach ($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck
         function Complete-ThoroughConsole {param($IsApply,$FailedCount)}
         $finalizer=$ast.FindAll({param($n) $n -is [Management.Automation.Language.TryStatementAst] -and $n.Finally -and $n.Finally.Extent.Text -match 'Writing HTML report'},$true) | Select-Object -Last 1
         . ([scriptblock]::Create(($finalizer.Finally.Statements | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
-        $html=[IO.File]::ReadAllText($reportPath)
+        $html=[KioskTestSource]::ReadAllText($reportPath)
         Assert-Kiosk ($html.Contains($autoResult.StateHtml) -and $html.Contains($requirement) -and ($html -match '<th>Status</th>') -eq $mode) 'Rendered auto-login report content or Audit/Apply columns changed'
         Assert-Kiosk ($html.Contains('/v AutoAdminLogon') -and $html.Contains('/v DefaultUserName')) 'Report labels changed actual registry command names'
         $script:users=@([pscustomobject]@{Name='Custom Kiosk';Enabled=$true;SID=[pscustomobject]@{Value='Fixture'}})

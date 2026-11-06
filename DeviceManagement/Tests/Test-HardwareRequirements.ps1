@@ -1,7 +1,9 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 $projectRoot = Split-Path $PSScriptRoot -Parent
 # Run selected hardware blocks with fake printers and logs. No device changes.
 $ErrorActionPreference='Stop'
-$parent=Split-Path $projectRoot -Parent
+$parent=$projectRoot
 function Assert-Hardware {param([bool]$Condition,[string]$Message) if (-not $Condition) {throw $Message}}
 function Reset-HardwareFixture {
     $script:printerNames=@('Receipt'); $script:printerState='Normal'; $script:keepPrinted=$true
@@ -10,9 +12,9 @@ function Reset-HardwareFixture {
 }
 foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')) {
     $sourcePath=Join-Path $parent $sourceName
-    $source=[IO.File]::ReadAllText($sourcePath)
+    $source=[KioskTestSource]::ReadAllText($sourcePath)
     $tokens=$null; $errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile($sourcePath,[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile($sourcePath,[ref]$tokens,[ref]$errors)
     Assert-Hardware ($errors.Count -eq 0) 'Source parser errors'
     $definitions=$ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($definitions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))

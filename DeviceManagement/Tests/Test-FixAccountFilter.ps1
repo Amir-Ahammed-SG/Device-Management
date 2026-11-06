@@ -1,8 +1,10 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 # Render synthetic account observations only. Never execute device checks.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $outputRoot=Join-Path $projectRoot 'output\fix-account-records'
 [void][IO.Directory]::CreateDirectory($outputRoot)
 $restorePath=Join-Path $PSScriptRoot 'Fixtures\AccountFixLegacyRenderer.json'
@@ -26,7 +28,7 @@ function Assert-FixAccountDivider {
 
 foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
     Assert-FixAccount ($errors.Count -eq 0) 'Client source failed parsing.'
     $definitions=@($ast.FindAll({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst]},$true))
     . ([scriptblock]::Create(($definitions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))

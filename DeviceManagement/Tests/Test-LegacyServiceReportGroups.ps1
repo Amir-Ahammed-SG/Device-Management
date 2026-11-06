@@ -1,9 +1,11 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 # Functions and synthetic observations only. No device checks or repairs run here.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $outputRoot=Join-Path $projectRoot 'output\legacy-service-reports'
 [void][IO.Directory]::CreateDirectory($outputRoot)
 $utf8=New-Object Text.UTF8Encoding($false)
@@ -12,7 +14,7 @@ foreach($file in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     $path=Join-Path $sourceRoot $file
     $originalHash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile($path,[ref]$tokens,[ref]$errors)
     Assert-LegacyReport (-not $errors.Count) 'Client source does not parse.'
     $functions=$ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($functions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))

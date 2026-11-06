@@ -17,13 +17,12 @@ official version can be prepared with `-Version`.
 Keep this layout when copying the scripts to a device:
 
 ```text
-System Check/
+DeviceManagement/
   SaaSKioskThoroughCheckScript.ps1
   SubwayKioskThoroughCheck.ps1
-  DeviceManagement/
-    Packages/Nmap/
-      NmapPackage.psd1
-      nmap-7.992-setup.exe
+  Packages/Nmap/
+    NmapPackage.psd1
+    nmap-7.992-setup.exe
 ```
 
 On Windows 10, Apply Fix checks the local package checksum, opens the standard

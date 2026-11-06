@@ -1,14 +1,16 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.ServiceProcess
-$root=Split-Path $projectRoot -Parent
+$root=$projectRoot
 function Assert-ServiceReport { param([bool]$Condition,[string]$Message) if (-not $Condition) { throw $Message } }
 function Get-FieldNames { param([string]$Html) @([regex]::Matches($Html,'<span class="kv-label">([^<]+):</span>') | ForEach-Object { $_.Groups[1].Value }) }
 foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')) {
     $tokens=$null; $errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root $sourceName),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $root $sourceName),[ref]$tokens,[ref]$errors)
     Assert-ServiceReport ($errors.Count -eq 0) 'Source parse failed'
-    $text=[IO.File]::ReadAllText((Join-Path $root $sourceName))
+    $text=[KioskTestSource]::ReadAllText((Join-Path $root $sourceName))
     $definitions=$ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($definitions | ForEach-Object { $_.Extent.Text }) -join "`r`n"))
 

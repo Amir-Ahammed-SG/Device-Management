@@ -1,11 +1,13 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 $projectRoot = Split-Path $PSScriptRoot -Parent
 # Load definitions only. All account operations use in-memory fixtures.
 $ErrorActionPreference='Stop'
-$root=Split-Path $projectRoot -Parent
+$root=$projectRoot
 function Assert-KioskProperty {param([bool]$Condition,[string]$Message) if (-not $Condition) {throw $Message}}
 foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')) {
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root $sourceName),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $root $sourceName),[ref]$tokens,[ref]$errors)
     Assert-KioskProperty ($errors.Count -eq 0) 'Source parser errors'
     . ([scriptblock]::Create(($ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
     function Get-LocalUser {[CmdletBinding()]param() $script:users}

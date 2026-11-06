@@ -1,12 +1,14 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 $projectRoot = Split-Path $PSScriptRoot -Parent
 # In-memory services only. No production entry point, service API or installer runs.
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.ServiceProcess
-$root=Split-Path $projectRoot -Parent
+$root=$projectRoot
 function Assert-CoreChange {param([bool]$Condition,[string]$Message) if (-not $Condition) {throw $Message}}
 foreach ($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')) {
     $tokens=$null;$errors=$null
-    $text=[IO.File]::ReadAllText((Join-Path $root $name))
+    $text=[KioskTestSource]::ReadAllText((Join-Path $root $name))
     $ast=[Management.Automation.Language.Parser]::ParseInput($text,[ref]$tokens,[ref]$errors)
     Assert-CoreChange ($errors.Count -eq 0) 'Production source did not parse'
     . ([scriptblock]::Create(($ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | ForEach-Object {$_.Extent.Text}) -join "`r`n"))

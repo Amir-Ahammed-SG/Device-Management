@@ -1,7 +1,9 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Pure presentation fixtures. Never query or modify system clocks or tasks.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $deviceZone=[TimeZoneInfo]::CreateCustomTimeZone('TestDevicePlus02',[TimeSpan]::FromHours(2),'Test device +02','Test device +02')
 function Assert-Readable {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
 $dateCases=@(
@@ -47,7 +49,7 @@ $triggerCases=@(
 foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $path=Join-Path $sourceRoot $name
     $sourceHash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
-    $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
+    $tokens=$null;$errors=$null;$ast=[KioskTestSource]::ParseFile($path,[ref]$tokens,[ref]$errors)
     Assert-Readable (-not $errors.Count) 'Client source does not parse.'
     $definitions=$ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($definitions | ForEach-Object {$_.Extent.Text}) -join [Environment]::NewLine))

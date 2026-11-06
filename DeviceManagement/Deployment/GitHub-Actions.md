@@ -1,11 +1,17 @@
 # GitHub Actions deployment
 
-Repository: https://github.com/Amir-Ahammed/Device-Management-Script
+Repository: https://github.com/Amir-Ahammed-SG/Device-Management
 Branch: `main`
 Public entry: https://cdn-ito.selisesme.com/script/DeviceManagement.ps1
 
-Configured and verified on 24 Oct 2026 using a dedicated deployment key and the
-server's already-trusted SSH host keys. Automatic deployment is enabled.
+The new repository requires its own deployment variables and secrets; they do
+not transfer when the Git remote changes. Automatic deployment remains disabled
+until the one-time setup below is completed. A verified release can instead be
+staged and published through the existing trusted SSH connection using the same
+checksum-guarded publisher, followed by server and public HTTPS verification.
+
+The previous repository was configured and verified on 24 Oct 2026 using a
+dedicated deployment key and the server's already-trusted SSH host keys.
 The [first publication](https://github.com/Amir-Ahammed/Device-Management-Script/actions/runs/40073441632)
 passed both fixture jobs, atomic activation and public checksum verification.
 
@@ -53,11 +59,11 @@ Only `main` deploys, including manual runs. Pull requests never receive SSH
 secrets. Deploy jobs run serially and do not cancel an active publication.
 Actions are pinned to reviewed commit SHAs. Checkout credentials are not retained.
 
-`Test-GitHubRelease.ps1` runs twenty-one independent setup/client/report fixtures and the
+`Test-GitHubRelease.ps1` runs thirty independent setup/client/report fixtures and the
 existing 54-case Thorough Check delivery suite plus both clients' Edge/Chrome installation completion/menu cases, including browser Back/Exit and switching browsers. Full hostname fixtures cover the reported 16-character truncation, long DNS names, manual fallback, and read-only report comparisons. Administrator policy fixtures cover Password Never Expires as the sole administrative password requirement, clearing existing restrictions with readback, standard kiosk policy, shared-role administrator priority, classification and per-account report filtering. Account, installer and launcher writes
 use fixtures. A separate Linux job verifies nine publication and rollback
 scenarios using fake SSH, SCP and HTTPS commands. The full older Pester suite is not a passing deployment gate:
-the current recorded baseline is 88 passed and 36 existing failures. Those
+the current recorded baseline is 104 passed and 75 existing failures. Those
 failures need separate maintenance; a fixture pass is not a controlled device run.
 
 One account-renderer test reads a small checked-in historical renderer fixture,

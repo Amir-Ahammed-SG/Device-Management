@@ -1,11 +1,13 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Load definitions and render disposable observations only. Never run device checks.
 $ErrorActionPreference='Stop'
-$projectRoot=Split-Path $PSScriptRoot -Parent;$sourceRoot=Split-Path $projectRoot -Parent
+$projectRoot=Split-Path $PSScriptRoot -Parent;$sourceRoot=$projectRoot
 $outputRoot=Join-Path $projectRoot 'output/fix-final-setting-layout'
 [void][IO.Directory]::CreateDirectory($outputRoot)
 $utf8=New-Object Text.UTF8Encoding($false)
 . (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
-$baseline=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'Fixtures/SettingLayoutLegacyRenderer.json'))|ConvertFrom-Json
+$baseline=[KioskTestSource]::ReadAllText((Join-Path $PSScriptRoot 'Fixtures/SettingLayoutLegacyRenderer.json'))|ConvertFrom-Json
 function Assert-Setting {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
 function Decode-Setting {param($Snapshot) $utf8.GetString([Convert]::FromBase64String($Snapshot.HtmlBase64))}
 function New-SettingFixture {
@@ -38,7 +40,7 @@ function Get-LegacyFieldPairs {
     })
 }
 foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
-    $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $name),[ref]$tokens,[ref]$errors)
+    $tokens=$null;$errors=$null;$ast=[KioskTestSource]::ParseFile((Join-Path $sourceRoot $name),[ref]$tokens,[ref]$errors)
     Assert-Setting ($errors.Count -eq 0) 'Client source failed parsing.'
     $definitions=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true))
     . ([scriptblock]::Create(($definitions|ForEach-Object {$_.Extent.Text}) -join "`r`n"))

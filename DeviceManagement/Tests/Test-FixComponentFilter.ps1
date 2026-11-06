@@ -1,7 +1,9 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Pure report fixtures and disposable output; never execute device checks.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $output=Join-Path $projectRoot 'output\fix-component-filter'
 $point=Get-Content -LiteralPath (Join-Path $projectRoot 'Backups\ReportLayouts\20261023-fix-component-filter-01.json') -Raw | ConvertFrom-Json
 function Assert-FixFilter {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
@@ -11,7 +13,7 @@ function New-FilterRow {
     [pscustomobject]@{SectionNumber=$Section;SectionTitle=$SectionTitle;ItemTitle=$Title;ItemSub='Fixture check';Shortcut='<code>services.msc</code>';Status=$Status;ActionTaken=$Note;ExpectedHtml=(ConvertTo-ReportDefinitionHtml ([ordered]@{'State'='Enabled'}));FoundStateHtml=(ConvertTo-ReportDefinitionHtml ([ordered]@{'State'=$Value}))}
 }
 foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
-    $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $name),[ref]$tokens,[ref]$errors)
+    $tokens=$null;$errors=$null;$ast=[KioskTestSource]::ParseFile((Join-Path $sourceRoot $name),[ref]$tokens,[ref]$errors)
     Assert-FixFilter ($errors.Count -eq 0) 'Client source failed parsing.'
     $definitions=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true))
     . ([scriptblock]::Create(($definitions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))

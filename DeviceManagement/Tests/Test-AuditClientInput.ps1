@@ -1,7 +1,9 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Definitions, isolated prompt blocks and fixture reports only. No device checks.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $fixtureRoot=Join-Path $projectRoot ('output\audit-client-input\fixtures\'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($fixtureRoot)
 $utf8=New-Object Text.UTF8Encoding($false)
@@ -13,7 +15,7 @@ function Set-ItemProperty {throw 'Metadata handling wrote a registry value.'}
 $branch='Redo - FRANK & O''Brien <East> "Desk"'
 foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $path=Join-Path $sourceRoot $name;$tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile($path,[ref]$tokens,[ref]$errors)
     Assert-AuditInput ($errors.Count -eq 0) 'Client source has parser errors.'
     . ([scriptblock]::Create((($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | ForEach-Object {$_.Extent.Text}) -join "`r`n")))
     $client=if($name -like 'Subway*'){'Subway'}else{'SaaS'}
@@ -88,7 +90,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     Write-Output ('PASS: '+$client+' Audit-only input, blank retry, explicit parameter, session/saved-Audit reuse, no Fix prompt, escaped metadata, client/device isolation and no cache/report writes.')
 }
 # Local file dispatcher constructs named arguments for Audit as well as Apply/Final.
-$handler=[IO.File]::ReadAllText((Join-Path $projectRoot 'Checks\KIOSK\ThoroughCheck.ps1'))
+$handler=[KioskTestSource]::ReadAllText((Join-Path $projectRoot 'Checks\KIOSK\ThoroughCheck.ps1'))
 $start=$handler.IndexOf('$arguments = @(');$end=$handler.IndexOf('$startedAt =',$start)
 $build=[scriptblock]::Create($handler.Substring($start,$end-$start))
 $legacyScript='C:\Fixture with spaces\Client.ps1'

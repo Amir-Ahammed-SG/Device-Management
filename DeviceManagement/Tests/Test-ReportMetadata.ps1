@@ -1,10 +1,12 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 $projectRoot = Split-Path $PSScriptRoot -Parent
 # Load definitions and a mocked launcher-result block only; never run device checks.
 $ErrorActionPreference='Stop'
-$root=Split-Path $projectRoot -Parent
+$root=$projectRoot
 foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')) {
     $tokens=$null; $errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $root $sourceName),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $root $sourceName),[ref]$tokens,[ref]$errors)
     if ($errors.Count) { throw ($errors | Out-String) }
     $functions=$ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($functions | ForEach-Object { $_.Extent.Text }) -join "`r`n"))

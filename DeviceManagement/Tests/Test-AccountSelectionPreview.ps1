@@ -1,9 +1,11 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 # Render actual account-selection results with fixture APIs only.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $previewRoot=Join-Path $projectRoot ('output\account-previews\run-'+[guid]::NewGuid().ToString('N'))
 $profile=Join-Path $previewRoot 'fixture-profile'
 $script:fixtureProfilePath=$profile
@@ -12,7 +14,7 @@ $script:fixtureProfilePath=$profile
 function Assert-AccountPreview {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
 foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
     Assert-AccountPreview ($errors.Count -eq 0) 'Client parse failed.'
     . ([scriptblock]::Create(($ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
     Use-SettingLayoutRuleAssertions -SourceName $sourceName
@@ -76,7 +78,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
             $outputFolder=$previewRoot;$reportPath=Join-Path $previewRoot ($client+'-'+$mode+'-'+$case+'.html')
             $runId='ACCOUNT-SELECTION-PREVIEW';$clientLocation='Sample branch';$deviceType='KIOSK';$reportHostname='SAMPLE-KIOSK-01';$reportKioskId='Kiosk-1';$KioskId=$null
             . $render
-            $html=[IO.File]::ReadAllText($reportPath)
+            $html=[KioskTestSource]::ReadAllText($reportPath)
             if($mode -eq 'Audit'){
                 $kioskAudit=Get-AuditRenderedComponent $html 'KIOSK Account'
                 $adminAudit=Get-AuditRenderedComponent $html 'Administrative Accounts'

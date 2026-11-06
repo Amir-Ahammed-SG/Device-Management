@@ -5,7 +5,7 @@ param (
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
-$workspaceRoot = Split-Path $projectRoot -Parent
+$sourceRoot = $projectRoot
 $releaseDirectory = Join-Path $projectRoot ('output\releases\' + $ReleaseId)
 if (Test-Path -LiteralPath $releaseDirectory) { throw 'Release directory already exists. Use a new release ID.' }
 $utf8 = New-Object Text.UTF8Encoding($false)
@@ -24,17 +24,13 @@ function Replace-OnlyExit {
     return $Text.Remove($exits[0].Extent.StartOffset,$exits[0].Extent.EndOffset-$exits[0].Extent.StartOffset).Insert($exits[0].Extent.StartOffset,$Replacement)
 }
 $files=[ordered]@{
-    'SaaSKioskThoroughCheckScript.ps1'=Join-Path $workspaceRoot 'SaaSKioskThoroughCheckScript.ps1'
-    'SubwayKioskThoroughCheck.ps1'=Join-Path $workspaceRoot 'SubwayKioskThoroughCheck.ps1'
+    'DeviceManagement/KioskThoroughCheck.ps1'=Join-Path $projectRoot 'KioskThoroughCheck.ps1'
     'DeviceManagement/Start-DeviceManagement.ps1'=Join-Path $projectRoot 'Start-DeviceManagement.ps1'
     'DeviceManagement/Checks/KIOSK/ThoroughCheck.ps1'=Join-Path $projectRoot 'Checks\KIOSK\ThoroughCheck.ps1'
     'DeviceManagement/OtherTools/PaymentCronJob.ps1'=Join-Path $projectRoot 'OtherTools\PaymentCronJob.ps1'
-    'DeviceManagement/Installations/KIOSK/SaaS-Install.ps1'=Join-Path $projectRoot 'Installations\KIOSK\SaaS-Install.ps1'
-    'DeviceManagement/Installations/KIOSK/SaaS/Kiosk_Mode_Setup_Chrome.ps1'=Join-Path $projectRoot 'Installations\KIOSK\SaaS\Kiosk_Mode_Setup_Chrome.ps1'
-    'DeviceManagement/Installations/KIOSK/SaaS/Kiosk_Mode_Setup.ps1'=Join-Path $projectRoot 'Installations\KIOSK\SaaS\Kiosk_Mode_Setup.ps1'
-    'DeviceManagement/Installations/KIOSK/Subway-Install.ps1'=Join-Path $projectRoot 'Installations\KIOSK\Subway-Install.ps1'
-    'DeviceManagement/Installations/KIOSK/Subway/Kiosk_Mode_Setup_Chrome.ps1'=Join-Path $projectRoot 'Installations\KIOSK\Subway\Kiosk_Mode_Setup_Chrome.ps1'
-    'DeviceManagement/Installations/KIOSK/Subway/kiosk_mode_setup.ps1'=Join-Path $projectRoot 'Installations\KIOSK\Subway\kiosk_mode_setup.ps1'
+    'DeviceManagement/Installations/KIOSK/Install.ps1'=Join-Path $projectRoot 'Installations\KIOSK\Install.ps1'
+    'DeviceManagement/Installations/KIOSK/Setup-Edge.ps1'=Join-Path $projectRoot 'Installations\KIOSK\Setup-Edge.ps1'
+    'DeviceManagement/Installations/KIOSK/Setup-Chrome.ps1'=Join-Path $projectRoot 'Installations\KIOSK\Setup-Chrome.ps1'
     'Deployment/MemoryRuntime.ps1'=Join-Path $PSScriptRoot 'MemoryRuntime.ps1'
 }
 foreach ($folder in @('Core','Config')) {
@@ -53,7 +49,7 @@ foreach ($name in $files.Keys) {
     $text=[IO.File]::ReadAllText($source)
     $ast=Get-SourceAst $text
     $originalHash=(Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
-    if ($name -in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')) {
+    if ($name -eq 'DeviceManagement/KioskThoroughCheck.ps1') {
         $text=Replace-OnlyExit $text '[pscustomobject]@{ MemoryCheckCompleted=$true; ExitCode=[int]$global:LASTEXITCODE; ReportPath=if ($generateReport) { [string]$reportPath } else { $null } }'
     } elseif ($name -eq 'DeviceManagement/Start-DeviceManagement.ps1') {
         $start=@($ast.EndBlock.Statements | Where-Object { $_ -is [Management.Automation.Language.AssignmentStatementAst] -and $_.Left.Extent.Text -eq '$architectureRoot' })

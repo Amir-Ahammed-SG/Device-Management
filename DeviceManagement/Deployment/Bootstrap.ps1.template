@@ -14,7 +14,7 @@
         if ($hash -ne $resources[$name].SHA256) { throw ('Embedded project resource verification failed: ' + $name) }
         $bundle.Files[$name] = [Text.Encoding]::UTF8.GetString($bytes)
     }
-    foreach ($configuration in @('Clients', 'Operations', 'PaymentPackages')) {
+    foreach ($configuration in @('Clients', 'Operations', 'PaymentPackages', 'KioskClients')) {
         $tokens = $null; $errors = $null
         $ast = [Management.Automation.Language.Parser]::ParseInput($bundle.Files['DeviceManagement/Config/' + $configuration + '.psd1'], [ref]$tokens, [ref]$errors)
         if ($errors.Count -or $ast.EndBlock.Statements.Count -ne 1) { throw ('Invalid embedded configuration: ' + $configuration) }

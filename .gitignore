@@ -4,10 +4,7 @@
 !/.github/
 !/.gitignore
 !/README.md
-!/SaaSKioskThoroughCheckScript.ps1
-!/SubwayKioskThoroughCheck.ps1
 !/DeviceManagement/
-!/tests/
 
 # Generated and device-specific material never belongs in the source repository.
 /DeviceManagement/output/

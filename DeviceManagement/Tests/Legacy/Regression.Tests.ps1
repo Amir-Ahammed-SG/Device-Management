@@ -1,10 +1,12 @@
+
+. (Join-Path (Split-Path $PSScriptRoot -Parent) 'KioskTestSupport.ps1')
 # These tests load function definitions and selected source sections only.
 # The production entry point is NEVER executed, and Windows operations are mocked.
-$script:SubjectPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'SaaSKioskThoroughCheckScript.ps1'
-$script:SubjectText = [IO.File]::ReadAllText($script:SubjectPath)
+$script:SubjectPath = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'SaaSKioskThoroughCheckScript.ps1'
+$script:SubjectText = [KioskTestSource]::ReadAllText($script:SubjectPath)
 $script:ParseTokens = $null
 $script:ParseErrors = $null
-$script:SubjectAst = [System.Management.Automation.Language.Parser]::ParseFile(
+$script:SubjectAst = [KioskTestSource]::ParseFile(
     $script:SubjectPath, [ref]$script:ParseTokens, [ref]$script:ParseErrors)
 $functionDefinitions = $script:SubjectAst.FindAll({
     param($node)
@@ -88,71 +90,71 @@ Describe 'Read-only launcher host and completion menu' {
         Mock Read-Host { '' }
     }
     It 'records missing host and preserves existing IDs in Apply' {
-        $before=[IO.File]::ReadAllText($script:LauncherFixture)
+        $before=[KioskTestSource]::ReadAllText($script:LauncherFixture)
         $result=Repair-LauncherDetails -Path $script:LauncherFixture
         $result.Status | Should Be 'Fail'
         $result.LauncherValues['Restaurant ID'] | Should Be 'R1'
         $result.LauncherValues['KIOSK ID'] | Should Be 'K1'
         $result.LauncherValues['Host Name'] | Should Be 'Not detected'
-        [IO.File]::ReadAllText($script:LauncherFixture) | Should Be $before
+        [KioskTestSource]::ReadAllText($script:LauncherFixture) | Should Be $before
         Assert-MockCalled Read-Host -Scope It -Times 0 -Exactly
         @(Get-ChildItem $TestDrive -Filter '*.bak').Count | Should Be 0
     }
     It 'reports missing host in audit without prompting or changing the file' {
         $script:ApplyChanges=$false
-        $before=[IO.File]::ReadAllText($script:LauncherFixture)
+        $before=[KioskTestSource]::ReadAllText($script:LauncherFixture)
         (Repair-LauncherDetails -Path $script:LauncherFixture).Status | Should Be 'Fail'
-        [IO.File]::ReadAllText($script:LauncherFixture) | Should Be $before
+        [KioskTestSource]::ReadAllText($script:LauncherFixture) | Should Be $before
         Assert-MockCalled Read-Host -Scope It -Times 0 -Exactly
     }
     It 'does not prompt or rewrite an already complete URL' {
-        $before=[IO.File]::ReadAllText($script:LauncherFixture).Replace('kioskId=K1','kioskId=K1&host=HOST01')
+        $before=[KioskTestSource]::ReadAllText($script:LauncherFixture).Replace('kioskId=K1','kioskId=K1&host=HOST01')
         [IO.File]::WriteAllText($script:LauncherFixture,$before)
         (Repair-LauncherDetails -Path $script:LauncherFixture -Hostname 'HOST01').Status | Should Be 'Pass'
-        [IO.File]::ReadAllText($script:LauncherFixture) | Should Be $before
+        [KioskTestSource]::ReadAllText($script:LauncherFixture) | Should Be $before
         Assert-MockCalled Read-Host -Scope It -Times 0 -Exactly
     }
     It 'records whitespace host without filling it in Apply' {
-        $text=[IO.File]::ReadAllText($script:LauncherFixture).Replace('kioskId=K1','kioskId=K1&host=%20')
+        $text=[KioskTestSource]::ReadAllText($script:LauncherFixture).Replace('kioskId=K1','kioskId=K1&host=%20')
         [IO.File]::WriteAllText($script:LauncherFixture,$text)
         $result=Repair-LauncherDetails -Path $script:LauncherFixture
         $result.Status | Should Be 'Fail'
         $result.LauncherValues['Host Name'] | Should Be 'Not detected'
-        [IO.File]::ReadAllText($script:LauncherFixture) | Should Be $text
+        [KioskTestSource]::ReadAllText($script:LauncherFixture) | Should Be $text
         Assert-MockCalled Read-Host -Scope It -Times 0 -Exactly
     }
     It 'preserves both obsolete hostname and current host for manual review' {
-        $text=[IO.File]::ReadAllText($script:LauncherFixture).Replace('kioskId=K1','kioskId=K1&hostname=OLD&host=CONFIRMED')
+        $text=[KioskTestSource]::ReadAllText($script:LauncherFixture).Replace('kioskId=K1','kioskId=K1&hostname=OLD&host=CONFIRMED')
         [IO.File]::WriteAllText($script:LauncherFixture,$text)
         $result=Repair-LauncherDetails -Path $script:LauncherFixture
         $result.Status | Should Be 'Fail'
         $result.LauncherValues['Host Name'] | Should Be 'CONFIRMED'
         $result.LauncherValues['URL'] | Should Match 'hostname=OLD&host=CONFIRMED'
-        [IO.File]::ReadAllText($script:LauncherFixture) | Should Be $text
+        [KioskTestSource]::ReadAllText($script:LauncherFixture) | Should Be $text
         Assert-MockCalled Read-Host -Scope It -Times 0 -Exactly
     }
     It 'does not migrate hostname to host in Apply' {
-        $text=[IO.File]::ReadAllText($script:LauncherFixture).Replace('kioskId=K1','kioskId=K1&hostname=EXISTING')
+        $text=[KioskTestSource]::ReadAllText($script:LauncherFixture).Replace('kioskId=K1','kioskId=K1&hostname=EXISTING')
         [IO.File]::WriteAllText($script:LauncherFixture,$text)
         $result=Repair-LauncherDetails -Path $script:LauncherFixture
         $result.Status | Should Be 'Fail'
         $result.LauncherValues['URL'] | Should Match 'hostname=EXISTING'
-        [IO.File]::ReadAllText($script:LauncherFixture) | Should Be $text
+        [KioskTestSource]::ReadAllText($script:LauncherFixture) | Should Be $text
         Assert-MockCalled Read-Host -Scope It -Times 0 -Exactly
     }
     It 'flags hostname in audit without changing the URL' {
         $script:ApplyChanges=$false
-        $text=[IO.File]::ReadAllText($script:LauncherFixture).Replace('kioskId=K1','kioskId=K1&hostname=OLD&host=CONFIRMED')
+        $text=[KioskTestSource]::ReadAllText($script:LauncherFixture).Replace('kioskId=K1','kioskId=K1&hostname=OLD&host=CONFIRMED')
         [IO.File]::WriteAllText($script:LauncherFixture,$text)
         (Repair-LauncherDetails -Path $script:LauncherFixture).Status | Should Be 'Fail'
-        [IO.File]::ReadAllText($script:LauncherFixture) | Should Be $text
+        [KioskTestSource]::ReadAllText($script:LauncherFixture) | Should Be $text
     }
     It 'reports missing host without using a supplied value or writing files' {
-        $before=[IO.File]::ReadAllText($script:LauncherFixture)
+        $before=[KioskTestSource]::ReadAllText($script:LauncherFixture)
         $result=Repair-LauncherDetails -Path $script:LauncherFixture -Hostname 'SUPPLIED'
         $result.Status | Should Be 'Fail'
         $result.LauncherValues['Host Name'] | Should Be 'Not detected'
-        [IO.File]::ReadAllText($script:LauncherFixture) | Should Be $before
+        [KioskTestSource]::ReadAllText($script:LauncherFixture) | Should Be $before
         Assert-MockCalled Read-Host -Scope It -Times 0 -Exactly
     }
     It 'does not rewrite an invalid launcher through the full Apply flow' {
@@ -162,16 +164,16 @@ Describe 'Read-only launcher host and completion menu' {
         $desktop=Join-Path $script:ProfileFixture 'Desktop'
         foreach ($folder in @($scripts,$startup,$desktop)) { [IO.Directory]::CreateDirectory($folder) | Out-Null }
         $launch=Join-Path $scripts 'LaunchKiosk.ps1'
-        $before=[IO.File]::ReadAllText($script:LauncherFixture)
+        $before=[KioskTestSource]::ReadAllText($script:LauncherFixture)
         [IO.File]::WriteAllText($launch,$before)
         [IO.File]::WriteAllText((Join-Path $startup 'LaunchKiosk.bat'),'@echo off')
         [IO.File]::WriteAllText((Join-Path $desktop 'Launch Kiosk.lnk'),'fixture')
         Mock Get-KioskProfilePath { $script:ProfileFixture }
         $result=Invoke-KioskLauncherConfiguration -UserName 'SELISE-KIOSK'
         $result.Status | Should Be 'Fail'
-        [IO.File]::ReadAllText($launch) | Should Be $before
-        [IO.File]::ReadAllText((Join-Path $startup 'LaunchKiosk.bat')) | Should Be '@echo off'
-        [IO.File]::ReadAllText((Join-Path $desktop 'Launch Kiosk.lnk')) | Should Be 'fixture'
+        [KioskTestSource]::ReadAllText($launch) | Should Be $before
+        [KioskTestSource]::ReadAllText((Join-Path $startup 'LaunchKiosk.bat')) | Should Be '@echo off'
+        [KioskTestSource]::ReadAllText((Join-Path $desktop 'Launch Kiosk.lnk')) | Should Be 'fixture'
         Assert-MockCalled Read-Host -Scope It -Times 0 -Exactly
     }
     It 'offers main menu and exits the PowerShell session only after leaving the menu loop' {
@@ -237,21 +239,21 @@ Describe 'Read-only Startup BAT and shortcut target verification' {
     It 'preserves incorrect BAT and desktop targets in Apply' {
         $before=(Get-FileHash -LiteralPath $script:TargetLink).Hash
         { Verify-KioskLaunchTargets $script:TargetBatch $script:TargetLink $script:TargetLaunch } | Should Throw
-        [IO.File]::ReadAllText($script:TargetBatch) | Should Be '@echo off'
+        [KioskTestSource]::ReadAllText($script:TargetBatch) | Should Be '@echo off'
         (Get-FileHash -LiteralPath $script:TargetLink).Hash | Should Be $before
         @(Get-ChildItem $TestDrive -Filter '*.bak').Count | Should Be 0
     }
     It 'fails audit without rewriting wrong targets' {
         $script:ApplyChanges=$false
         { Verify-KioskLaunchTargets $script:TargetBatch $script:TargetLink $script:TargetLaunch } | Should Throw
-        [IO.File]::ReadAllText($script:TargetBatch) | Should Be '@echo off'
+        [KioskTestSource]::ReadAllText($script:TargetBatch) | Should Be '@echo off'
     }
     It 'keeps target verification read-only when the desktop shortcut is missing' {
         $batch='powershell.exe -ExecutionPolicy Bypass -File "'+$script:TargetLaunch+'"'
         [IO.File]::WriteAllText($script:TargetBatch,$batch)
         Remove-Item -LiteralPath $script:TargetLink -Force
         { Verify-KioskLaunchTargets $script:TargetBatch $script:TargetLink $script:TargetLaunch } | Should Throw
-        [IO.File]::ReadAllText($script:TargetBatch) | Should Be $batch
+        [KioskTestSource]::ReadAllText($script:TargetBatch) | Should Be $batch
         Test-Path -LiteralPath $script:TargetLink | Should Be $false
         @(Get-ChildItem $TestDrive -Filter '*.bak').Count | Should Be 0
     }
@@ -393,7 +395,16 @@ Describe 'Entry mode gates and unsupported POS' {
     BeforeEach {
         Mock Read-Host { '1' }
         $parameterHeader = $script:SubjectText.Substring(0, $script:SubjectAst.ParamBlock.Extent.EndOffset)
-        $validation = ($script:SubjectAst.EndBlock.Statements | Select-Object -First 2 | ForEach-Object { $_.Extent.Text }) -join "`r`n"
+        # These mode-gate cases model the SaaS compatibility entry, which binds
+        # the client before the shared mode gate runs. Shared client validation
+        # and cross-client isolation are covered by Test-SharedKiosk.ps1.
+        $parameterHeader=$parameterHeader.Replace('[Parameter(Mandatory=$true)]','').Replace('[string]$ClientType,','[string]$ClientType = ''SaaS'',')
+        $validationStatements=@($script:SubjectAst.EndBlock.Statements | Where-Object {
+            $_ -is [System.Management.Automation.Language.IfStatementAst] -and
+            ($_.Extent.Text.StartsWith('if (@($Apply') -or $_.Extent.Text.StartsWith('if ($DeviceType'))
+        })
+        if($validationStatements.Count -ne 2){throw 'Cannot identify shared mode/device validation gates.'}
+        $validation = ($validationStatements | ForEach-Object { $_.Extent.Text }) -join "`r`n"
         $gateStart = $script:SubjectText.IndexOf('$script:ApplyChanges = $false')
         $gateEnd = $script:SubjectText.IndexOf('$runMode =', $gateStart)
         $script:ModeGate = [scriptblock]::Create($parameterHeader + "`r`n" + $validation + "`r`n" +
@@ -1090,7 +1101,7 @@ Describe 'Thorough Check Payment Service detail reporting' {
 
     It 'adds the Payment Configuration row to both SaaS and Subway Thorough Check reports' {
         foreach ($name in @('SaaSKioskThoroughCheckScript.ps1', 'SubwayKioskThoroughCheck.ps1')) {
-            $source = [IO.File]::ReadAllText((Join-Path (Split-Path $PSScriptRoot -Parent) $name))
+            $source = [KioskTestSource]::ReadAllText((Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) $name))
             $source | Should Match "ItemTitle 'Payment Configuration'"
             $source | Should Match 'ConvertFrom-ThoroughPaymentJson'
             $source | Should Match 'Get-ThoroughPaymentVersionDetails'

@@ -1,7 +1,9 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Isolated launcher files and registry fixtures. Never run a launcher or browser.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $fixtureRoot=Join-Path $projectRoot ('output\pinch-zoom\fixtures-'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($fixtureRoot)
 function Assert-Pinch {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
@@ -46,7 +48,7 @@ function Assert-PinchFiles {Assert-Pinch (@(Get-ChildItem -LiteralPath $script:p
 $caseCount=0
 foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
     Assert-Pinch ($errors.Count -eq 0) 'Client source parser errors'
     . ([scriptblock]::Create(($ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
     $realWrite=${function:Write-KioskPinchStream};$realRead=${function:Read-KioskPinchStream};$realBatch=${function:Test-KioskStartupBatch}
@@ -92,7 +94,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
                 $result=Invoke-KioskPinchZoomCheck -UserName 'Custom Kiosk'
                 Assert-Pinch (($result.Status -eq 'Pass') -eq $isApply) ('Missing-argument result incorrect: '+$format+' '+$encoding.WebName+' '+$result.Action)
                 $expected=if($isApply){$script:template.Replace('{ARGS}',($arguments+' --disable-pinch'))}else{$script:text}
-                Assert-Pinch ([IO.File]::ReadAllText($script:launch) -ceq $expected) 'More than the authorized argument changed'
+                Assert-Pinch ([KioskTestSource]::ReadAllText($script:launch) -ceq $expected) 'More than the authorized argument changed'
                 if(-not $isApply){Assert-PinchBytes $script:original}
                 else{
                     $expectedBody=$encoding.GetBytes($expected);$preamble=$encoding.GetPreamble()
@@ -166,7 +168,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
     $script:concurrentText=$script:text+"`r`n"+'# Concurrent operator change'
     function Test-KioskStartupBatch {param($Batch,$LaunchPath) [IO.File]::WriteAllText($script:launch,$script:concurrentText,[Text.UTF8Encoding]::new($false));return $true}
     $result=Invoke-KioskPinchZoomCheck -UserName 'Custom Kiosk'
-    Assert-Pinch ($result.Status -eq 'Fail' -and [IO.File]::ReadAllText($script:launch) -ceq $script:concurrentText) 'Concurrent content was overwritten'
+    Assert-Pinch ($result.Status -eq 'Fail' -and [KioskTestSource]::ReadAllText($script:launch) -ceq $script:concurrentText) 'Concurrent content was overwritten'
     Set-Item Function:\Test-KioskStartupBatch $realBatch
     Assert-PinchFiles;$caseCount++
     Remove-Item Function:\Test-Path

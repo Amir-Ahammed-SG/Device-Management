@@ -1,9 +1,11 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 # Compare and render fixtures only. Never run a device check or repair.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $previewRoot=Join-Path $projectRoot 'output\finding-highlights'
 [void][IO.Directory]::CreateDirectory($previewRoot)
 function Assert-Highlight {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
@@ -98,7 +100,7 @@ $cases=@(
 )
 foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
     Assert-Highlight ($errors.Count -eq 0) 'Client source does not parse.'
     foreach($entry in ([ordered]@{'$sec4Num'='4';'$secAppNum'='5'}).GetEnumerator()){
         $number=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -ceq $entry.Key},$true))
@@ -229,7 +231,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         $reportHostname='SAMPLE-KIOSK-01';$reportKioskId='Kiosk-1';$KioskId=$null;$kioskUser='SELISE-KIOSK'
         . $render
         Assert-Highlight (($rows | ConvertTo-Json -Depth 6 -Compress) -ceq $before) 'The renderer changed observations or recorded outcomes.'
-        $html=[IO.File]::ReadAllText($reportPath)
+        $html=[KioskTestSource]::ReadAllText($reportPath)
         $headings=@([regex]::Matches($html,'<th colspan="[45]" class="section-title">([^<]+)</th>') | ForEach-Object {[Net.WebUtility]::HtmlDecode($_.Groups[1].Value)})
         $expectedHeadings='1. Hardware & Peripherals|2. Kiosk Application & Policies|3. Core Background Services|4. Security, Network & System Integrity'+$(if(-not $isApply){'|5. AppSettings Check'})
         Assert-Highlight (($headings -join '|') -ceq $expectedHeadings) 'Applicable rendered sections are not in the requested numbered order.'

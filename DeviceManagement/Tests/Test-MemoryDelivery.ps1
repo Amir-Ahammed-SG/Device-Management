@@ -1,10 +1,12 @@
 # In-memory fixtures only: never start real device checks or installers.
 [CmdletBinding()]
 param([string]$ReleaseId='20261022-not-verified-amber-01')
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
+
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
 $entryPath=Join-Path $projectRoot ('output\releases\'+$ReleaseId+'\Start-DeviceManagement.ps1')
-$entry=[IO.File]::ReadAllText($entryPath)
+$entry=[KioskTestSource]::ReadAllText($entryPath)
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseInput($entry,[ref]$tokens,[ref]$errors)
 if ($errors.Count) {throw ($errors | Out-String)}
@@ -14,7 +16,7 @@ $resourceAst=[Management.Automation.Language.Parser]::ParseInput($resourceNode[0
 $resources=$resourceAst.EndBlock.Statements[0].PipelineElements[0].Expression.SafeGetValue()
 $bundle=@{Files=@{};Configurations=@{}}
 foreach ($name in $resources.Keys) {$bundle.Files[$name]=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resources[$name].Data))}
-foreach ($name in @('Clients','Operations','PaymentPackages')) {
+foreach ($name in @('Clients','Operations','PaymentPackages','KioskClients')) {
     $configAst=[Management.Automation.Language.Parser]::ParseInput($bundle.Files['DeviceManagement/Config/'+$name+'.psd1'],[ref]$tokens,[ref]$errors)
     $bundle.Configurations[$name]=$configAst.EndBlock.Statements[0].PipelineElements[0].Expression.SafeGetValue()
 }
@@ -29,15 +31,15 @@ $env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT=$fixtureRoot
 $log=Join-Path $fixtureRoot 'calls.jsonl'
 $fixture=@'
 [CmdletBinding()]
-param([switch]$Apply,[switch]$AuditOnly,[switch]$FinalReport,[string]$DeviceType,[switch]$ArchitectureRun,[string]$ArchitectureResultPath,[string]$ClientLocation,[string]$AgentName)
+param([string]$ClientType,[switch]$Apply,[switch]$AuditOnly,[switch]$FinalReport,[string]$DeviceType,[switch]$ArchitectureRun,[string]$ArchitectureResultPath,[string]$ClientLocation,[string]$AgentName)
 $script:FixtureCount++
-[IO.File]::AppendAllText((Join-Path $env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT 'calls.jsonl'),(([pscustomobject]@{Client='@@CLIENT@@';Apply=[bool]$Apply;Audit=[bool]$AuditOnly;Final=[bool]$FinalReport;Device=$DeviceType;Architecture=[bool]$ArchitectureRun;CompletionFile=$ArchitectureResultPath;Branch=$ClientLocation;Agent=$AgentName;Count=$script:FixtureCount;PID=$PID} | ConvertTo-Json -Compress)+[Environment]::NewLine))
+[IO.File]::AppendAllText((Join-Path $env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT 'calls.jsonl'),(([pscustomobject]@{Client=$ClientType;Apply=[bool]$Apply;Audit=[bool]$AuditOnly;Final=[bool]$FinalReport;Device=$DeviceType;Architecture=[bool]$ArchitectureRun;CompletionFile=$ArchitectureResultPath;Branch=$ClientLocation;Agent=$AgentName;Count=$script:FixtureCount;PID=$PID} | ConvertTo-Json -Compress)+[Environment]::NewLine))
 $global:LASTEXITCODE=12345
 if ($env:DEVICE_MANAGEMENT_MEMORY_TEST_SCENARIO -eq 'throw') {throw 'Fixture refused to start.'}
 if ($env:DEVICE_MANAGEMENT_MEMORY_TEST_SCENARIO -eq 'incomplete') {return}
 $report=$null
 if ($env:DEVICE_MANAGEMENT_MEMORY_TEST_SCENARIO -in @('report','failed-report','missing-file','wrong-folder')) {
-    $report=Join-Path $env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT ('exact-@@CLIENT@@-'+[guid]::NewGuid().ToString('N')+'.html')
+    $report=Join-Path $env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT (('exact-'+$ClientType+'-')+[guid]::NewGuid().ToString('N')+'.html')
     if ($env:DEVICE_MANAGEMENT_MEMORY_TEST_SCENARIO -eq 'wrong-folder') {$report=Join-Path (Join-Path $env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT 'other') 'wrong.html';[void][IO.Directory]::CreateDirectory((Split-Path $report -Parent))}
     if ($env:DEVICE_MANAGEMENT_MEMORY_TEST_SCENARIO -ne 'missing-file') {[IO.File]::WriteAllText($report,'<!DOCTYPE html><html><body>Fixture report</body></html>')}
 }
@@ -47,12 +49,12 @@ $result
 if ($env:DEVICE_MANAGEMENT_MEMORY_TEST_SCENARIO -eq 'duplicate') {$result}
 '@
 foreach ($client in @('SaaS','Subway')) {
-    $name=if ($client -eq 'SaaS') {'SaaSKioskThoroughCheckScript.ps1'} else {'SubwayKioskThoroughCheck.ps1'}
+    $name='DeviceManagement/KioskThoroughCheck.ps1'
     $bundle.Files[$name]=$fixture.Replace('@@CLIENT@@',$client)
 }
 # Prevent any real installation during menu fixtures, including unexpected routes.
 foreach($client in @('SaaS','Subway')) {
-    $bundle.Files['DeviceManagement/Installations/KIOSK/'+$client+'-Install.ps1']='param($Context) throw ''Unexpected installation fixture route; no setup executed.'''
+    $bundle.Files['DeviceManagement/Installations/KIOSK/Install.ps1']='param($Context) throw ''Unexpected installation fixture route; no setup executed.'''
 }
 $bundle.Files['DeviceManagement/OtherTools/PaymentCronJob.ps1']=@'
 param([switch]$MenuRun)
@@ -129,7 +131,7 @@ try {
     # two client bodies and report destination are fixtures; menu/modules are real.
     $promptFixture=$fixture.Replace('$script:FixtureCount++', '$script:FixtureCount++; if ($Apply) { $answer=Read-Host ''Fixture source hostname''; Write-Host (''FIXTURE_HOSTNAME='' + $answer) }')
     foreach ($client in @('SaaS','Subway')) {
-        $name=if ($client -eq 'SaaS') {'SaaSKioskThoroughCheckScript.ps1'} else {'SubwayKioskThoroughCheck.ps1'}
+        $name='DeviceManagement/KioskThoroughCheck.ps1'
         $bundle.Files[$name]=$promptFixture.Replace('@@CLIENT@@',$client)
     }
     $lines=New-Object 'Collections.Generic.List[string]'
@@ -140,7 +142,7 @@ try {
         $lines.Add(("'{0}' = @{{Data='{1}';SHA256='{2}'}}" -f $name,[Convert]::ToBase64String($bytes),$hash))
     }
     $literal='@{'+"`r`n"+($lines -join "`r`n")+"`r`n}"
-    $interactive=[IO.File]::ReadAllText((Join-Path $projectRoot 'Deployment\Bootstrap.ps1.template')).Replace('@@RESOURCES@@',$literal)
+    $interactive=[KioskTestSource]::ReadAllText((Join-Path $projectRoot 'Deployment\Bootstrap.ps1.template')).Replace('@@RESOURCES@@',$literal)
     $interactivePath=Join-Path $fixtureRoot 'interactive.ps1'
     [IO.File]::WriteAllText($interactivePath,($interactive+"`r`n"+'Write-Output ''MEMORY_RETURNED_TO_CALLER'''),(New-Object Text.UTF8Encoding($false)))
     $env:DEVICE_MANAGEMENT_MEMORY_TEST_SCENARIO='no-report'
@@ -192,10 +194,10 @@ try {
     }
     # Installation is always a fixture, including real interactive menu routing.
     $installCallerExit=$global:LASTEXITCODE
-    $installationName='DeviceManagement/Installations/KIOSK/SaaS-Install.ps1'
+    $installationName='DeviceManagement/Installations/KIOSK/Install.ps1'
     $installFixture=@'
 param($Context)
-if($Context.ClientType -ne '@@INSTALLCLIENT@@'){throw 'Wrong installation source selected.'}
+if($Context.ClientType -notin @('SaaS','Subway')){throw 'Wrong installation source selected.'}
 $script:InstallationFixtureCount++
 [IO.File]::AppendAllText((Join-Path $env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT 'install-calls.jsonl'),(([pscustomobject]@{Client=$Context.ClientType;Device=$Context.DeviceType;Operation=$Context.Operation;Mode=$Context.Mode;Browser=$Context.Browser;Count=$script:InstallationFixtureCount;PID=$PID} | ConvertTo-Json -Compress)+[Environment]::NewLine))
 $global:LASTEXITCODE=765
@@ -216,7 +218,7 @@ if($env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO -eq 'invalid'){$result.Status=
 $result
 if($env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO -eq 'duplicate'){$result}
 '@
-    foreach($client in @('SaaS','Subway')){$bundle.Files['DeviceManagement/Installations/KIOSK/'+$client+'-Install.ps1']=$installFixture.Replace('@@INSTALLCLIENT@@',$client)}
+    foreach($client in @('SaaS','Subway')){$bundle.Files['DeviceManagement/Installations/KIOSK/Install.ps1']=$installFixture.Replace('@@INSTALLCLIENT@@',$client)}
     $oldInstallScenario=$env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO
     try {
         foreach($installClient in @('SaaS','Subway')) {
@@ -251,7 +253,7 @@ if($env:DEVICE_MANAGEMENT_MEMORY_INSTALL_SCENARIO -eq 'duplicate'){$result}
             $lines.Add(("'{0}' = @{{Data='{1}';SHA256='{2}'}}" -f $name,[Convert]::ToBase64String($bytes),$hash))
         }
         $literal='@{'+"`r`n"+($lines -join "`r`n")+"`r`n}"
-        $interactive=[IO.File]::ReadAllText((Join-Path $projectRoot 'Deployment\Bootstrap.ps1.template')).Replace('@@RESOURCES@@',$literal)
+        $interactive=[KioskTestSource]::ReadAllText((Join-Path $projectRoot 'Deployment\Bootstrap.ps1.template')).Replace('@@RESOURCES@@',$literal)
         [IO.File]::WriteAllText($interactivePath,($interactive+"`r`n"+'Write-Output ''MEMORY_RETURNED_TO_CALLER'''),(New-Object Text.UTF8Encoding($false)))
         foreach($clientKey in @('2','1')) {
             foreach($browserKey in @('1','2')) {

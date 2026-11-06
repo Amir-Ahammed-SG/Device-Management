@@ -1,3 +1,5 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # All service/process/control operations are fixtures. Native Restart Manager
 # smoke check queries only this test process's own disposable open log file.
 $ErrorActionPreference='Stop'
@@ -8,7 +10,7 @@ $exe=Join-Path $root 'Kiosk Payment Middleware.exe';$path=Join-Path $root 'appse
 [IO.File]::WriteAllText($exe,'Fixture only - never run')
 $tokens=$null;$errors=$null
 $source=Join-Path $projectRoot 'OtherTools/PaymentCronJob.ps1'
-$ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
+$ast=[KioskTestSource]::ParseFile($source,[ref]$tokens,[ref]$errors)
 if($errors.Count){throw ($errors|Out-String)}
 . ([scriptblock]::Create(($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|ForEach-Object {$_.Extent.Text}) -join "`n"))
 $realOwners=(Get-Command Get-PaymentCronLogOwners).ScriptBlock

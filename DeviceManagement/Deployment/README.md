@@ -40,7 +40,7 @@ where Status is the latest recorded property value. Both retain the approved col
 colors, thin borders, record grouping and component hover. Repair rules are unchanged.
 
 The CDN serves one self-contained script containing the current project modules,
-configuration and both client check sources. PowerShell loads these resources
+configuration and the shared kiosk check source. PowerShell loads these resources
 into memory and verifies their embedded checksums before opening the menu.
 There is no additional project download, ZIP extraction, cache directory or
 project completion file on the device. Exiting returns to the calling shell.
@@ -50,11 +50,14 @@ process, with the existing console host for Read-Host and confirmation prompts.
 This isolates script/global variables, preferences and native exit-code state.
 The checks return a completion result containing their actual exit status and
 exact report path. A missing, duplicate or invalid result fails verification.
-Each client's KIOSK Installation runs its separate embedded handler and setup source,
-validates all four inputs before changes, and returns one verified operation
-result. Each client handler selects the embedded Edge or Chrome setup from the browser choice. The bundle now contains 20 runtime resources, including the isolated Payment Cron Job tool. Pending operations remain unavailable.
+KIOSK Installation runs the shared embedded handler and selected Edge/Chrome
+setup with explicit client settings, validates all four inputs before changes,
+and returns one verified operation result. The bundle contains 18 runtime
+resources, including `KioskClients.psd1`, its loader, and the isolated Payment
+Cron Job tool. Client compatibility launchers are not bundled. Pending operations
+remain unavailable.
 
-The repository's file-based launcher and client check sources are unchanged.
+Local file execution uses the same shared check and installation sources.
 Build-Release.ps1 adapts only these delivery boundaries in the emitted script:
 
 - Load modules and configuration from embedded memory resources.

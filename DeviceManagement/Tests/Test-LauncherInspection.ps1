@@ -1,7 +1,9 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 $projectRoot = Split-Path $PSScriptRoot -Parent
 # Isolated fixtures only. Never use real Windows profiles, shortcuts or registry.
 $ErrorActionPreference='Stop'
-$parent=Split-Path $projectRoot -Parent
+$parent=$projectRoot
 $fixtureRoot=Join-Path $projectRoot ('output\launcher-inspection\run-'+[guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
 function Assert-Inspection { param([bool]$Condition,[string]$Message) if (-not $Condition) { throw $Message } }
@@ -56,7 +58,7 @@ $env:COMPUTERNAME='HOST-01'
 foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')) {
     $script:origin=if ($sourceName -eq 'SubwayKioskThoroughCheck.ps1') { 'https://kiosk.subway.ch' } else { 'https://kiosk.ordermonkey.com' }
     $tokens=$null; $errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $parent $sourceName),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $parent $sourceName),[ref]$tokens,[ref]$errors)
     Assert-Inspection ($errors.Count -eq 0) 'Source did not parse'
     $definitions=$ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($definitions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
@@ -119,6 +121,21 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroug
         $script:policyWrites++
         $key.Values[$Name]=$Value; $key.Kinds[$Name]=$PropertyType
     }
+    $validUrl=$script:origin+'/#/onboarding/login?restaurantId=R1&kioskId=K1&host=HOST-01'
+    Assert-Inspection (@((Resolve-KioskUrl -Url $validUrl).Issues).Count -eq 0) 'Valid onboarding URL rejected'
+    foreach($invalidUrl in @(
+        ($script:origin+'/#/other?restaurantId=R1&kioskId=K1&host=HOST-01'),
+        ($script:origin+'/?restaurantId=R1&kioskId=K1&host=HOST-01'),
+        ($script:origin+'/#/onboarding/login/?restaurantId=R1&kioskId=K1&host=HOST-01'),
+        ($script:origin+'/?redirect=/#/onboarding/login&restaurantId=R1&kioskId=K1&host=HOST-01'),
+        ($validUrl.Replace('https://','http://')),
+        ($validUrl.Replace($script:origin,'https://other.example.test'))
+    )) {
+        $resolved=Resolve-KioskUrl -Url $invalidUrl
+        Assert-Inspection (@($resolved.BlockedIssues).Count -gt 0 -and $resolved.URL -ceq $invalidUrl) 'Invalid origin/route accepted or rewritten'
+    }
+    $missingParameters=Resolve-KioskUrl -Url ($script:origin+'/#/onboarding/login')
+    Assert-Inspection (@($missingParameters.BlockedIssues).Count -eq 0 -and @($missingParameters.Missing).Count -eq 3) 'Valid route without parameters was misclassified'
     foreach ($mode in @($false,$true)) {
         $script:ApplyChanges=$mode
         New-LauncherFixture; Add-FixtureShortcut $script:batchPath
@@ -148,11 +165,10 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroug
         New-LauncherFixture; Add-FixtureShortcut 'C:\Wrong target.bat'; $before=Get-FixtureSnapshot
         $result=Invoke-KioskLauncherConfiguration -UserName 'SELISE-KIOSK' -Hostname 'HOST-01'
         Assert-Inspection ($result.Status -eq 'Fail' -and $script:saveCalls -eq 0 -and (Get-FixtureSnapshot) -ceq $before) 'Incorrect existing shortcut was modified'
-        $urlProblems=@('missingHost','oldHostname','conflict','wrongOrigin','syntax','missingScript')
-        if ($sourceName -eq 'SubwayKioskThoroughCheck.ps1') { $urlProblems += 'wrongRoute' }
+        $urlProblems=@('missingHost','oldHostname','conflict','wrongOrigin','wrongRoute','syntax','missingScript')
         foreach ($urlProblem in $urlProblems) {
             New-LauncherFixture
-            $text=[IO.File]::ReadAllText($script:launchPath)
+            $text=[KioskTestSource]::ReadAllText($script:launchPath)
             switch ($urlProblem) {
                 'missingHost' { $text=$text.Replace('&host=HOST-01','') }
                 'oldHostname' { $text=$text.Replace('&host=HOST-01','&hostname=HOST-01') }

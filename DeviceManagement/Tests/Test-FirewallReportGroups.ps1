@@ -1,15 +1,17 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 # Fixtures only: do not contact Windows Firewall or change live rules.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $previewRoot=Join-Path $projectRoot 'output\firewall-groups'
 [void][IO.Directory]::CreateDirectory($previewRoot)
 function Assert-FirewallReport {param([bool]$Condition,[string]$Message)if(-not $Condition){throw $Message}}
 foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $source=Join-Path $sourceRoot $sourceName
-    $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
+    $tokens=$null;$errors=$null;$ast=[KioskTestSource]::ParseFile($source,[ref]$tokens,[ref]$errors)
     Assert-FirewallReport ($errors.Count -eq 0) 'Source parse failed.'
     $definitions=$ast.FindAll({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($definitions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
@@ -59,7 +61,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
             $outputFolder=$previewRoot;$reportPath=Join-Path $previewRoot ($client+'-'+$mode+'-'+$provider+'.html')
             $runId='FIREWALL-FIXTURE';$clientLocation='Firewall preview';$deviceType='KIOSK';$reportKioskId='Kiosk-1';$KioskId=$null;$kioskUser='SELISE-KIOSK';$reportHostname='SAMPLE-KIOSK01'
             . $render
-            $html=[IO.File]::ReadAllText($reportPath)
+            $html=[KioskTestSource]::ReadAllText($reportPath)
             if($mode -eq 'Audit'){
                 $auditView=Get-AuditRenderedComponent $html 'Firewall'
                 Assert-FirewallReport ($auditView.Count -eq 1 -and $auditView.Fields.Count -eq 5) 'Audit lost or duplicated actual firewall fields.'

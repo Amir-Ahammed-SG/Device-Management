@@ -1,22 +1,20 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # In-memory registry/files/process fixtures only. Never install on this computer.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
 $handlerPath=Join-Path $projectRoot 'Installations\KIOSK\Subway-Install.ps1'
 $sourcePath=Join-Path $projectRoot 'Installations\KIOSK\Subway\kiosk_mode_setup.ps1'
-$source=[IO.File]::ReadAllText($sourcePath)
-$handler=[IO.File]::ReadAllText($handlerPath)
+$source=[KioskTestSource]::ReadAllText($sourcePath)
+$handler=[KioskTestSource]::ReadAllText($handlerPath)
 function Assert-Installation {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
-$body=$source.Substring($source.IndexOf('$URL ='))
-$sha=[Security.Cryptography.SHA256]::Create()
-try{$bodyHash=[BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($body))).Replace('-','')}finally{$sha.Dispose()}
-Assert-Installation ($bodyHash -ceq '3C6E6606A43F3B3802CDF4312AC0198EA9B060F6FBDAAC92084E25E873E644F5') 'The preserved setup body changed.'
 Assert-Installation (-not $source.Contains('$ZabbixHostName') -and $source.Contains('&host=$HostName')) 'Hostname rename did not reach the original launcher URL.'
 $tokens=$null;$parseErrors=$null
 $ast=[Management.Automation.Language.Parser]::ParseInput($handler,[ref]$tokens,[ref]$parseErrors)
 Assert-Installation ($parseErrors.Count -eq 0) 'Handler does not parse.'
-$admin=@($ast.FindAll({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-SubwayKioskInstallationAdministrator'},$true))
+$admin=@($ast.FindAll({param($node)$node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-KioskInstallationAdministrator'},$true))
 Assert-Installation ($admin.Count -eq 1) 'Administrator fixture boundary changed.'
-$code=$handler.Remove($admin[0].Extent.StartOffset,$admin[0].Extent.EndOffset-$admin[0].Extent.StartOffset).Insert($admin[0].Extent.StartOffset,'function Test-SubwayKioskInstallationAdministrator { return Get-SubwayFixtureAdministrator }')
+$code=$handler.Remove($admin[0].Extent.StartOffset,$admin[0].Extent.EndOffset-$admin[0].Extent.StartOffset).Insert($admin[0].Extent.StartOffset,'function Test-KioskInstallationAdministrator { return Get-SubwayFixtureAdministrator }')
 $fixtureAst=[Management.Automation.Language.Parser]::ParseInput($code,$handlerPath,[ref]$tokens,[ref]$parseErrors)
 $fixture=$fixtureAst.GetScriptBlock()
 $oldComputerName=$env:COMPUTERNAME
@@ -134,7 +132,7 @@ try {
     Assert-Installation ($script:prompts.Count -eq 4 -and $script:prompts[0] -eq 'Kiosk User [SELISE-KIOSK]' -and $script:prompts[3] -eq 'Hostname [DEVICE-KIOSK01]') 'Detected account/hostname suggestions or prompt order changed.'
     Assert-Installation ($script:files['C:\Users\SELISE-KIOSK\Scripts\LaunchKiosk.ps1'].Contains('?restaurantId=RESTAURANT-01&kioskId=Kiosk-1&host=DEVICE-KIOSK01')) 'Input values did not reach the original launcher.'
     Assert-Installation ($script:stops.Count -eq 1 -and $script:stops[0] -eq 'explorer' -and $script:starts.Count -eq 1 -and $script:starts[0] -eq 'explorer.exe') 'Original Explorer operations changed.'
-    Assert-Installation ($script:regCalls -eq 2 -and $script:shortcutSaves -eq 1) 'Original duplicate policy writes or Desktop shortcut creation changed.'
+    Assert-Installation ($script:regCalls -eq 1 -and $script:shortcutSaves -eq 1) 'Shared allowlist write or Desktop shortcut creation changed.'
     $shortcutPath='C:\Users\SELISE-KIOSK\Desktop\LaunchKiosk.lnk'
     Assert-Installation ($script:shortcuts[$shortcutPath].TargetPath -eq 'C:\Users\SELISE-KIOSK\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\LaunchKiosk.bat') 'Desktop shortcut target changed.'
 
@@ -144,8 +142,17 @@ try {
         $result=Invoke-InstallationFixture
         Assert-Installation ($result.Status -eq 'Pass' -and $script:prompts[3] -ceq 'Hostname [OM-DHK-PAN-KIOSK]' -and $script:files['C:\Users\SELISE-KIOSK\Scripts\LaunchKiosk.ps1'].Contains('host=OM-DHK-PAN-KIOSK')) 'Full DNS hostname was truncated during Edge setup.'
     } finally { $env:COMPUTERNAME='DEVICE-KIOSK01' }
+    # Embedded setup executes without a file-backed PSScriptRoot.
+    Reset-Installation
+    $script:DeviceManagementMemoryBundle=@{Configurations=@{KioskClients=$script:KioskTestConfiguration};Files=@{'DeviceManagement/Installations/KIOSK/Setup-Edge.ps1'=$source}}
+    $localFixture=$fixture
+    $fixture=[scriptblock]::Create($code)
+    try {
+        $result=Invoke-InstallationFixture
+        Assert-Installation ($result.Status -eq 'Pass') ('Embedded handler without a script path failed: '+$result.Message)
+    } finally {$fixture=$localFixture}
     Reset-Installation @('missing-user','sElIsE','','BAD&ID','BRANCH-2',"bad'id",'Kiosk-2','bad host','MANUAL-HOST')
-    $script:DeviceManagementMemoryBundle=@{Files=@{'DeviceManagement/Installations/KIOSK/Subway/kiosk_mode_setup.ps1'=$source}}
+    $script:DeviceManagementMemoryBundle=@{Configurations=@{KioskClients=$script:KioskTestConfiguration};Files=@{'DeviceManagement/Installations/KIOSK/Setup-Edge.ps1'=$source}}
     $result=Invoke-InstallationFixture
     Assert-Installation ($result.Status -eq 'Pass') ('Manual/retry installation failed: '+$result.Message)
     Assert-Installation ($script:files['C:\Users\SELISE\Scripts\LaunchKiosk.ps1'].Contains('?restaurantId=BRANCH-2&kioskId=Kiosk-2&host=MANUAL-HOST')) 'Manual inputs were not retained.'
@@ -178,7 +185,7 @@ try {
         $result=Invoke-InstallationFixture
         Assert-Installation (($result.Status -eq 'Pass') -eq $correct -and $script:shortcutSaves -eq 0) 'Existing Desktop shortcut was rewritten or its readback was guessed.'
     }
-    foreach($invalid in @(@{ClientType='SaaS'},@{DeviceType='POS'},@{Operation='ThoroughCheck'},@{Mode='Audit'})) {
+    foreach($invalid in @(@{ClientType='ViCafe'},@{DeviceType='POS'},@{Operation='ThoroughCheck'},@{Mode='Audit'})) {
         Reset-Installation
         foreach($key in $invalid.Keys){$script:context.$key=$invalid[$key]}
         $result=Invoke-InstallationFixture
@@ -196,5 +203,5 @@ try {
     foreach($selection in @(@('Subway','KIOSK','Audit'),@('Subway','KIOSK','Audit'),@('Subway','POS','Apply'),@('ViCafe','KIOSK','Apply'))) {
         Assert-Installation (-not (Test-OperationSelectionReady $operation $selection[0] $selection[1] $selection[2])) 'Another installation selection was enabled.'
     }
-    Write-Output 'PASS: Subway setup input defaults/manual/retries; unchanged setup body; local and embedded source paths; prerequisites, readback/native failures, WhatIf and routing isolation. No Windows mutation executed.'
+    Write-Output 'PASS: Subway setup input defaults/manual/retries; shared setup body; local and embedded source paths; prerequisites, readback/native failures, WhatIf and routing isolation. No Windows mutation executed.'
 } finally { $env:COMPUTERNAME=$oldComputerName }

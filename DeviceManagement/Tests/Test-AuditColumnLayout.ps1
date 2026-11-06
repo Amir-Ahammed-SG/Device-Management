@@ -1,12 +1,14 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Real presentation functions and synthetic observations only. No device checks.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $previewRoot=Join-Path $projectRoot 'output/audit-column-layout'
 [void][IO.Directory]::CreateDirectory($previewRoot)
 function Assert-AuditColumns {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
 function Get-Definitions {param([string]$Path)
-    $tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseFile($Path,[ref]$tokens,[ref]$errors)
+    $tokens=$null;$errors=$null;$ast=[KioskTestSource]::ParseFile($Path,[ref]$tokens,[ref]$errors)
     if($errors.Count){throw ($errors|Out-String)}
     ($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | ForEach-Object {$_.Extent.Text}) -join "`n"
 }

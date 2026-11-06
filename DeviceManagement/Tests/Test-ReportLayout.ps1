@@ -1,13 +1,15 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 $projectRoot = Split-Path $PSScriptRoot -Parent
 # Render only the report finalizer with synthetic data. Never execute device checks.
 $ErrorActionPreference = 'Stop'
-$root = Split-Path $projectRoot -Parent
+$root = $projectRoot
 $previewDir = Join-Path $projectRoot 'output\report-layout'
 New-Item -ItemType Directory -Path $previewDir -Force | Out-Null
 
 # Load definitions only: never start the launcher menu or a device operation.
 $launcherTokens = $null; $launcherErrors = $null
-$launcherAst = [Management.Automation.Language.Parser]::ParseFile((Join-Path $projectRoot 'Start-DeviceManagement.ps1'), [ref]$launcherTokens, [ref]$launcherErrors)
+$launcherAst = [KioskTestSource]::ParseFile((Join-Path $projectRoot 'Start-DeviceManagement.ps1'), [ref]$launcherTokens, [ref]$launcherErrors)
 if ($launcherErrors.Count -gt 0) { throw ($launcherErrors | Out-String) }
 $launcherFunctions = $launcherAst.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $true)
 . ([scriptblock]::Create(($launcherFunctions | ForEach-Object { $_.Extent.Text }) -join "`r`n"))
@@ -15,9 +17,9 @@ $launcherFunctions = $launcherAst.FindAll({ param($node) $node -is [Management.A
 foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1', 'SubwayKioskThoroughCheck.ps1')) {
     $path = Join-Path $root $sourceName
     $tokens = $null; $parseErrors = $null
-    $ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$parseErrors)
+    $ast = [KioskTestSource]::ParseFile($path, [ref]$tokens, [ref]$parseErrors)
     if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
-    $source = [IO.File]::ReadAllText($path)
+    $source = [KioskTestSource]::ReadAllText($path)
     $definitions=$ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $true)
     . ([scriptblock]::Create(($definitions | ForEach-Object { $_.Extent.Text }) -join "`r`n"))
     . (Join-Path $PSScriptRoot 'ReportRenderTestSupport.ps1')
@@ -94,7 +96,7 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1', 'SubwayKioskThorou
         $adminFixture.FoundStateHtml='<div class="account-stack">'+$adminFixture.FoundStateHtml+'<hr>'+$secondAdmin+'</div>'
         $adminFixture.Shortcut=New-AccountReportCommand -AccountNames @('Administrator','SupportOperator')
         . $render
-        $html = [IO.File]::ReadAllText($reportPath)
+        $html = [KioskTestSource]::ReadAllText($reportPath)
         $expectedTitle=if ($mode -eq 'Audit') { 'Thorough Check Audit Report' } else { 'Thorough Check Fix Report' }
         foreach ($required in @(('<h1>'+$expectedTitle.ToUpperInvariant()+'</h1>'), ('<title>'+$expectedTitle+'</title>'), '<h2>CLIENT DETAILS</h2>', '<h2>CONFIGURATION CHECK</h2>', ('<td>' + $client + '</td>'), '<th>Findings</th>', '<th>Branch</th>', '<th>Hostname</th>', '<th>Device</th><td>Kiosk-1</td>', 'badge-fail', '192.0.2.10', 'Sample site &lt;fixture&gt;', 'Execution &lt;fixture&gt;', 'Partial run', '@media print')) {
             if (-not $html.Contains($required)) { throw "Missing report content '$required' in $reportPath" }
@@ -197,7 +199,7 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1', 'SubwayKioskThorou
             $rejected = $false
             try { Update-ThoroughCheckHtmlReport -Path $invalidPath -DeviceType KIOSK -ClientType $client } catch { $rejected = $true }
             if (-not $rejected) { throw 'Launcher accepted an incomplete report' }
-            if ([IO.File]::ReadAllText($invalidPath) -cne $invalidHtml) { throw 'Launcher changed the incomplete report' }
+            if ([KioskTestSource]::ReadAllText($invalidPath) -cne $invalidHtml) { throw 'Launcher changed the incomplete report' }
         } finally { Remove-Item -LiteralPath $invalidPath -Force -ErrorAction SilentlyContinue }
         Write-Host "PASS: $client / $mode report, partial results, escaping, statuses and client requirements"
         $presentPath=$reportPath
@@ -213,7 +215,7 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1', 'SubwayKioskThorou
         $auditRows=[Collections.Generic.List[psobject]]@($auditRows | Where-Object { $_.ItemTitle -notin @('Kiosk Launch Architecture','SELISE-KIOSK Startup Folder','Kiosk Auto-Login','System & Browser Policies') })
         $reportPath=$presentPath.Replace('-preview.html','-missing-account-preview.html')
         . $render
-        $missingHtml=[IO.File]::ReadAllText($reportPath)
+        $missingHtml=[KioskTestSource]::ReadAllText($reportPath)
         $missingRow=[regex]::Matches($missingHtml,'(?is)<tr\b[^>]*>.*?</tr>') | Where-Object { (Get-HtmlReportRowTitle -RowHtml $_.Value) -eq 'KIOSK Account' } | Select-Object -First 1
         $missingCells=@(Get-HtmlReportRowCells -RowHtml $missingRow.Value)
         if($mode -ne 'Audit'){
@@ -248,7 +250,7 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1', 'SubwayKioskThorou
         )
         $reportPath=Join-Path $previewDir ($client+'-'+$(if($isApply){'Apply'}else{'Audit'})+'-unreadable-appsettings.html')
         . $render
-        $unreadableHtml=[IO.File]::ReadAllText($reportPath)
+        $unreadableHtml=[KioskTestSource]::ReadAllText($reportPath)
         $tables=@([regex]::Matches($unreadableHtml,'(?is)<table class="checks"[^>]*>.*?</table>'))
         $appTable=$tables | Where-Object {$_.Value.Contains('aria-label="AppSettings Check"')} | Select-Object -First 1
         $executionTable=$tables | Where-Object {$_.Value.Contains('aria-label="Execution"')} | Select-Object -First 1
@@ -272,7 +274,7 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1', 'SubwayKioskThorou
             $scenario=if($toolState -eq 'Installed'){'installed'}elseif($toolState.StartsWith('Not installed')){'missing'}else{'unverified'}
             $reportPath=Join-Path $previewDir ($client+'-'+$(if($isApply){'Apply'}else{'Audit'})+'-security-'+$scenario+'.html')
             . $render
-            $securityHtml=[IO.File]::ReadAllText($reportPath)
+            $securityHtml=[KioskTestSource]::ReadAllText($reportPath)
             foreach($row in [regex]::Matches($securityHtml,'(?is)<tr\b[^>]*>.*?</tr>')){
                 $title=Get-HtmlReportRowTitle $row.Value
                 if(-not $title){continue}

@@ -1,7 +1,9 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 # Read-only fixture JSON and real report rendering; no services or device APIs.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $previewRoot=Join-Path $projectRoot 'output\payout-scheduler'
 $fixtureRoot=Join-Path $previewRoot ('fixtures-'+[guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($fixtureRoot)
@@ -29,7 +31,7 @@ function New-PayoutConfiguration {
 $caseCount=0
 foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
     Assert-Payout ($errors.Count -eq 0) 'Client source failed parsing'
     . ([scriptblock]::Create(($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|ForEach-Object {$_.Extent.Text}) -join "`n"))
     function Set-Content {throw 'Configuration writes are forbidden'}
@@ -72,7 +74,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         $path=Join-Path $fixtureRoot ($client+'-'+$case+'-appsettings.json')
         [IO.File]::WriteAllText($path,($config|ConvertTo-Json -Depth 12),[Text.UTF8Encoding]::new($false))
         $hash=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
-        $snapshot=ConvertFrom-ThoroughPaymentJson ([IO.File]::ReadAllText($path))
+        $snapshot=ConvertFrom-ThoroughPaymentJson ([KioskTestSource]::ReadAllText($path))
         $before=$snapshot|ConvertTo-Json -Depth 12 -Compress
         $source=[pscustomobject]@{SectionNumber=5;SectionTitle='AppSettings Check';ItemTitle='Payment Service appsettings.json';ItemSub='Type: Read-only Configuration Inspection';Shortcut=(New-ReportCommand @('notepad.exe "'+$path+'"'));ConfigurationSnapshot=$snapshot;ConfigurationServiceName='SamplePayment';ConfigurationPath=$path;Status='Pass';FoundStateHtml='Fixture';ActionTaken='Fixture'}
         $rows=@(Get-ThoroughAppSettingsReportRows $source)

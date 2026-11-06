@@ -1,9 +1,11 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 $projectRoot = Split-Path $PSScriptRoot -Parent
 # Exercise only selected definitions/blocks with in-memory services and accounts.
 # No Windows account, service, registry, firewall or installer mutation is allowed.
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.ServiceProcess
-$parent=Split-Path $projectRoot -Parent
+$parent=$projectRoot
 function Assert-ApplyRequirement { param([bool]$Condition,[string]$Message) if (-not $Condition) { throw $Message } }
 function Reset-LegacyFixture {
     $script:services=@{
@@ -17,9 +19,9 @@ function Reset-LegacyFixture {
 }
 foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')) {
     $sourcePath=Join-Path $parent $sourceName
-    $source=[IO.File]::ReadAllText($sourcePath)
+    $source=[KioskTestSource]::ReadAllText($sourcePath)
     $tokens=$null; $errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile($sourcePath,[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile($sourcePath,[ref]$tokens,[ref]$errors)
     Assert-ApplyRequirement ($errors.Count -eq 0) 'Source parser errors'
     $definitions=@($ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$true))
     . ([scriptblock]::Create(($definitions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))

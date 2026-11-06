@@ -1,19 +1,20 @@
 # Device Management Script
 
 Source and GitHub Actions delivery for the shared SELISE Device Management menu.
-The repository preserves the existing file-based layout:
+All application sources and tests are contained in `DeviceManagement`:
 
 ```text
-SaaSKioskThoroughCheckScript.ps1
-SubwayKioskThoroughCheck.ps1
 DeviceManagement/
+  KioskThoroughCheck.ps1              # Shared engine
+  SaaSKioskThoroughCheckScript.ps1    # Compatibility launcher
+  SubwayKioskThoroughCheck.ps1        # Compatibility launcher
   Start-DeviceManagement.ps1
   Core/
-  Config/
+  Config/                            # Includes KioskClients.psd1
   Checks/
   Deployment/
   Tests/
-tests/
+    Legacy/
 ```
 
 Run the published entry in 64-bit Windows PowerShell 5.1:
@@ -23,8 +24,7 @@ irm 'https://cdn-ito.selisesme.com/script/DeviceManagement.ps1' -EA Stop | iex
 ```
 
 For local file-based execution, run `DeviceManagement/Start-DeviceManagement.ps1`.
-Keep both client scripts beside the `DeviceManagement` folder. The runtime source
-files retain their existing bytes and architecture.
+Copy the entire `DeviceManagement` folder for local execution; no application source files from the repository root are required.
 
 ## Delivery
 

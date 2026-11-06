@@ -1,16 +1,18 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
 . (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
 # Render the real finalizer with fixture printers. Never contact printer APIs.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
-$sourceRoot=Split-Path $projectRoot -Parent
+$sourceRoot=$projectRoot
 $previewRoot=Join-Path $projectRoot 'output\printer-reports'
 [void][IO.Directory]::CreateDirectory($previewRoot)
 function Assert-PrinterReport {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
 
 foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.ps1')){
     $tokens=$null;$errors=$null
-    $ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
+    $ast=[KioskTestSource]::ParseFile((Join-Path $sourceRoot $sourceName),[ref]$tokens,[ref]$errors)
     Assert-PrinterReport ($errors.Count -eq 0) 'Client source parse failed.'
     $functions=$ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($functions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
@@ -84,7 +86,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
             $reportHostname='SAMPLE-KIOSK-01';$reportKioskId='Kiosk-1';$KioskId=$null
             $expectedApplied=Get-ThoroughReportAppliedHtml -Row $group
             . $render
-            $html=[IO.File]::ReadAllText($reportPath)
+            $html=[KioskTestSource]::ReadAllText($reportPath)
             if(-not $isApply){
                 $auditView=Get-AuditRenderedComponent $html 'Printer'
                 Assert-PrinterReport ($auditView.Count -eq 1) 'Audit duplicated the grouped printer component.'
