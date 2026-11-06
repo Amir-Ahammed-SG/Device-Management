@@ -635,7 +635,7 @@ function Get-ThoroughClientUrlNote {
     if($script:KioskClientSettings.ContainsKey('ClientOrigins')){
         $detected=@($script:KioskClientSettings.ClientOrigins.Keys | Where-Object {$script:KioskClientSettings.ClientOrigins[$_] -ieq $origin})
     }
-    $message=if($detected.Count -eq 1){'Client mismatch: '+$detected[0]+' URL detected; '+$expected+' expected.'}else{'URL does not match the selected '+$expected+' client.'}
+    $message=if($detected.Count -eq 1){'Wrong URL: '+$detected[0]+' URL detected; '+$expected+' expected.'}else{'Wrong URL: does not match the selected '+$expected+' client.'}
     '<small class="client-url-note">'+[Net.WebUtility]::HtmlEncode($message)+'</small>'
 }
 

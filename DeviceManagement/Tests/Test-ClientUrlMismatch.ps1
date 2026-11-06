@@ -43,9 +43,9 @@ foreach($client in @('SaaS','Subway')){
                     Assert-ClientUrl ($html -notmatch '<small class="client-url-note">') 'Matching URL or optional extra permission was falsely labeled a mismatch'
                     continue
                 }
-                $expected=if($case -eq 'other-client'){'Client mismatch: '+$other+' URL detected; '+$client+' expected.'}else{'URL does not match the selected '+$client+' client.'}
+                $expected=if($case -eq 'other-client'){'Wrong URL: '+$other+' URL detected; '+$client+' expected.'}else{'Wrong URL: does not match the selected '+$client+' client.'}
                 Assert-ClientUrl ($html.Contains('<small class="client-url-note">'+$expected+'</small>')) ('Missing visible diagnosis: '+$client+'/'+$case+'/'+$mode)
-                if($case -eq 'lookalike'){Assert-ClientUrl (-not $html.Contains('Client mismatch: '+$other+' URL detected')) 'A lookalike domain was mislabeled as a known client'}
+                if($case -eq 'lookalike'){Assert-ClientUrl (-not $html.Contains('Wrong URL: '+$other+' URL detected')) 'A lookalike domain was mislabeled as a known client'}
                 foreach($componentName in @('Kiosk Launch Script','System & Browser Policies')){
                     $component=if($mode -eq 'Audit'){Get-AuditRenderedComponent $html $componentName}else{Get-SettingRenderedComponent $html $componentName}
                     $notes=@([regex]::Matches($component.Html,'<small class="client-url-note">'))
