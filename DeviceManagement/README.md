@@ -13,6 +13,91 @@ evidence and deployment records are under [Docs](Docs/README.md). Generated
 Copy `DeviceManagement` as a unit for local deployments; no source files from
 its parent directory are required. Legacy Pester tests are under `Tests/Legacy`.
 
+## Folder structure
+
+The tracked application structure is shown below. All paths are relative to the
+`DeviceManagement` folder; the repository's workflow and Git settings are in its
+parent directory.
+
+```text
+DeviceManagement/
+|-- Start-DeviceManagement.ps1            # Main menu and operation routing
+|-- KioskThoroughCheck.ps1               # Shared SaaS/Subway Audit/Apply/Final engine
+|-- SaaSKioskThoroughCheckScript.ps1      # Compatibility launcher
+|-- SubwayKioskThoroughCheck.ps1          # Compatibility launcher
+|-- Config/
+|   |-- Clients.psd1                     # Client/device compatibility
+|   |-- KioskClients.psd1                # Client URLs and payment discovery settings
+|   |-- Operations.psd1                  # Operations, handlers and availability
+|   `-- PaymentPackages.psd1             # Payment package catalog (currently empty)
+|-- Core/
+|   |-- Context.psm1
+|   |-- KioskClient.psm1
+|   |-- Menu.psm1
+|   |-- PackageLoader.psm1
+|   |-- Reporting.psm1
+|   `-- Validation.psm1
+|-- Checks/
+|   `-- KIOSK/
+|       `-- ThoroughCheck.ps1            # Local dispatcher to the shared engine
+|-- Installations/
+|   `-- KIOSK/
+|       |-- Install.ps1                  # Shared installation handler
+|       |-- Setup-Edge.ps1               # Shared Microsoft Edge setup
+|       |-- SaaS-Install.ps1             # Compatibility wrapper
+|       |-- Subway-Install.ps1           # Compatibility wrapper
+|       |-- SaaS/
+|       |   |-- Kiosk_Mode_Setup.ps1     # Compatibility wrapper
+|       |   `-- README.md
+|       `-- Subway/
+|           |-- kiosk_mode_setup.ps1     # Compatibility wrapper
+|           `-- README.md
+|-- OtherTools/
+|   `-- PaymentCronJob.ps1
+|-- Handlers/
+|   `-- NotAvailable.ps1                 # Pending-operation handler
+|-- Packages/
+|   `-- Nmap/
+|       |-- Save-NmapPackage.ps1         # Prepare a verified local installer
+|       `-- README.md
+|-- Deployment/                         # Build, in-memory delivery and CDN publishing
+|   |-- Build-Release.ps1
+|   |-- Test-GitHubRelease.ps1           # Release validation and isolated fixtures
+|   |-- Install-ScriptAnalyzer.ps1
+|   |-- Test-ScriptAnalysis.ps1
+|   |-- Bootstrap.ps1.template
+|   |-- MemoryRuntime.ps1
+|   |-- MemoryDispatcher.ps1
+|   |-- MemoryMenuStartup.ps1
+|   |-- Deploy-Cdn.sh
+|   |-- Publish-Release.sh
+|   |-- ScriptAnalysis/                 # Analyzer policy, settings and guidance
+|   |-- GitHub-Actions.md
+|   `-- README.md
+|-- Tests/                              # Isolated behavior and report fixtures
+|   |-- Fixtures/                       # Historical renderer reference data
+|   `-- Legacy/                         # Legacy Pester regression suite
+|-- Tools/
+|   `-- Restore-ReportLayout.ps1
+|-- Docs/
+|   `-- Device Management - Kiosk Thorough Check Guide.md
+|-- KNOWN-ISSUES.md
+`-- README.md
+```
+
+Local working folders may also be present:
+
+- `output/`: generated builds, test reports, analysis results and deployment receipts;
+  ignored by Git and excluded from runtime delivery.
+- `Backups/`: local recovery material; ignored by Git.
+- `Docs/Reference`, `Docs/Validation`, `Docs/Deployments` and `Docs/Archive`: local
+  reference material and records; ignored by Git.
+- `Payments/SaaS`, `Payments/Subway` and `Payments/ViCafe`: empty local placeholders.
+  Git does not track empty folders; these are not implemented payment handlers.
+
+The client folders and compatibility scripts delegate to the shared kiosk
+implementation. Microsoft Edge is the only supported kiosk installation browser.
+
 ## Shared kiosk architecture
 
 PowerShell static analysis is available for development and CI. Run
@@ -28,16 +113,6 @@ onboarding route, preferred payment-service names/pattern, URL detection rule
 and payment report requirement. `Core/KioskClient.psm1` validates and loads those
 settings for both local and embedded execution. Report labels, filenames and
 saved-report identity always use the selected client.
-
-```text
-DeviceManagement/
-  Config/KioskClients.psd1
-  Core/KioskClient.psm1
-  KioskThoroughCheck.ps1             # Shared Audit/Apply/Final engine
-  Checks/KIOSK/ThoroughCheck.ps1     # Local child-process dispatcher
-  Installations/KIOSK/Install.ps1   # Shared installation handler
-  Installations/KIOSK/Setup-Edge.ps1
-```
 
 The previous client-specific script paths remain small compatibility launchers;
 they contain no copied checks, report renderer or setup implementation. The

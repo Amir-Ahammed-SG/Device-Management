@@ -4,18 +4,40 @@ Source and GitHub Actions delivery for the shared SELISE Device Management menu.
 All application sources and tests are contained in `DeviceManagement`:
 
 ```text
-DeviceManagement/
-  KioskThoroughCheck.ps1              # Shared engine
-  SaaSKioskThoroughCheckScript.ps1    # Compatibility launcher
-  SubwayKioskThoroughCheck.ps1        # Compatibility launcher
-  Start-DeviceManagement.ps1
-  Core/
-  Config/                            # Includes KioskClients.psd1
-  Checks/
-  Deployment/
-  Tests/
-    Legacy/
+Device-Management/
+|-- .github/
+|   `-- workflows/
+|       `-- device-management.yml        # Analysis, release tests and optional CDN deployment
+|-- DeviceManagement/                   # Self-contained application and development files
+|   |-- Start-DeviceManagement.ps1       # Main menu
+|   |-- KioskThoroughCheck.ps1           # Shared SaaS/Subway check engine
+|   |-- SaaSKioskThoroughCheckScript.ps1 # Compatibility launcher
+|   |-- SubwayKioskThoroughCheck.ps1     # Compatibility launcher
+|   |-- Config/                         # Client, operation and package settings
+|   |-- Core/                           # Shared modules
+|   |-- Checks/KIOSK/                   # Thorough Check dispatcher
+|   |-- Installations/KIOSK/            # Shared Edge setup and compatibility wrappers
+|   |-- OtherTools/                     # Payment Cron Job tool
+|   |-- Handlers/                       # Pending-operation handler
+|   |-- Packages/Nmap/                  # Local Nmap package preparation
+|   |-- Deployment/
+|   |   `-- ScriptAnalysis/             # PSScriptAnalyzer policy and settings
+|   |-- Tests/
+|   |   |-- Fixtures/                   # Historical renderer reference data
+|   |   `-- Legacy/                     # Legacy Pester tests
+|   |-- Tools/                          # Report-layout recovery tool
+|   |-- Docs/                           # Kiosk operator guide
+|   |-- KNOWN-ISSUES.md
+|   `-- README.md                       # Detailed architecture and folder structure
+|-- .gitattributes
+|-- .gitignore
+`-- README.md
 ```
+
+See the [full application folder structure](DeviceManagement/README.md#folder-structure)
+for individual scripts and modules. Generated `output`, local `Backups` and local
+reference records are excluded from Git. Empty local `Payments` placeholders are
+not tracked or implemented payment handlers.
 
 Run the published entry in 64-bit Windows PowerShell 5.1:
 
