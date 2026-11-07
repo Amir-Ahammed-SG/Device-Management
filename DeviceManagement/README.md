@@ -383,7 +383,7 @@ actual outcomes. Only rendered fields are retained as observation metadata;
 full appsettings documents and arbitrary account/configuration objects are excluded.
 
 Hostname input appears only during Apply Fix and suggests the Windows computer
-name. Apply can change only the existing launcher host parameter. Zabbix compares
+name. Apply can update the confirmed launcher host parameter and repair a known SaaS/Subway origin. Zabbix compares
 and, when its explicit configuration is unambiguous, uses the actual Windows name.
 Hostname mismatches are amber. Zabbix names are case-sensitive. Hostname file
 edits are backed up and verified; failed Zabbix activation attempts restoration.
@@ -577,19 +577,18 @@ and recovery observations afterward. Final renders one recovery summary per
 service and does not invent another summary for a separate hostname block.
 Within Kiosk Application & Policies, Apply may enable the two required kiosk
 account properties, add missing browser-policy values and create a missing desktop
-shortcut. The only authorized launcher-content repair is adding `--disable-pinch`
-to a verified literal Edge argument string when it is missing. Audit remains
-read-only. Other launcher content remains read-only in both modes, including
-when required identifiers are missing or parameters are supplied.
-It never creates a profile or launcher, normalizes existing
-URL values, changes Startup files, or rewrites an existing desktop shortcut. It may create a missing
+shortcut. Launcher repairs are limited to the confirmed host parameter, a known
+SaaS/Subway origin mismatch, and a missing `--disable-pinch` argument in a verified
+literal Edge command. Audit remains read-only. Other identifiers, URL parameters,
+flags and customer content are preserved. The check never creates a profile or
+launcher, changes Startup files, or rewrites an existing desktop shortcut. It may create a missing
 `Launch Kiosk.lnk` on an existing desktop after verifying the existing launcher.
 The shortcut uses an existing verified Startup BAT. When the BAT is absent,
 no shortcut is created and Findings reports "Missing. Manual action required."
 Missing/invalid launchers and unverified existing BAT targets
 are reported for manual review; they are not used to create a shortcut. A new
 shortcut is read back; a failed readback removes only that newly created shortcut.
-Existing launcher IDs, hostname, syntax and static URL are inspected only.
+Existing launcher IDs, hostname, syntax and static URL are collected without executing the launcher.
 The Kiosk Launch Script row has five fields in Required Configuration
 and Findings: Launch Script (Launcher Path in Findings), Restaurant ID, Kiosk ID,
 Host name and URL origin. Both SaaS and Subway require their own origin followed
@@ -599,10 +598,12 @@ its route or query. Shortcut and Startup BAT evidence remains internal to the
 existing checks, with Startup Folder retaining its separate report row.
 The complete URL remains available internally for verification and collecting
 restaurant, kiosk and hostname values.
-Missing restaurantId, kioskId or host values are reported for manual action;
-no values are requested, filled or changed. Duplicate, conflicting, unsupported
-or invalid URLs also require manual review. No launcher backup or temporary
-files are created, and the launcher is never executed by the check.
+Missing restaurantId or kioskId values require manual action. Apply may supply
+only a missing confirmed host parameter. Duplicate, conflicting, unsupported or
+invalid URLs require manual review. Origin and hostname repairs preserve the
+file encoding/BOM, verify exact readback and save original bytes in
+`C:\Thorough Check\Restore Points`. A failed write/readback attempts rollback.
+The launcher is never executed by the check.
 System & Browser Policies includes `Pinch-to-Zoom: Disabled`. Its check inspects
 one unconditional literal `Start-Process` call to Edge with a valid client kiosk
 URL. Apply adds only the missing argument after verifying the existing Startup
@@ -621,10 +622,22 @@ their previously approved repairs, including the separate Administrative
 Accounts policy. `Tests/Test-KioskVerification.ps1` checks custom usernames, password
 independence, missing-value reporting without prompts, encodings and file preservation.
 
-Browser policies add missing required values only in Apply. Existing values,
-value types and allowlist entries are preserved, even when they differ from the
-reference. Such differences remain Fail for manual review. Existing correct
-settings cause no registry writes. `Tests/Test-LauncherInspection.ps1` verifies both
+Browser policies add missing required values only in Apply. Apply also repairs
+main allowlist value `1` when it is a string containing the other configured
+SaaS/Subway origin, using the selected client's configured origin. Unknown sites
+and wrong value types require manual review. Other policies and all additional
+allowlist entries are preserved, including duplicate entries. Failed writes or
+readbacks attempt to restore the original main value without overwriting a later
+external change. Existing correct settings cause no registry writes.
+
+For KIOSK launcher URL repair, Apply replaces only a known client origin in one
+verified static URL. The onboarding route, restaurantId, kioskId, host, custom
+parameters, flags and unrelated text are preserved by this origin-only operation.
+The separate hostname step still uses the operator-confirmed hostname; its
+suggestion comes from the Windows device DNS hostname. Unknown origins, invalid
+routes, ambiguous URLs and signed launchers require manual review. POS/KDS remain
+unavailable. `Tests/Test-ClientUrlRepair.ps1` verifies both clients, byte-safe
+backups, repeat behavior, rollback, registry isolation and report readback. `Tests/Test-LauncherInspection.ps1` verifies both
 clients/modes using isolated profiles, fake shortcuts and an in-memory registry.
 
 The Zabbix install step downloads the SELISE CDN ZIP only when the Agent 2 service

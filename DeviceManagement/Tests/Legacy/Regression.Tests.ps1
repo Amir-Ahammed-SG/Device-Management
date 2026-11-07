@@ -618,7 +618,7 @@ Describe 'Printer status without queue mutation' {
     It 'reports a paused printer without resuming it during Apply' {
         & (Get-SubjectBlock '# 1.1 Multi-Printer Discovery' '# 1.2 PrintService Event Log')
         $script:auditRows[-1].Status | Should Be 'Fail'
-        $script:auditRows[-1].FoundStateHtml | Should Match 'Printer status:</span> Error'
+        $script:auditRows[-1].FoundStateHtml | Should Match 'Printer status:</span> Paused'
         Assert-MockCalled Invoke-CimMethod -Scope It -Times 0 -Exactly
     }
     It 'does not invoke queue methods when the printer is paused' {
@@ -634,7 +634,7 @@ Describe 'Printer status without queue mutation' {
         Mock Set-Printer { $script:KeepJobs=$true }
         & (Get-SubjectBlock '# 1.1 Multi-Printer Discovery' '# 1.2 PrintService Event Log')
         $script:auditRows[-1].Status | Should Be 'Fail'
-        $script:auditRows[-1].FoundStateHtml | Should Match 'Printer status:</span> Error'
+        $script:auditRows[-1].FoundStateHtml | Should Match 'Printer status:</span> Paused'
         $script:auditRows[-1].FoundStateHtml | Should Match 'Keep printed documents:</span> Enabled'
         Assert-MockCalled Set-Printer -Scope It -Times 1 -Exactly
         Assert-MockCalled Invoke-CimMethod -Scope It -Times 0 -Exactly

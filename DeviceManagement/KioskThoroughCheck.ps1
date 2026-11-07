@@ -1473,7 +1473,7 @@ function Get-ThoroughReportAppliedHtml {
     $passed=$Row.Status -in @('Pass','Online','Remediated') -or ($Row.Status -eq 'Offline' -and $Row.ItemSub -eq 'Type: Old Payment Service')
     $readOnlyCheck=$Row.ItemTitle -in @('Kiosk Auto-Login','SELISE-KIOSK Startup Folder','Payment Service Restart Task','PaymentService Restart Task')
     $parts=@($note -split ';\s*' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    $changePattern='(?i)\b(?:Allowed password changes|Enabled (?:Keep printed documents|Password Never Expires|User Cannot Change Password)|Updated (?:launcher|Zabbix) hostname|Startup set to (?:Automatic|Manual|Disabled)|Service (?:started|stopped|stop requested)|Crash recovery configured|Recovery actions (?:configured|set to Take No Action)|PrintService log enabled|Created (?:missing |the )?desktop shortcut|(?:Created|Updated) inbound TCP \d+ rule|Installed missing (?:Nmap|Zabbix Agent)|Performance counters rebuilt|Added (?:only --disable-pinch|Local Network Allowlist|Translation|Visual Search|Edge Gestures))\b'
+    $changePattern='(?i)\b(?:Allowed password changes|Updated launcher URL origin|Updated Local Network Allowlist|Enabled (?:Keep printed documents|Password Never Expires|User Cannot Change Password)|Updated (?:launcher|Zabbix) hostname|Startup set to (?:Automatic|Manual|Disabled)|Service (?:started|stopped|stop requested)|Crash recovery configured|Recovery actions (?:configured|set to Take No Action)|PrintService log enabled|Created (?:missing |the )?desktop shortcut|(?:Created|Updated) inbound TCP \d+ rule|Installed missing (?:Nmap|Zabbix Agent)|Performance counters rebuilt|Added (?:only --disable-pinch|Local Network Allowlist|Translation|Visual Search|Edge Gestures))\b'
     $hasRecordedChange=$note -match $changePattern
     $noChangeOnly=$true
     $hasNoChangeNote=$false
@@ -2687,6 +2687,50 @@ function Restore-ThoroughTextChange {
     } finally {$stream.Dispose()}
 }
 
+function Test-KioskKnownWrongOrigin {
+    param([string]$Origin)
+    if($Origin -ieq $script:KioskClientSettings.Origin -or -not $script:KioskClientSettings.ContainsKey('ClientOrigins')){return $false}
+    return @($script:KioskClientSettings.ClientOrigins.Values | Where-Object {$_ -ieq $Origin}).Count -gt 0
+}
+
+function Set-KioskLauncherOrigin {
+    param([Parameter(Mandatory=$true)][string]$Path,[string]$BackupFolder)
+    if(-not (Test-CanApply)){throw 'Launcher URL repair requires Apply Fix.'}
+    $original=Read-ThoroughTextFile $Path
+    if($original.Text -match '(?im)^# SIG # Begin signature block'){throw 'The launcher is signed; URL repair requires manual review.'}
+    $tokens=$null;$errors=$null
+    $ast=[Management.Automation.Language.Parser]::ParseInput($original.Text,[ref]$tokens,[ref]$errors)
+    if($errors.Count){throw 'The launcher has invalid syntax.'}
+    $strings=@($ast.FindAll({param($node)$node -is [Management.Automation.Language.StringConstantExpressionAst] -or ($node -is [Management.Automation.Language.ExpandableStringExpressionAst] -and $node.NestedExpressions.Count -eq 0)},$true))
+    $targets=@(foreach($literal in $strings){foreach($url in [regex]::Matches($literal.Value,'https://[A-Za-z0-9.-]+/[^\s"'']*')){[pscustomobject]@{Literal=$literal;Url=$url.Value}}})
+    if($targets.Count -ne 1){throw 'A single static launcher URL could not be verified.'}
+    $target=$targets[0]
+    $uri=$null
+    if(-not [uri]::TryCreate($target.Url,[UriKind]::Absolute,[ref]$uri)){throw 'The launcher URL is invalid.'}
+    $oldOrigin=$uri.GetLeftPart([UriPartial]::Authority)
+    if($oldOrigin -ieq $script:KioskClientSettings.Origin){return [pscustomobject]@{Changed=$false;BackupPath=$null}}
+    if(-not (Test-KioskKnownWrongOrigin $oldOrigin)){throw 'An unknown launcher origin requires manual review.'}
+    $url=$script:KioskClientSettings.Origin+$target.Url.Substring($oldOrigin.Length)
+    $inspection=Resolve-KioskUrl -Url $url
+    if(@($inspection.Issues | Where-Object {$_ -ne 'Missing host'}).Count){throw 'The onboarding route or URL parameters require manual review.'}
+    $raw=$target.Literal.Extent.Text
+    if([regex]::Matches($raw,[regex]::Escape($target.Url)).Count -ne 1){throw 'An escaped or ambiguous URL requires manual review.'}
+    $replacement=$raw.Replace($target.Url,$url)
+    $updated=$original.Text.Remove($target.Literal.Extent.StartOffset,$raw.Length).Insert($target.Literal.Extent.StartOffset,$replacement)
+    [void][Management.Automation.Language.Parser]::ParseInput($updated,[ref]$tokens,[ref]$errors)
+    if($errors.Count){throw 'The proposed launcher failed syntax validation.'}
+    $change=Write-ThoroughTextChange -Original $original -Text $updated -BackupFolder $BackupFolder
+    try{
+        $verified=Add-LauncherReportDetails (New-CheckResult 'Fail' '' '') $Path ''
+        if($verified.LauncherValues['URL'] -cne $url){throw 'Launcher URL readback failed.'}
+    }catch{
+        $reason=$_.Exception.Message
+        try{Restore-ThoroughTextChange $change;$reason+=' Original launcher restored.'}catch{$reason+=' Launcher restoration could not be verified.'}
+        throw $reason
+    }
+    return $change
+}
+
 function Set-KioskLauncherHostname {
     param([Parameter(Mandatory=$true)][string]$Path,[Parameter(Mandatory=$true)][string]$Hostname,[string]$BackupFolder)
     if(-not (Test-CanApply)){throw 'Launcher repair is disabled outside Apply Fix.'}
@@ -3098,7 +3142,7 @@ function Resolve-KioskUrl {
 
 function Repair-LauncherDetails {
     param([string]$Path,[string]$ShortcutPath,[string]$Restaurant,[string]$Kiosk,[string]$Hostname)
-    # Inspect existing values; Apply may update only the confirmed host parameter.
+    # Inspect existing values; Apply may repair a known client origin and confirmed host.
     $result=Add-LauncherReportDetails (New-CheckResult 'Fail' 'Launcher inspected; existing values preserved.' '') $Path $ShortcutPath
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {$result.Action='Launcher script is missing. Manual action required.';return $result}
     $tokens=$null;$errors=$null
@@ -3106,6 +3150,22 @@ function Repair-LauncherDetails {
     if ($errors.Count) {$result.Action='Launcher syntax is invalid. Manual action required.';return $result}
     $url=$result.LauncherValues['URL']
     if ($url -eq 'Not detected') {$result.Action='A single supported static URL was not identified. Manual action required.';return $result}
+    $originChange=$null;$originAction=''
+    $currentUri=$null
+    if((Test-CanApply) -and [uri]::TryCreate($url,[UriKind]::Absolute,[ref]$currentUri) -and (Test-KioskKnownWrongOrigin ($currentUri.GetLeftPart([UriPartial]::Authority)))){
+        if(-not (Test-ThoroughHostname $Hostname)){$result.Action='The confirmed hostname is not verified; no launcher values changed.';return $result}
+        try{
+            $originChange=Set-KioskLauncherOrigin -Path $Path
+            $result=Add-LauncherReportDetails $result $Path $ShortcutPath
+            $url=$result.LauncherValues['URL']
+            $originAction='Updated launcher URL origin for '+$script:KioskClientSettings.ClientType+'; readback verified. Backup: '+$originChange.BackupPath+'. Restart Edge to load the updated launcher. '
+        }catch{
+            $reason=$_.Exception.Message
+            if($originChange -and $originChange.Changed){try{Restore-ThoroughTextChange $originChange}catch{$reason+=' Launcher restoration could not be verified.'}}
+            $result=Add-LauncherReportDetails $result $Path $ShortcutPath
+            $result.Action='Launcher URL repair failed: '+$reason+' Manual action required.';return $result
+        }
+    }
     $inspection=Resolve-KioskUrl -Url $url
     $blockedIssues=if(Test-CanApply){@($inspection.Issues | Where-Object { $_ -ne 'Missing host' })}else{@($inspection.Issues)}
     if ($blockedIssues.Count) {$result.Action=($blockedIssues -join '; ')+'. Manual action required. No launcher values changed.';return $result}
@@ -3113,13 +3173,22 @@ function Repair-LauncherDetails {
     if(-not (Test-ThoroughHostname $expected)){$result.Action='The expected device/launcher hostname is not verified. Manual action required.';return $result}
     if($result.LauncherValues['Host Name'] -ine $expected -or $inspection.Missing -contains 'host'){
         if(-not (Test-CanApply)){$result.Action='Launcher hostname differs from the Windows device hostname. Apply Fix can update the host parameter.';return $result}
+        $change=$null
         try {
             $change=Set-KioskLauncherHostname -Path $Path -Hostname $expected
             $result=Add-LauncherReportDetails $result $Path $ShortcutPath
             if($result.LauncherValues['Host Name'] -ine $expected){throw 'Launcher hostname readback failed.'}
             $result.Action='Updated launcher hostname from '+$change.PreviousHostname+' to '+$expected+'; readback verified. Backup: '+$change.BackupPath+'. Restart Edge to load the updated launcher.'
-        } catch {$result.Action='Launcher hostname could not be fully verified: '+$_.Exception.Message+' Manual action required.';return $result}
-    }else{$result.Action='Existing launcher values verified without changes. Verify operation after sign-in.'}
+        } catch {
+            $reason=$_.Exception.Message
+            foreach($repair in @($change,$originChange)){
+                if($repair -and $repair.Changed){try{Restore-ThoroughTextChange $repair}catch{$reason+=' Launcher restoration could not be verified: '+$_.Exception.Message}}
+            }
+            $result=Add-LauncherReportDetails $result $Path $ShortcutPath
+            $result.Action='Launcher hostname could not be fully verified: '+$reason+' Manual action required.';return $result
+        }
+    }else{$result.Action=if($originChange -and $originChange.Changed){'Launcher parameters and confirmed hostname verified.'}else{'Existing launcher values verified without changes. Verify operation after sign-in.'}}
+    $result.Action=$originAction+$result.Action
     $result.Status='Pass'
     return $result
 }
@@ -3853,6 +3922,41 @@ function Invoke-KioskPinchZoomCheck {
     }
 }
 
+function Set-KioskMainAllowlistOrigin {
+    if(-not (Test-CanApply)){throw 'Allowlist URL repair requires Apply Fix.'}
+    $path='HKLM:\SOFTWARE\Policies\Microsoft\Edge\LocalNetworkAccessAllowedForUrls'
+    $key=Get-Item -LiteralPath $path -ErrorAction Stop
+    if($key.GetValueNames() -notcontains '1' -or $key.GetValueKind('1').ToString() -ne 'String'){throw 'The main allowlist entry type is not verified.'}
+    $old=[string]$key.GetValue('1')
+    $expected=[string]$script:KioskClientSettings.Origin
+    if($old -ieq $expected){return $false}
+    if(-not (Test-KioskKnownWrongOrigin $old)){throw 'An unknown allowlist origin requires manual review.'}
+    $key=Get-Item -LiteralPath $path -ErrorAction Stop
+    if($key.GetValueKind('1').ToString() -ne 'String' -or $key.GetValue('1') -cne $old){throw 'The allowlist changed during inspection.'}
+    $started=$false
+    try{
+        $started=$true
+        Set-ItemProperty -LiteralPath $path -Name '1' -Value $expected -ErrorAction Stop
+        $key=Get-Item -LiteralPath $path -ErrorAction Stop
+        if($key.GetValueKind('1').ToString() -ne 'String' -or $key.GetValue('1') -cne $expected){throw 'Allowlist URL readback failed.'}
+    }catch{
+        $reason=$_.Exception.Message
+        if($started){
+            try{
+                $key=Get-Item -LiteralPath $path -ErrorAction Stop
+                $value=$key.GetValue('1')
+                if($key.GetValueKind('1').ToString() -ne 'String' -or $value -cnotin @($old,$expected)){throw 'Allowlist changed again; automatic restoration stopped.'}
+                if($value -cne $old){Set-ItemProperty -LiteralPath $path -Name '1' -Value $old -ErrorAction Stop}
+                $key=Get-Item -LiteralPath $path -ErrorAction Stop
+                if($key.GetValueKind('1').ToString() -ne 'String' -or $key.GetValue('1') -cne $old){throw 'Allowlist restoration readback failed.'}
+                $reason+=' Original allowlist entry restored.'
+            }catch{$reason+=' Allowlist restoration could not be verified: '+$_.Exception.Message}
+        }
+        throw $reason
+    }
+    return $true
+}
+
 function Invoke-BrowserPolicyCheck {
     param([string]$UserName)
     $edge = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge'
@@ -3872,7 +3976,7 @@ function Invoke-BrowserPolicyCheck {
         $keyExists = Test-Path -LiteralPath $setting.Path
         $key = if ($keyExists) { Get-Item -LiteralPath $setting.Path -ErrorAction Stop } else { $null }
         $valueExists = $null -ne $key -and $key.GetValueNames() -contains $setting.Name
-        # Existing values are preserved even when they differ from the reference.
+        # Preserve existing values except the approved main allowlist client-origin repair.
         if (-not $valueExists -and (Test-CanApply)) {
             if (-not $keyExists) {
                 $missingKeys = [Collections.Generic.Stack[string]]::new()
@@ -3890,6 +3994,12 @@ function Invoke-BrowserPolicyCheck {
             $valueExists = $key.GetValueNames() -contains $setting.Name
         }
         $value = if ($valueExists) { $key.GetValue($setting.Name) } else { $null }
+        if($setting.Name -eq '1' -and $valueExists -and $key.GetValueKind('1').ToString() -eq 'String' -and (Test-CanApply) -and (Test-KioskKnownWrongOrigin ([string]$value))){
+            try{if(Set-KioskMainAllowlistOrigin){$changes.Add('Updated Local Network Allowlist')}}catch{$issues.Add('Local Network Allowlist repair failed: '+$_.Exception.Message)}
+            $key=Get-Item -LiteralPath $setting.Path -ErrorAction Stop
+            $valueExists=$key.GetValueNames() -contains '1'
+            $value=if($valueExists){$key.GetValue('1')}else{$null}
+        }
         $display = if (-not $valueExists) { 'Not configured' } elseif ($setting.Type -eq 'String') { [string]$value } elseif ($value -eq 0) { 'Disabled' } elseif ($value -eq 1) { 'Enabled' } else { 'Unrecognized value' }
         $policyStates.Add($labels[$setting.Name]+': '+[Net.WebUtility]::HtmlEncode($display))
         if (-not $valueExists -or $value -cne $setting.Value -or $key.GetValueKind($setting.Name).ToString() -ne $setting.Type) { $issues.Add($labels[$setting.Name]) }
@@ -3906,7 +4016,7 @@ function Invoke-BrowserPolicyCheck {
     $pinch=Invoke-KioskPinchZoomCheck -UserName $UserName
     $policyStates.Add('Pinch-to-Zoom: '+[Net.WebUtility]::HtmlEncode($pinch.State))
     if($pinch.Status -ne 'Pass'){$issues.Add('Pinch-to-Zoom')}
-    $action = if ($changes.Count) { ($changes -join '; ')+'. Existing policy values preserved.' } else { 'Existing policy values preserved; no changes made.' }
+    $action = if ($changes.Count) { ($changes -join '; ')+'. Other existing policy values preserved.' } else { 'Existing policy values preserved; no changes made.' }
     if ($issues.Count) { $action += ' Manual review required: '+($issues -join ', ')+'.' }
     else { $action += ' Required policy values verified.' }
     $action += ' '+$pinch.Action

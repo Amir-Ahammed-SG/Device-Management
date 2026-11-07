@@ -28,7 +28,9 @@ foreach($client in @('SaaS','Subway')){
             $launcher=Join-Path $fixtureRoot ($client+'-'+$case+'-'+$applyMode+'.ps1')
             [IO.File]::WriteAllText($launcher,('Start-Process msedge.exe -ArgumentList ''--kiosk '+$url+''' '+"`n"+'throw "Never execute a fixture launcher"'),[Text.UTF8Encoding]::new($false))
             $hash=(Get-FileHash -LiteralPath $launcher).Hash
+            $script:ApplyChanges=$false
             $inspection=Repair-LauncherDetails -Path $launcher -Hostname HOST-01
+            $script:ApplyChanges=$applyMode
             Assert-ClientUrl (($inspection.Status -eq 'Pass') -eq ($case -eq 'matching')) 'Wrong client or unknown origin falsely passed'
             Assert-ClientUrl ($inspection.LauncherValues['Host Name'] -eq 'HOST-01' -and $inspection.LauncherValues['KIOSK ID'] -eq 'KIOSK-01' -and $inspection.LauncherValues['Restaurant ID'] -eq 'R1') 'Wrong-client detection hid readable launcher values'
             $launchRow=[pscustomobject]@{SectionNumber=2;SectionTitle='Kiosk Application & Policies';ItemTitle='Kiosk Launch Architecture';ItemSub='';Shortcut=$inspection.Shortcut;FoundStateHtml=$inspection.StateHtml;Status=$inspection.Status;ActionTaken=$inspection.Action;ExpectedHostName='HOST-01'}
