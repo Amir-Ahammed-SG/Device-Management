@@ -22,9 +22,9 @@ function Get-KioskMaintenanceFunctionBlock {
     if($errors.Count){throw 'The shared maintenance implementation failed syntax validation.'}
     $functions=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true))
     $definitions=@(foreach($name in $names){
-        $matches=@($functions | Where-Object Name -CEQ $name)
-        if($matches.Count -ne 1){throw ('Shared maintenance function is missing or ambiguous: '+$name)}
-        $matches[0].Extent.Text
+        $namedDefinitions=@($functions | Where-Object Name -CEQ $name)
+        if($namedDefinitions.Count -ne 1){throw ('Shared maintenance function is missing or ambiguous: '+$name)}
+        $namedDefinitions[0].Extent.Text
     })
     [scriptblock]::Create(($definitions -join [Environment]::NewLine))
 }
@@ -52,8 +52,8 @@ function New-KioskMaintenanceResult {
 
 function Get-KioskMaintenanceAccount {
     $candidates=@(foreach($user in @(Get-LocalUser -ErrorAction Stop | Where-Object Enabled)){
-        $profile=Get-KioskProfilePath $user.Name
-        if($profile -and (Test-Path -LiteralPath (Join-Path $profile 'Scripts\LaunchKiosk.ps1') -PathType Leaf -ErrorAction Stop)){$user}
+        $profilePath=Get-KioskProfilePath $user.Name
+        if($profilePath -and (Test-Path -LiteralPath (Join-Path $profilePath 'Scripts\LaunchKiosk.ps1') -PathType Leaf -ErrorAction Stop)){$user}
     })
     if(-not $candidates.Count){throw 'No enabled local user with an existing Scripts\LaunchKiosk.ps1 was found. Install the kiosk launcher first.'}
     if($candidates.Count -eq 1){Write-Host ('  Kiosk user: '+$candidates[0].Name);return $candidates[0]}
