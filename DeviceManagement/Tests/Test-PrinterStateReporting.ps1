@@ -77,10 +77,32 @@ foreach($client in @('SaaS','Subway')){
                 foreach($stateName in @('Not available','Offline','Paused','Error')){
                     Assert-PrinterState ($component.Text.Contains($stateName)) ('Specific printer state lost in '+$mode+': '+$stateName)
                 }
+                if($mode -eq 'Fix'){
+                    $statusFields=@($component.Fields | Where-Object Setting -EQ 'Printer status')
+                    $manualCount=@($cases | Where-Object {$_.Expected -in @('Not available','Offline','Paused','Error')}).Count
+                    Assert-PrinterState (@($statusFields | Where-Object Value -EQ 'Manual Action Required').Count -eq $manualCount) 'A manually repairable printer status was labeled Not applied or a sibling inherited its label'
+                    Assert-PrinterState (@($statusFields | Where-Object {$_.Value -eq 'Manual Action Required' -and $_.Html -notmatch 'finding-manual'}).Count -eq 0) 'Manual action does not use the status badge style'
+                    $retentionFields=@($component.Fields | Where-Object Setting -EQ 'Keep printed documents')
+                    if(-not $applyMode){Assert-PrinterState (@($retentionFields | Where-Object Value -NE 'Not applied').Count -eq 0) 'An automatic retention fix was incorrectly labeled manual'}
+                    elseif(-not $retention){Assert-PrinterState (@($retentionFields | Where-Object Value -NE 'Enabled').Count -eq 0) 'A verified retention repair lost its Applied value'}
+                }
                 if($mode -eq 'Fix' -and $retention){Assert-PrinterState (@($component.Fields | Where-Object {$_.Setting -eq 'Printer Name' -and $_.Findings -eq 'EPSON Idle'}).Count -eq 0) 'Healthy unchanged printer appeared in Fix'}
             }
             Assert-PrinterState ((ConvertTo-Json -InputObject $script:rows.ToArray() -Depth 16 -Compress) -ceq $original) 'Rendering changed printer observations'
         }
+    }
+    # Missing readback remains uncertain; recovered queues are not left manual.
+    $before=$script:rows[6].PSObject.Copy()
+    foreach($case in @('unverified','recovered')){
+        $after=$before.PSObject.Copy()
+        if($case -eq 'unverified'){$after.ActionTaken='Printer readback failed; not verified.'}
+        else{$after.Status='Pass';$after.ActionTaken='No changes needed';$after.FoundStateHtml=$after.FoundStateHtml.Replace('Not available','Idle')}
+        $snapshot=New-ThoroughReportSnapshot -Rows @($after) -BeforeRows @($before) -DisplayMode Fix -AfterApply $true
+        $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
+        $component=Get-SettingRenderedComponent $html 'Printer'
+        $field=@($component.Fields | Where-Object Setting -EQ 'Printer status')[0]
+        $expected=if($case -eq 'unverified'){'Not verified'}else{'Idle'}
+        Assert-PrinterState ($field.Value -ceq $expected) 'An unknown readback or recovered queue was incorrectly labeled manual'
     }
     Write-Output ('PASS: '+$client+' 84 discovery cases and real Audit/Fix/Final reports retain unavailable/offline/paused/error states; healthy queues, combined flags and retention-only Apply remain truthful.')
 }

@@ -131,7 +131,9 @@ Fix reports retain unresolved checks and recorded repairs. Healthy, unchanged
 printer records are omitted even when another printer in the group fails.
 Required printer status is Active or Idle. Findings preserve Windows-reported
 Not available, Offline, Paused and Error states; these require attention and are
-not reported as healthy.
+not reported as healthy. In Fix reports, those printer-status rows show
+**Manual Action Required** in Applied; automatic fixes that have not been run
+still show **Not applied**. Audit/Final retain the observed printer state.
 Extra Edge local-network allowlist values are shown with their contents as
 additional preserved entries in Audit/Final, and do not alone fail the check.
 Required URL/value/type mismatches still require review. Wrong-client launcher and

@@ -841,7 +841,7 @@ function ConvertTo-ThoroughSettingValue {
     param([AllowEmptyString()][string]$Html,[string]$State,[string]$Description)
     $plain=Convert-ReportHtmlToTerminalText $Html
     if($plain -match '(?i)\bnot\s+verified\b|^(?:not detected|not recorded|not applied|unknown|unavailable|not executed)(?:[.\s(]|$)'){$State='unverified'}
-    $class=if($State -in @('mismatch','unverified')){' finding-'+$State}else{''}
+    $class=if($State -in @('mismatch','unverified','manual')){' finding-'+$State}else{''}
     $title=if($Description){' title="'+[Net.WebUtility]::HtmlEncode($Description)+'"'}else{''}
     '<span class="setting-observed'+$class+'"'+$title+'>'+$Html+'</span>'
 }
@@ -935,7 +935,15 @@ function ConvertTo-ThoroughSettingRows {
                     # both records contain the same number. Never guess a match.
                     if($candidates.Count -eq $beforeCount -and $ordinal -lt $candidates.Count){$afterHtml=$candidates[$ordinal].Html;$afterState=$candidates[$ordinal].State}
                 }
-                $value=ConvertTo-ThoroughSettingValue -Html $afterHtml -State $afterState -Description $note
+                $valueNote=$note
+                if($Row.ItemTitle -eq 'Printer' -and $label -eq 'Printer status' -and $field.Kind -eq 'Field'){
+                    $observedStatus=if($AfterApply){Convert-ReportHtmlToTerminalText $afterHtml}else{$field.Text}
+                    if($observedStatus -in @('Not available','Offline','Paused','Error')){
+                        $afterHtml='Manual Action Required';$afterState='manual'
+                        $valueNote='Printer status requires manual attention; this check does not repair availability or resume queues.'
+                    }
+                }
+                $value=ConvertTo-ThoroughSettingValue -Html $afterHtml -State $afterState -Description $valueNote
             }
             $displayLabel=if($Row.ItemTitle -eq 'lodctr /R Performance Counter' -and $label -eq 'Audit'){'Rebuild State'}else{$label}
             $specs.Add([pscustomobject]@{Kind='Value';Label=$displayLabel;Before=$before;Value=$value})
@@ -961,6 +969,7 @@ function Get-ThoroughSettingColumnStyle {
     $style=(Get-ThoroughAuditColumnStyle).Replace('audit-report','setting-report').Replace('audit-setting','setting-label').Replace('audit-required','setting-before').Replace('audit-findings','setting-current').Replace('audit-','setting-')
     $style+"`n"+@'
     .setting-report .setting-value-row td { border-top-color:#e4e7eb; border-bottom-color:#e4e7eb; }
+    .setting-report .setting-observed.finding-manual { padding:1px 4px; border:1px solid #d3a83e; border-radius:2px; background:#ffe3a0; color:#593900; }
     .fix-report .checks thead tr:last-child th:nth-child(4) { background:#dfeaf7; }
     .fix-report .checks thead tr:last-child th:nth-child(5),
     .final-report .checks thead tr:last-child th:nth-child(3) { background:#f7efd8; }
