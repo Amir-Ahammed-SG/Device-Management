@@ -7,11 +7,11 @@ Deferred production findings are tracked in [KNOWN-ISSUES.md](KNOWN-ISSUES.md).
 
 Thorough Check Apply verifies launcher settings in this order: URL origin,
 Restaurant ID, Kiosk ID, hostname. Missing IDs require input; existing IDs can be
-confirmed or replaced. The confirmed hostname updates the launcher and schedules
-a Windows rename only when different. Reports show **Restart Required** until a
-post-reboot Audit verifies the active name; restarting requires a separate
-confirmation after reports are saved. See the [operator guide](Docs/Device%20Management%20-%20Kiosk%20Thorough%20Check%20Guide.md)
-for credentials, backups, recovery and verification details.
+confirmed or replaced. The Windows DNS hostname is suggested; the confirmed
+value updates only the launcher's `host=` parameter. Thorough Check does not
+rename Windows, change the auto-login domain or request a computer restart.
+See the [operator guide](Docs/Device%20Management%20-%20Kiosk%20Thorough%20Check%20Guide.md)
+for backups, recovery and verification details.
 
 Runtime code is in `Start-DeviceManagement.ps1`, `KioskThoroughCheck.ps1`, `Core`,
 `Config`, `Checks`, `Installations` and `OtherTools`.

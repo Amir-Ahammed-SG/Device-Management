@@ -16,43 +16,23 @@ foreach($client in @('SaaS','Subway')){
     $functions=$ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
     . ([scriptblock]::Create(($functions | ForEach-Object {$_.Extent.Text}) -join "`n"))
     $realWrite=(Get-Command Write-ThoroughTextChange).ScriptBlock
-    $realState=(Get-Command Get-ThoroughComputerNameState).ScriptBlock
     $realDetails=(Get-Command Add-LauncherReportDetails).ScriptBlock
     function Write-ThoroughTextChange {param($Original,[string]$Text,[string]$BackupFolder)
         Assert-Confirmation ($Original.Path.StartsWith($root,[StringComparison]::OrdinalIgnoreCase)) 'Real configuration write attempted'
         & $realWrite -Original $Original -Text $Text -BackupFolder (Join-Path $root backups)
     }
     function Get-ThoroughDeviceHostname {$script:activeName}
-    function Get-ThoroughComputerNameState {[pscustomobject]@{Active=$script:activeName;Pending=$script:pendingName;RenamePending=($script:pendingName -ine $script:activeName);PartOfDomain=$script:domainJoined}}
-    function Get-CimInstance {param($ClassName) [pscustomobject]@{PartOfDomain=$script:domainJoined}}
-    function Get-ItemPropertyValue {param($LiteralPath,$Name) if($Name -eq 'NV Hostname'){$script:pendingDnsName}elseif($LiteralPath -like '*ActiveComputerName'){$script:netbiosName}else{$script:pendingName}}
     function Read-Host {param($Prompt) $script:prompts.Add($Prompt);if(-not $script:answers.Count){throw 'Unexpected prompt: '+$Prompt};$script:answers.Dequeue()}
-    function Get-LocalAccount {param($UserName) [pscustomobject]@{Name=$UserName;Enabled=$true}}
-    function Get-Item {param($LiteralPath)
-        Assert-Confirmation ($LiteralPath -eq 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon') 'Unexpected registry read'
-        $key=[pscustomobject]@{}
-        $key|Add-Member ScriptMethod GetValue {param($Name) switch($Name){'DefaultDomainName'{$script:loginDomain};'DefaultUserName'{'SELISE-KIOSK'}}}
-        $key|Add-Member ScriptMethod GetValueKind {param($Name) [Microsoft.Win32.RegistryValueKind]::String}
-        $key
-    }
-    function New-ItemProperty {param($LiteralPath,$Name,$Value,$PropertyType,[switch]$Force)
-        Assert-Confirmation ($Name -eq 'DefaultDomainName' -and $LiteralPath -like '*\Winlogon') 'Unexpected registry write'
-        $script:loginDomain=$Value;$script:registryWrites++
-    }
-    function Get-Credential {param($Message) $script:credentialCalls++;if($script:declineCredential){return $null};[pscredential]::new('DOMAIN\operator',(ConvertTo-SecureString 'fixture-only' -AsPlainText -Force))}
-    function Rename-Computer {param($NewName,[switch]$Force,[switch]$PassThru,$DomainCredential)
-        Assert-Confirmation (-not $PSBoundParameters.ContainsKey('Restart')) 'Implicit restart attempted'
-        $script:renameCalls++
-        if($script:renameFailure){throw 'Fixture rename failure'}
-        if($script:domainJoined){Assert-Confirmation ($null -ne $DomainCredential) 'Domain credential not passed'}
-        $script:pendingName=$NewName;[pscustomobject]@{HasSucceeded=$true}
-    }
-    function Restart-Computer {param([switch]$Confirm) $script:restartCalls++}
+    # Every launcher-only path must succeed with OS/credential APIs forbidden.
+    function Rename-Computer {throw 'Windows rename is forbidden'}
+    function Restart-Computer {throw 'Computer restart is forbidden'}
+    function Get-Credential {throw 'Domain credential prompts are forbidden'}
+    function New-ItemProperty {throw 'Launcher confirmation must not write the registry'}
+    function Get-ItemPropertyValue {throw 'Pending computer-name registry inspection is forbidden'}
+    function Get-Item {throw 'Auto-login registry inspection is forbidden'}
+    function Get-CimInstance {throw 'Only the Windows hostname suggestion may query computer identity'}
     function Reset-Confirmation {
-        $script:ApplyChanges=$true;$script:activeName='DEVICE-01';$script:pendingName='DEVICE-01';$script:netbiosName='DEVICE-01'
-        $script:pendingDnsName='DEVICE-01'
-        $script:domainJoined=$false;$script:loginDomain='DEVICE-01';$script:renameCalls=0;$script:registryWrites=0;$script:restartCalls=0
-        $script:credentialCalls=0;$script:declineCredential=$false;$script:renameFailure=$false;$script:ThoroughRestartRequired=$false
+        $script:ApplyChanges=$true;$script:activeName='DEVICE-01'
         $script:answers=[Collections.Generic.Queue[string]]::new();$script:prompts=[Collections.Generic.List[string]]::new()
     }
     function New-ConfirmationFixture {
@@ -64,34 +44,19 @@ foreach($client in @('SaaS','Subway')){
         [IO.File]::WriteAllText($script:path,$script:before,$encoding)
         $script:beforeBytes=[Convert]::ToBase64String([IO.File]::ReadAllBytes($script:path))
     }
-    function New-ConfirmedPlan {New-ThoroughLauncherPlan -Path $script:path -UserName 'SELISE-KIOSK'}
-
-    Reset-Confirmation
-    # Actual registry reader must distinguish long DNS names from shortened NetBIOS.
-    $script:activeName='OM-DHK-PAN-KIOSK-LONG';$script:pendingName='OM-DHK-PAN-KIOS';$script:netbiosName=$script:pendingName
-    $script:pendingDnsName=$script:activeName
-    $state=& $realState
-    Assert-Confirmation (-not $state.RenamePending -and $state.Active -eq 'OM-DHK-PAN-KIOSK-LONG') 'Long DNS name mistaken for a pending rename'
-    $script:pendingDnsName='OM-DHK-PAN-KIOSK-NEW'
-    $state=& $realState
-    Assert-Confirmation ($state.RenamePending -and $state.Pending -ceq 'OM-DHK-PAN-KIOSK-NEW') 'DNS rename with an unchanged NetBIOS prefix was missed or shortened'
-    $script:pendingDnsName=''
-    $blocked=$false;try{$null=& $realState}catch{$blocked=$true}
-    Assert-Confirmation $blocked 'Missing pending DNS evidence treated as verified'
+    function New-ConfirmedPlan {New-ThoroughLauncherPlan -Path $script:path}
 
     Reset-Confirmation;New-ConfirmationFixture '?restaurantId=OLD&kioskId=K1&host=OLD-HOST&extra=Keep%20Me' -OtherOrigin -Unicode
     $script:answers.Enqueue('NEW R&2');$script:answers.Enqueue('');$script:answers.Enqueue('')
     $plan=New-ConfirmedPlan
     Assert-Confirmation ($script:prompts.Count -eq 3 -and $script:prompts[0] -like '*Restaurant ID*' -and $script:prompts[1] -like '*Kiosk ID*' -and $script:prompts[2] -like 'Hostname*') 'Prompt order incorrect'
-    Assert-Confirmation ([Convert]::ToBase64String([IO.File]::ReadAllBytes($path)) -ceq $beforeBytes -and $script:renameCalls -eq 0 -and $script:registryWrites -eq 0) 'Preflight mutated state'
+    Assert-Confirmation ([Convert]::ToBase64String([IO.File]::ReadAllBytes($path)) -ceq $beforeBytes) 'Preflight mutated state'
     $result=Invoke-ThoroughLauncherPlan $plan $path ''
     Assert-Confirmation ($result.Status -eq 'Pass' -and $result.LauncherValues['Restaurant ID'] -ceq 'NEW R&2' -and $result.LauncherValues['KIOSK ID'] -ceq 'K1') 'Confirmed IDs not applied'
     Assert-Confirmation ($plan.Url.Contains('restaurantId=NEW%20R%262') -and $plan.Url.Contains('&extra=Keep%20Me') -and $plan.Url.StartsWith($script:KioskClientSettings.Origin)) 'URL origin/encoding or unrelated parameter lost'
     $bytes=[IO.File]::ReadAllBytes($path)
     Assert-Confirmation ($bytes[0] -eq 255 -and $bytes[1] -eq 254 -and [IO.File]::ReadAllText($path).Contains('--customer-flag')) 'Encoding or flags changed'
     Assert-Confirmation ([Convert]::ToBase64String([IO.File]::ReadAllBytes($plan.Change.BackupPath)) -ceq $beforeBytes) 'Exact backup missing'
-    $computer=Invoke-ThoroughComputerNameCheck $plan 'SELISE-KIOSK'
-    Assert-Confirmation ($computer.Status -eq 'Pass' -and $script:renameCalls -eq 0 -and -not $script:ThoroughRestartRequired) 'Same Windows name was renamed'
     $script:answers.Enqueue('');$script:answers.Enqueue('');$script:answers.Enqueue('')
     $second=New-ConfirmedPlan;$result=Invoke-ThoroughLauncherPlan $second $path ''
     Assert-Confirmation (-not $second.Change.Changed -and $result.Status -eq 'Pass') 'Repeated confirmed Apply was not idempotent'
@@ -134,23 +99,22 @@ foreach($client in @('SaaS','Subway')){
     Reset-Confirmation;New-ConfirmationFixture '?restaurantId=R&kioskId=K&host=DEVICE-01'
     $script:ApplyChanges=$false
     $blocked=$false;try{$null=New-ConfirmedPlan}catch{$blocked=$true}
-    $result=Invoke-ThoroughComputerNameCheck $null 'SELISE-KIOSK'
-    Assert-Confirmation ($blocked -and $result.Status -eq 'Pass' -and -not $script:prompts.Count -and -not $script:renameCalls) 'Audit prompted/mutated'
+    Assert-Confirmation ($blocked -and -not $script:prompts.Count) 'Audit prompted/mutated'
 
     Reset-Confirmation;New-ConfirmationFixture '?restaurantId=R&kioskId=K&host=OLD'
-    $plan=New-ThoroughLauncherPlan $path 'R2' 'K2' 'DEVICE-01' 'SELISE-KIOSK'
+    $plan=New-ThoroughLauncherPlan $path 'R2' 'K2' 'DEVICE-01'
     [IO.File]::AppendAllText($path,"`n# concurrent change")
     $result=Invoke-ThoroughLauncherPlan $plan $path ''
     Assert-Confirmation ($result.Status -eq 'Fail' -and [IO.File]::ReadAllText($path).Contains('# concurrent change')) 'Concurrent edit overwritten'
 
     Reset-Confirmation;New-ConfirmationFixture '?restaurantId=R&kioskId=K&host=DEVICE-01'
-    $plan=New-ThoroughLauncherPlan $path 'R' 'K' 'DEVICE-01' 'SELISE-KIOSK'
+    $plan=New-ThoroughLauncherPlan $path 'R' 'K' 'DEVICE-01'
     [IO.File]::AppendAllText($path,"`n# concurrent no-op edit")
     $result=Invoke-ThoroughLauncherPlan $plan $path ''
     Assert-Confirmation ($result.Status -eq 'Fail' -and -not $plan.Verified -and [IO.File]::ReadAllText($path).Contains('# concurrent no-op edit')) 'No-op bypassed concurrent file validation'
 
     Reset-Confirmation;New-ConfirmationFixture '?restaurantId=R&kioskId=K&host=OLD'
-    $plan=New-ThoroughLauncherPlan $path 'NEW-R' 'NEW-K' 'DEVICE-01' 'SELISE-KIOSK'
+    $plan=New-ThoroughLauncherPlan $path 'NEW-R' 'NEW-K' 'DEVICE-01'
     $script:failDetailsOnce=$true
     function Add-LauncherReportDetails {
         param($Result,[string]$Path,[string]$ShortcutPath,[string]$StartupBatchPath)
@@ -162,53 +126,21 @@ foreach($client in @('SaaS','Subway')){
     Assert-Confirmation ($result.Status -eq 'Fail' -and -not $plan.Verified -and [Convert]::ToBase64String([IO.File]::ReadAllBytes($path)) -ceq $beforeBytes) 'Failed multi-field readback did not restore exact original bytes'
     Set-Item -Path Function:Add-LauncherReportDetails -Value $realDetails
 
-    foreach($domainJoined in @($false,$true)){
-        Reset-Confirmation;$script:domainJoined=$domainJoined;New-ConfirmationFixture '?restaurantId=R&kioskId=K&host=OLD'
-        $plan=New-ThoroughLauncherPlan $path 'R' 'K' 'NEW-DEVICE' 'SELISE-KIOSK'
-        $null=Invoke-ThoroughLauncherPlan $plan $path ''
-        $result=Invoke-ThoroughComputerNameCheck $plan 'SELISE-KIOSK'
-        Assert-Confirmation ($result.Status -eq 'Fail' -and $result.State -eq 'Restart Required' -and $script:ThoroughRestartRequired -and $script:renameCalls -eq 1 -and $script:activeName -eq 'DEVICE-01') 'Rename reported success before reboot'
-        $beforeRow=[pscustomobject]@{SectionNumber=2;SectionTitle='Kiosk Application & Policies';ItemTitle='Windows Computer Name';ItemSub='Verified configuration';Shortcut=(New-ReportCommand @('sysdm.cpl'));FoundStateHtml=(ConvertTo-ReportDefinitionHtml ([ordered]@{'Active hostname'='DEVICE-01';'Requested hostname'='DEVICE-01';'Pending hostname'='None';'Rename status'='Verified'}));Status='Pass';ActionTaken='Windows computer name inspected without changes.'}
-        $afterRow=$beforeRow|Select-Object *;$afterRow.Status=$result.Status;$afterRow.FoundStateHtml=$result.StateHtml;$afterRow.ActionTaken=$result.Action
-        foreach($mode in @('Fix','Final')){
-            $snapshot=New-ThoroughReportSnapshot -Rows @($afterRow) -BeforeRows @($beforeRow) -DisplayMode $mode -AfterApply $true -Hostname 'DEVICE-01' -DeviceType KIOSK -LauncherKioskId 'KIOSK-01' -ClientLocation 'Fixture'
-            $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
-            $view=Get-SettingRenderedComponent $html 'Windows Computer Name'
-            $pendingField=@($view.Fields|Where-Object Setting -EQ 'Rename status')
-            Assert-Confirmation ($pendingField.Count -eq 1 -and $pendingField[0].Value -eq 'Restart Required' -and $pendingField[0].Html.Contains('finding-unverified')) 'Report concealed pending restart or claimed verification'
-            if($mode -eq 'Fix'){Assert-Confirmation ($pendingField[0].Findings -eq 'Verified') 'Pre-fix computer-name observation overwritten'}
-            [IO.File]::WriteAllText((Join-Path $root ($client+'-'+$mode+'-pending.html')),$html,[Text.UTF8Encoding]::new($false))
-        }
-        Assert-Confirmation ($script:loginDomain -eq '.' -and $null -eq $plan.DomainCredential) 'Local sign-in not preserved or credential retained'
-        $script:answers.Enqueue('');Confirm-ThoroughRestart
-        Assert-Confirmation ($script:restartCalls -eq 0) 'Default restart was not declined'
-        $script:answers.Enqueue('y');Confirm-ThoroughRestart
-        Assert-Confirmation ($script:restartCalls -eq 1) 'Explicit restart did not run'
-        $script:answers.Enqueue('');$script:answers.Enqueue('');$script:answers.Enqueue('NEW-DEVICE')
-        $again=New-ConfirmedPlan;$null=Invoke-ThoroughLauncherPlan $again $path '';$result=Invoke-ThoroughComputerNameCheck $again 'SELISE-KIOSK'
-        Assert-Confirmation ($script:renameCalls -eq 1 -and $result.State -eq 'Restart Required') 'Pending rename reissued'
-        $script:activeName='NEW-DEVICE';$script:ApplyChanges=$false
-        $result=Invoke-ThoroughComputerNameCheck $null 'SELISE-KIOSK'
-        Assert-Confirmation ($result.Status -eq 'Pass') 'Post-reboot Audit did not verify active name'
+    foreach($hostValue in @('CUSTOM-HOST','OM-DHK-PAN-KIOSK-LONG','branch.example.com','CUSTOM_HOST')){
+        Reset-Confirmation;New-ConfirmationFixture '?restaurantId=R&kioskId=K&host=OLD-HOST'
+        $plan=New-ThoroughLauncherPlan $path 'R' 'K' $hostValue
+        $script:ConfirmedLauncherPlan=$plan
+        $result=Repair-LauncherDetails -Path $path -Restaurant 'R' -Kiosk 'K' -Hostname $hostValue
+        $script:ConfirmedLauncherPlan=$null
+        Assert-Confirmation ($result.Status -eq 'Pass' -and $result.LauncherValues['Host Name'] -ceq $hostValue -and $script:activeName -ceq 'DEVICE-01') 'Custom host must update only the launcher, preserving the Windows name'
+        Assert-Confirmation (-not $plan.PSObject.Properties['DomainCredential'] -and -not $plan.PSObject.Properties['Computer']) 'Launcher plan retains OS rename dependencies'
     }
-
-    Reset-Confirmation;New-ConfirmationFixture '?restaurantId=R&kioskId=K&host=OLD'
-    $plan=New-ThoroughLauncherPlan $path 'R' 'K' 'NEW-DEVICE' 'SELISE-KIOSK'
-    $null=Invoke-ThoroughLauncherPlan $plan $path '';$script:renameFailure=$true
-    $result=Invoke-ThoroughComputerNameCheck $plan 'SELISE-KIOSK'
-    Assert-Confirmation ($result.Status -eq 'Fail' -and $script:loginDomain -eq 'DEVICE-01' -and -not $script:ThoroughRestartRequired -and -not $plan.Verified) 'Rename failure recovery incomplete'
-    Assert-Confirmation ([Convert]::ToBase64String([IO.File]::ReadAllBytes($path)) -ceq $beforeBytes) 'Rename failure did not restore original launcher'
-
-    Reset-Confirmation;$script:domainJoined=$true;$script:declineCredential=$true;New-ConfirmationFixture '?restaurantId=R&kioskId=K'
-    $blocked=$false;try{$null=New-ThoroughLauncherPlan $path 'R' 'K' 'NEW-DEVICE' 'SELISE-KIOSK'}catch{$blocked=$true}
-    Assert-Confirmation ($blocked -and -not $script:renameCalls -and -not $script:registryWrites) 'Declined domain credentials mutated state'
-    Reset-Confirmation;$script:pendingName='OTHER-DEVICE';New-ConfirmationFixture '?restaurantId=R&kioskId=K'
-    $blocked=$false;try{$null=New-ThoroughLauncherPlan $path 'R' 'K' 'NEW-DEVICE' 'SELISE-KIOSK'}catch{$blocked=$true}
-    Assert-Confirmation ($blocked -and -not $script:renameCalls) 'Conflicting pending rename overwritten'
-    foreach($invalid in @('all.numeric','12345','bad name','-bad',('x'*64))){Assert-Confirmation (-not (Test-ThoroughComputerName $invalid)) ('Unsafe Windows name accepted: '+$invalid)}
-    Assert-Confirmation ((ConvertTo-ThoroughSettingValue 'Restart Required').Contains('finding-unverified')) 'Pending restart has no amber label'
-    # Restart prompt is after report persistence in the executable source path.
-    $body=[KioskTestSource]::ReadAllText((Join-Path $project $source))
-    Assert-Confirmation ($body.LastIndexOf('if($generateReport){Confirm-ThoroughRestart}') -gt $body.LastIndexOf('$reportPath=Save-ThoroughReportBundle')) 'Restart can occur before report persistence'
-    Write-Output ('PASS: '+$client+' confirmed launcher IDs/order, URL safety, exact backups, concurrency, Windows rename/domain/sign-in recovery and explicit restart.')
+    # Older saved observations must not resurrect the removed OS rename check.
+    $retired=[pscustomobject]@{SectionNumber=2;SectionTitle='Kiosk Application & Policies';ItemTitle='Windows Computer Name';ItemSub='Verified configuration';Shortcut='';FoundStateHtml='Restart Required';Status='Fail';ActionTaken='Historical rename check'}
+    $snapshot=New-ThoroughReportSnapshot -Rows @($newLauncher) -BeforeRows @($oldLauncher,$retired) -DisplayMode Fix -AfterApply $true
+    $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
+    Assert-Confirmation (-not $html.Contains('<div class="device-title">Windows Computer Name</div>') -and $retired.FoundStateHtml -ceq 'Restart Required') 'Retired rename check reappeared or historical observations were modified'
+    $commands=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)|ForEach-Object {$_.GetCommandName()})
+    Assert-Confirmation (-not @($commands | Where-Object {$_ -in @('Rename-Computer','Restart-Computer','Get-Credential')}).Count) 'Engine still contains a computer rename/restart/credential command'
+    Write-Output ('PASS: '+$client+' launcher-only confirmed IDs/order and custom hostname, URL safety, backups, readback rollback, concurrency, retired report handling; Windows rename/restart/registry/credential APIs forbidden.')
 }
