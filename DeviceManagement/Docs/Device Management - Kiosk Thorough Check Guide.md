@@ -75,6 +75,8 @@ When the confirmed hostname already matches the active Windows DNS hostname (ign
 
 After reboot, run Audit and verify kiosk sign-in, launcher operation and Zabbix. Zabbix uses the active Windows name during each run; it may require a subsequent Apply after the Windows rename takes effect.
 
+Pending-name verification uses the full configured DNS hostname as well as Windows' active/pending computer-name records. Long DNS names are not shortened to their NetBIOS prefix. The distinction between DNS and NetBIOS names is documented in [Microsoft's computer-name reference](https://learn.microsoft.com/en-us/windows/win32/sysinfo/computer-names).
+
 An existing Zabbix Agent's single explicit `Hostname` setting can be updated to the Windows computer name, followed by an agent restart and readback. Dynamic, duplicate or multi-host configurations require manual review. Only the hostname setting is changed; monitoring server addresses are preserved. Original launcher/configuration files are backed up under **C:\Thorough Check\Restore Points** before edits. A failed Zabbix activation attempts to restore the original configuration.
 
 ## 5. Find and use the report

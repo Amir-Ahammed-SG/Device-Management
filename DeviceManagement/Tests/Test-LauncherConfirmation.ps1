@@ -25,7 +25,7 @@ foreach($client in @('SaaS','Subway')){
     function Get-ThoroughDeviceHostname {$script:activeName}
     function Get-ThoroughComputerNameState {[pscustomobject]@{Active=$script:activeName;Pending=$script:pendingName;RenamePending=($script:pendingName -ine $script:activeName);PartOfDomain=$script:domainJoined}}
     function Get-CimInstance {param($ClassName) [pscustomobject]@{PartOfDomain=$script:domainJoined}}
-    function Get-ItemPropertyValue {param($LiteralPath,$Name) if($LiteralPath -like '*ActiveComputerName'){$script:netbiosName}else{$script:pendingName}}
+    function Get-ItemPropertyValue {param($LiteralPath,$Name) if($Name -eq 'NV Hostname'){$script:pendingDnsName}elseif($LiteralPath -like '*ActiveComputerName'){$script:netbiosName}else{$script:pendingName}}
     function Read-Host {param($Prompt) $script:prompts.Add($Prompt);if(-not $script:answers.Count){throw 'Unexpected prompt: '+$Prompt};$script:answers.Dequeue()}
     function Get-LocalAccount {param($UserName) [pscustomobject]@{Name=$UserName;Enabled=$true}}
     function Get-Item {param($LiteralPath)
@@ -50,6 +50,7 @@ foreach($client in @('SaaS','Subway')){
     function Restart-Computer {param([switch]$Confirm) $script:restartCalls++}
     function Reset-Confirmation {
         $script:ApplyChanges=$true;$script:activeName='DEVICE-01';$script:pendingName='DEVICE-01';$script:netbiosName='DEVICE-01'
+        $script:pendingDnsName='DEVICE-01'
         $script:domainJoined=$false;$script:loginDomain='DEVICE-01';$script:renameCalls=0;$script:registryWrites=0;$script:restartCalls=0
         $script:credentialCalls=0;$script:declineCredential=$false;$script:renameFailure=$false;$script:ThoroughRestartRequired=$false
         $script:answers=[Collections.Generic.Queue[string]]::new();$script:prompts=[Collections.Generic.List[string]]::new()
@@ -68,8 +69,15 @@ foreach($client in @('SaaS','Subway')){
     Reset-Confirmation
     # Actual registry reader must distinguish long DNS names from shortened NetBIOS.
     $script:activeName='OM-DHK-PAN-KIOSK-LONG';$script:pendingName='OM-DHK-PAN-KIOS';$script:netbiosName=$script:pendingName
+    $script:pendingDnsName=$script:activeName
     $state=& $realState
     Assert-Confirmation (-not $state.RenamePending -and $state.Active -eq 'OM-DHK-PAN-KIOSK-LONG') 'Long DNS name mistaken for a pending rename'
+    $script:pendingDnsName='OM-DHK-PAN-KIOSK-NEW'
+    $state=& $realState
+    Assert-Confirmation ($state.RenamePending -and $state.Pending -ceq 'OM-DHK-PAN-KIOSK-NEW') 'DNS rename with an unchanged NetBIOS prefix was missed or shortened'
+    $script:pendingDnsName=''
+    $blocked=$false;try{$null=& $realState}catch{$blocked=$true}
+    Assert-Confirmation $blocked 'Missing pending DNS evidence treated as verified'
 
     Reset-Confirmation;New-ConfirmationFixture '?restaurantId=OLD&kioskId=K1&host=OLD-HOST&extra=Keep%20Me' -OtherOrigin -Unicode
     $script:answers.Enqueue('NEW R&2');$script:answers.Enqueue('');$script:answers.Enqueue('')

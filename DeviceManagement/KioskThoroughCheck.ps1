@@ -3215,10 +3215,14 @@ function Get-ThoroughComputerNameState {
     if(-not $systems[0].PSObject.Properties['PartOfDomain'] -or $null -eq $systems[0].PartOfDomain){throw 'Windows domain membership could not be verified.'}
     $pending=[string](Get-ItemPropertyValue -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ComputerName' -Name ComputerName -ErrorAction Stop)
     $activeNetbios=[string](Get-ItemPropertyValue -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ActiveComputerName' -Name ComputerName -ErrorAction Stop)
+    $pendingDns=[string](Get-ItemPropertyValue -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters' -Name 'NV Hostname' -ErrorAction Stop)
     if(-not $pending -or -not $activeNetbios){throw 'Windows pending computer identity could not be verified.'}
+    if(-not (Test-ThoroughHostname $pendingDns) -or $pendingDns.Length -gt 63 -or $pendingDns.Contains('.')){throw 'The pending Windows DNS hostname could not be verified.'}
     # Registry names can be NetBIOS-shortened on existing machines. Compare them
     # with each other, rather than treating a long active DNS name as a rename.
-    [pscustomobject]@{Active=$active;Pending=$pending;RenamePending=($pending -ine $activeNetbios);PartOfDomain=[bool]$systems[0].PartOfDomain}
+    # Full DNS names can differ while both map to the same 15-character NetBIOS
+    # prefix. Report/verify the DNS name, and detect either kind of pending rename.
+    [pscustomobject]@{Active=$active;Pending=$pendingDns;RenamePending=($pending -ine $activeNetbios -or $pendingDns -ine $active);PartOfDomain=[bool]$systems[0].PartOfDomain}
 }
 
 function Test-ThoroughComputerName {
