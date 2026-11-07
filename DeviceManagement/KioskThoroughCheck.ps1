@@ -725,7 +725,9 @@ function ConvertTo-ThoroughAuditRows {
             $class=if($entry.State -in @('mismatch','unverified')){' finding-'+$entry.State}else{''}
             $title=if($entry.Description){' title="'+[Net.WebUtility]::HtmlEncode($entry.Description)+'"'}else{''}
             $urlNote=Get-ThoroughClientUrlNote -Row $Row -Label $entry.Label -Html $entry.Found
-            $rows.Add('<tr class="audit-setting-row">'+$identity+'<td class="audit-setting">'+[Net.WebUtility]::HtmlEncode($entry.Label)+'</td><td class="audit-required">'+$entry.Required+'</td><td class="audit-findings"><span class="audit-observed'+$class+'"'+$title+'>'+$entry.Found+'</span>'+$urlNote+'</td></tr>')
+            $foundValue='<span class="audit-observed'+$class+'"'+$title+'>'+$entry.Found+'</span>'
+            if($urlNote){$foundValue='<span class="client-url-inline">'+$foundValue+$urlNote+'</span>'}
+            $rows.Add('<tr class="audit-setting-row">'+$identity+'<td class="audit-setting">'+[Net.WebUtility]::HtmlEncode($entry.Label)+'</td><td class="audit-required">'+$entry.Required+'</td><td class="audit-findings">'+$foundValue+'</td></tr>')
         }
     }
     $rows -join "`n"
@@ -733,7 +735,9 @@ function ConvertTo-ThoroughAuditRows {
 
 function Get-ThoroughAuditColumnStyle {
     @'
-    .client-url-note { display:table; margin-top:4px; padding:1px 4px; border:1px solid #d59b9b; border-radius:2px; background:#fdecec; color:#9b1c1c; font-size:0.9em; line-height:1.35; white-space:nowrap; }
+    .client-url-inline { display:inline-flex; align-items:center; gap:6px; white-space:nowrap; min-width:max-content; }
+    .audit-report .client-url-inline > span { flex:0 0 auto; max-width:none; white-space:nowrap; overflow-wrap:normal; }
+    .client-url-note { display:inline-block; margin:0; padding:1px 4px; border:1px solid #d59b9b; border-radius:2px; background:#fdecec; color:#9b1c1c; font-size:0.9em; line-height:1.35; white-space:nowrap; }
     .audit-report .audit-setting { background:#f6f7f9; color:#343e49; font-weight:500; }
     .audit-report .audit-required { background:#edf4fb; color:#4b5561; }
     .audit-report .audit-findings { background:#fffbf0; }
@@ -970,8 +974,10 @@ function ConvertTo-ThoroughSettingRows {
         }else{
             $beforeNote=if($Mode -eq 'Fix'){Get-ThoroughClientUrlNote -Row $Row -Label $entry.Label -Html $entry.Before}else{''}
             $valueNote=Get-ThoroughClientUrlNote -Row $Row -Label $entry.Label -Html $entry.Value
-            $before=if($Mode -eq 'Fix'){'<td class="setting-before">'+$entry.Before+$beforeNote+'</td>'}else{''}
-            '<tr class="setting-value-row">'+$identity+'<td class="setting-label">'+[Net.WebUtility]::HtmlEncode($entry.Label)+'</td>'+$before+'<td class="setting-current">'+$entry.Value+$valueNote+'</td></tr>'
+            $beforeValue=if($beforeNote){'<span class="client-url-inline">'+$entry.Before+$beforeNote+'</span>'}else{$entry.Before}
+            $currentValue=if($valueNote){'<span class="client-url-inline">'+$entry.Value+$valueNote+'</span>'}else{$entry.Value}
+            $before=if($Mode -eq 'Fix'){'<td class="setting-before">'+$beforeValue+'</td>'}else{''}
+            '<tr class="setting-value-row">'+$identity+'<td class="setting-label">'+[Net.WebUtility]::HtmlEncode($entry.Label)+'</td>'+$before+'<td class="setting-current">'+$currentValue+'</td></tr>'
         }
     }
 }
@@ -1198,9 +1204,10 @@ $htmlSections = foreach ($group in $groupedSections) {
         $columnWidths='<col style="width:17%"><col style="width:23%"><col style="width:21%"><col style="width:18%"><col style="width:21%">'
         $columnHeaders='<th scope="col">Component</th><th scope="col">Shortcut / Command</th><th scope="col">Setting</th><th scope="col">Required</th><th scope="col">Findings</th>'
     }
+    $urlTableLayout=if(($tableRows -join '').Contains('class="client-url-inline"')){' style="table-layout:auto"'}else{''}
     @"
 <div class="table-scroll">
-<table class="checks" aria-label="$secName">
+<table class="checks"$urlTableLayout aria-label="$secName">
     <colgroup>$columnWidths</colgroup>
     <thead>
         <tr><th colspan="$columnCount" class="section-title">$secNum. $secName</th></tr>

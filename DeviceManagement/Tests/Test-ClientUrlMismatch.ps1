@@ -53,6 +53,7 @@ foreach($client in @('SaaS','Subway')){
                     $notes=@([regex]::Matches($component.Html,'<span class="client-url-note">'))
                     $expectedCount=if($mode -eq 'Fix' -and $applyMode){2}else{1}
                     Assert-ClientUrl ($component.Count -eq 1 -and $notes.Count -eq $expectedCount) 'Diagnosis was missing, duplicated or attached to an optional entry'
+                    Assert-ClientUrl ([regex]::Matches($component.Html,'<span class="client-url-inline">').Count -eq $expectedCount -and $html.Contains('style="table-layout:auto"')) 'URL and badge are not kept together with room for their full width'
                     Assert-ClientUrl ($component.Html.Contains($origin) -and $component.Html.Contains('finding-mismatch')) 'URL or requirement mismatch styling was lost'
                 }
             }

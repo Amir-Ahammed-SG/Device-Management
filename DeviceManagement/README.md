@@ -139,7 +139,8 @@ still show **Not applied**. Audit/Final retain the observed printer state.
 Extra Edge local-network allowlist values are shown with their contents as
 additional preserved entries in Audit/Final, and do not alone fail the check.
 Required URL/value/type mismatches still require review. Wrong-client launcher and
-policy URLs include a compact "Wrong URL" status label beneath the detected URL. The Kiosk Launch Task
+policy URLs include a compact "Wrong URL" status label on the same line as the
+detected URL. The table can scroll horizontally on narrow screens. The Kiosk Launch Task
 report shows Last Run and omits Next Run, since its trigger is user logon.
 The console header also shows the kiosk number detected from the existing launcher; ambiguous or unavailable identity is shown as number not verified.
 Saved Audit snapshots remain unchanged; run a new Audit to refresh the report.
