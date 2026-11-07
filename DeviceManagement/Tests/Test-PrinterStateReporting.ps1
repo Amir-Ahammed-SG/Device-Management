@@ -78,7 +78,8 @@ foreach($client in @('SaaS','Subway')){
                     Assert-PrinterState ($component.Text.Contains($stateName)) ('Specific printer state lost in '+$mode+': '+$stateName)
                 }
                 if($mode -eq 'Fix'){
-                    Assert-PrinterState (@($component.Fields | Where-Object Setting -EQ 'Printer Name').Count -eq 0) 'Printer identity was rendered as a fixable setting'
+                    $nameFields=@($component.Fields | Where-Object Setting -EQ 'Printer Name')
+                    Assert-PrinterState ($nameFields.Count -eq $component.Headings.Count -and @($nameFields | Where-Object {$_.Html -ne '' -or $_.Value -ne ''}).Count -eq 0) 'Printer identity is missing or has an Applied label'
                     foreach($case in @($cases | Where-Object {$_.Expected -notin @('Idle','Active')})){
                         Assert-PrinterState (@($component.Headings | Where-Object {$_.EndsWith('EPSON '+$case.Name)}).Count -eq 1) 'A failed printer lost its unique heading identity'
                     }
@@ -105,11 +106,16 @@ foreach($client in @('SaaS','Subway')){
         $snapshot=New-ThoroughReportSnapshot -Rows @($after) -BeforeRows @($before) -DisplayMode Fix -AfterApply $true
         $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
         $component=Get-SettingRenderedComponent $html 'Printer'
-        Assert-PrinterState ($component.Headings.Count -eq 1 -and $component.Headings[0].Contains($before.ItemTitle) -and @($component.Fields | Where-Object Setting -EQ 'Printer Name').Count -eq 0) 'A single printer lost its heading identity or retained a name setting row'
+        Assert-PrinterState ($component.Headings.Count -eq 1 -and $component.Headings[0].Contains($before.ItemTitle) -and @($component.Fields | Where-Object {$_.Setting -eq 'Printer Name' -and $_.Html -eq '' -and $_.Findings -eq $before.ItemTitle}).Count -eq 1) 'A single printer lost its identity or labeled its Applied cell'
         $field=@($component.Fields | Where-Object Setting -EQ 'Printer status')[0]
         $expected=if($case -eq 'unverified'){'Not verified'}else{'Idle'}
         Assert-PrinterState ($field.Value -ceq $expected) 'An unknown readback or recovered queue was incorrectly labeled manual'
     }
+    $snapshot=New-ThoroughReportSnapshot -Rows @($before) -DisplayMode Fix -AfterApply $true
+    $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
+    $component=Get-SettingRenderedComponent $html 'Printer'
+    $nameField=@($component.Fields | Where-Object Setting -EQ 'Printer Name')[0]
+    Assert-PrinterState ($nameField.Findings -ceq $before.ItemTitle -and $nameField.Html -ceq '') 'A missing baseline hid printer identity or added an Applied label'
     $identityOnly=$script:rows[0].PSObject.Copy()
     $identityOnly.ItemTitle='Receipt Queue'
     $identityOnly.FoundStateHtml=$identityOnly.FoundStateHtml.Replace('EPSON Idle','Receipt Queue')

@@ -923,10 +923,9 @@ function ConvertTo-ThoroughSettingRows {
         $seen=@{}
         foreach($field in $record.Fields){
             $label=[string]$field.Label
-            # Keep identity for record matching and headings, not as a repair row.
-            if($Mode -eq 'Fix' -and $Row.ItemTitle -eq 'Printer' -and $label -eq 'Printer Name'){continue}
             $ordinal=if($seen.ContainsKey($label)){[int]$seen[$label]}else{0};$seen[$label]=$ordinal+1
-            $beforeHtml=if($noBaseline){'Not recorded'}else{$field.Html}
+            $printerIdentity=$Row.ItemTitle -eq 'Printer' -and $label -eq 'Printer Name'
+            $beforeHtml=if($noBaseline -and -not $printerIdentity){'Not recorded'}else{$field.Html}
             $before=ConvertTo-ThoroughSettingValue -Html $beforeHtml -State $field.State -Description $field.Description
             if($Mode -eq 'Final'){
                 $identityField=$field.Label -in @('Account Name','Printer Name','Service Name','Task Name','Ports')
@@ -955,6 +954,7 @@ function ConvertTo-ThoroughSettingRows {
                 }
                 $value=ConvertTo-ThoroughSettingValue -Html $afterHtml -State $afterState -Description $valueNote
             }
+            if($Mode -eq 'Fix' -and $printerIdentity){$value=''}
             $displayLabel=if($Row.ItemTitle -eq 'lodctr /R Performance Counter' -and $label -eq 'Audit'){'Rebuild State'}else{$label}
             $specs.Add([pscustomobject]@{Kind='Value';Label=$displayLabel;Before=$before;Value=$value})
         }

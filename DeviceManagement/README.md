@@ -129,8 +129,8 @@ and are rejected against the shared engine before any source write.
 
 Fix reports retain unresolved checks and recorded repairs. Healthy, unchanged
 printer records are omitted even when another printer in the group fails.
-Printer Name is omitted from Fix setting rows; each retained printer is identified
-in its heading. Audit and Final retain the Printer Name field.
+Printer Name remains visible for identification in Fix, with its Applied cell
+left completely blank. Audit and Final retain the Printer Name field.
 Required printer status is Active or Idle. Findings preserve Windows-reported
 Not available, Offline, Paused and Error states; these require attention and are
 not reported as healthy. In Fix reports, those printer-status rows show
