@@ -28,6 +28,7 @@ $files=[ordered]@{
     'DeviceManagement/Start-DeviceManagement.ps1'=Join-Path $projectRoot 'Start-DeviceManagement.ps1'
     'DeviceManagement/Checks/KIOSK/ThoroughCheck.ps1'=Join-Path $projectRoot 'Checks\KIOSK\ThoroughCheck.ps1'
     'DeviceManagement/OtherTools/PaymentCronJob.ps1'=Join-Path $projectRoot 'OtherTools\PaymentCronJob.ps1'
+    'DeviceManagement/OtherTools/KioskMaintenance.ps1'=Join-Path $projectRoot 'OtherTools\KioskMaintenance.ps1'
     'DeviceManagement/Installations/KIOSK/Install.ps1'=Join-Path $projectRoot 'Installations\KIOSK\Install.ps1'
     'DeviceManagement/Installations/KIOSK/Setup-Edge.ps1'=Join-Path $projectRoot 'Installations\KIOSK\Setup-Edge.ps1'
     'Deployment/MemoryRuntime.ps1'=Join-Path $PSScriptRoot 'MemoryRuntime.ps1'

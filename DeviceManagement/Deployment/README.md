@@ -52,7 +52,7 @@ The checks return a completion result containing their actual exit status and
 exact report path. A missing, duplicate or invalid result fails verification.
 KIOSK Installation runs the shared embedded handler and Edge
 setup with explicit client settings, validates all four inputs before changes,
-and returns one verified operation result. The bundle contains 17 runtime
+and returns one verified operation result. The bundle contains 18 runtime
 resources, including `KioskClients.psd1`, its loader, and the isolated Payment
 Cron Job tool. Client compatibility launchers are not bundled. Pending operations
 remain unavailable.

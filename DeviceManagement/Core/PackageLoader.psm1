@@ -28,20 +28,23 @@ function Invoke-ConfiguredOperation {
 }
 
 function Invoke-DeviceManagementOtherTool {
-    param([Parameter(Mandatory=$true)][string]$RootPath,[Parameter(Mandatory=$true)][ValidateSet('PaymentCronJob')][string]$ToolId)
+    param([Parameter(Mandatory=$true)][string]$RootPath,[Parameter(Mandatory=$true)][ValidateSet('PaymentCronJob','KioskLauncherTask','ZabbixInstaller','NmapInstaller')][string]$ToolId)
+    $file=if($ToolId -eq 'PaymentCronJob'){'PaymentCronJob.ps1'}else{'KioskMaintenance.ps1'}
+    $parameters=@{MenuRun=$true}
+    if($ToolId -ne 'PaymentCronJob'){$parameters.ToolId=$ToolId;$parameters.ProjectRoot=$RootPath}
     $embedded=Get-Variable -Name MemoryBundle -Scope Script -ErrorAction SilentlyContinue
     if($null -ne $embedded){
-        $resource='DeviceManagement/OtherTools/PaymentCronJob.ps1'
-        if(-not $script:MemoryBundle.Files.ContainsKey($resource)){throw 'The embedded Payment Cron Job tool is missing.'}
-        $execution=Invoke-DeviceManagementMemoryScript -Code $script:MemoryBundle.Files[$resource] -Bundle $script:MemoryBundle -RuntimeCode $script:MemoryRuntime -Parameters @{MenuRun=$true}
-        if($execution.State -ne 'Completed' -or $execution.Errors.Count -gt 0){throw 'Payment Cron Job could not complete; review the terminal output.'}
+        $resource='DeviceManagement/OtherTools/'+$file
+        if(-not $script:MemoryBundle.Files.ContainsKey($resource)){throw ('The embedded '+$ToolId+' tool is missing.')}
+        $execution=Invoke-DeviceManagementMemoryScript -Code $script:MemoryBundle.Files[$resource] -Bundle $script:MemoryBundle -RuntimeCode $script:MemoryRuntime -Parameters $parameters
+        if($execution.State -ne 'Completed' -or $execution.Errors.Count -gt 0){throw ($ToolId+' could not complete; review the terminal output.')}
         $results=@($execution.Output)
     }else{
-        $path=Join-Path $RootPath 'OtherTools\PaymentCronJob.ps1'
-        if(-not (Test-Path -LiteralPath $path -PathType Leaf)){throw 'Payment Cron Job script is missing.'}
-        $results=@(& $path -MenuRun)
+        $path=Join-Path $RootPath ('OtherTools\'+$file)
+        if(-not (Test-Path -LiteralPath $path -PathType Leaf)){throw ($ToolId+' script is missing.')}
+        $results=@(& $path @parameters)
     }
-    if($results.Count -ne 1 -or -not $results[0].PSObject.Properties['Status'] -or $results[0].Status -notin @('Pass','Fail','Skipped') -or -not $results[0].PSObject.Properties['ReturnToMenu'] -or $results[0].ReturnToMenu -isnot [bool]){throw 'Payment Cron Job did not return a verified completion result.'}
+    if($results.Count -ne 1 -or -not $results[0].PSObject.Properties['Status'] -or $results[0].Status -notin @('Pass','Fail','Skipped') -or -not $results[0].PSObject.Properties['ReturnToMenu'] -or $results[0].ReturnToMenu -isnot [bool]){throw ($ToolId+' did not return a verified completion result.')}
     $results[0]
 }
 

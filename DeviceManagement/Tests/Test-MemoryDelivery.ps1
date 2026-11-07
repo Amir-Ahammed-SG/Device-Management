@@ -62,6 +62,11 @@ $answer=Read-Host 'Enable SIX Cron? [Y/N]'
 Write-Host ('CRON_FIXTURE_RESULT='+$answer)
 [pscustomobject]@{Status='Skipped';ReturnToMenu=($answer -eq 'N')}
 '@
+$bundle.Files['DeviceManagement/OtherTools/KioskMaintenance.ps1']=@'
+param($ToolId,[switch]$MenuRun,$ProjectRoot)
+Write-Host ('MAINTENANCE_FIXTURE_ID='+$ToolId)
+[pscustomobject]@{Status='Pass';ReturnToMenu=$false}
+'@
 $bundle.Files['DeviceManagement/Core/Context.psm1']=$bundle.Files['DeviceManagement/Core/Context.psm1'].Replace("'C:\Thorough Check'",'$env:DEVICE_MANAGEMENT_MEMORY_TEST_ROOT')
 # ConsoleHost suppresses Read-Host prompt text when stdin is redirected. Trace
 # entry to the real pause statement while retaining the actual nested prompt.
@@ -180,7 +185,18 @@ try {
         Assert-Memory ($LASTEXITCODE -eq 0 -and $toolUi -match ('CRON_FIXTURE_RESULT='+$answer) -and $toolUi -match '\[4\] Other Tools' -and $toolUi -match 'Other Tools > Payment Cron Job' -and $toolUi -notmatch '\[1\] Check Schedules|\[2\] Enable SIX Cron') 'Other Tools did not use the automatic check/fix prompt route'
         Assert-Memory (($toolUi -match 'CRON_RESULT_PAUSE') -eq ($answer -eq 'Y') -and $toolUi -notmatch 'Invalid selection') 'Decline did not return directly or confirmed result was cleared without a pause'
     }
-    Write-Output 'PASS: Other Tools single Payment Cron Job entry, nested Y/N prompt, N immediate return, Y result pause, Back/Main Menu/Exit; only a tool fixture executed.'
+    foreach($toolChoice in @(
+        @{Key='2';Id='KioskLauncherTask';Title='Kiosk Launcher Task Scheduler'},
+        @{Key='3';Id='ZabbixInstaller';Title='Zabbix Installer'},
+        @{Key='4';Id='NmapInstaller';Title='Nmap Installer'}
+    )){
+        $beforeTool=@(Get-Content -LiteralPath $log).Count
+        $toolInputs=@('4',$toolChoice.Key,'','8','0')
+        $toolUi=$toolInputs|& (Join-Path $PSHOME 'powershell.exe') -NoProfile -ExecutionPolicy Bypass -File $interactivePath 2>&1|Out-String
+        Assert-Memory ($LASTEXITCODE -eq 0 -and $toolUi.Contains('MAINTENANCE_FIXTURE_ID='+$toolChoice.Id) -and $toolUi.Contains('Other Tools > '+$toolChoice.Title) -and $toolUi -notmatch 'Invalid selection') 'Maintenance tool menu routed to the wrong handler or lost return navigation'
+        Assert-Memory (@(Get-Content -LiteralPath $log).Count -eq $beforeTool) 'Maintenance tool unexpectedly invoked a full kiosk check'
+    }
+    Write-Output 'PASS: all four Other Tools entries, selected maintenance handlers, Payment Cron Y/N, result pause and Back/Main Menu/Exit; only harmless tool fixtures executed.'
     foreach($clientChoice in @(@{Key='1';Client='Subway'},@{Key='2';Client='SaaS'})) {
         $beforeFinal=@(Get-Content -LiteralPath $log).Count
         $finalInputs=@($clientChoice.Key,'1','1','3','0')

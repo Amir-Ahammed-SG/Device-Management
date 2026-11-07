@@ -42,7 +42,7 @@ data.decode('utf-8', errors='strict')
 expected = manifest['BootstrapSHA256']
 assert re.fullmatch('[a-f0-9]{64}', expected), 'Invalid SHA256'
 assert manifest['ReleaseId'] == sys.argv[2] and manifest['Delivery'] == 'InMemory', 'Release identity mismatch'
-assert len(manifest['Files']) == 17, 'Unexpected runtime resource inventory'
+assert len(manifest['Files']) == 18, 'Unexpected runtime resource inventory'
 assert hashlib.sha256(data).hexdigest() == expected, 'Candidate checksum mismatch'
 print(expected)
 PY

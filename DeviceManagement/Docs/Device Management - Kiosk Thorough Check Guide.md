@@ -73,6 +73,46 @@ Hostname confirmation updates only the launcher URL. Windows keeps its computer 
 
 An existing Zabbix Agent's single explicit `Hostname` setting can be updated to the Windows computer name, followed by an agent restart and readback. Dynamic, duplicate or multi-host configurations require manual review. Only the hostname setting is changed; monitoring server addresses are preserved. Original launcher/configuration files are backed up under **C:\Thorough Check\Restore Points** before edits. A failed Zabbix activation attempts to restore the original configuration.
 
+## Standalone maintenance tools
+
+From the main menu, choose **Other Tools**, then **Kiosk Launcher Task Scheduler**,
+**Zabbix Installer** or **Nmap Installer**. These tools run in elevated 64-bit
+Windows PowerShell and do not run a full Audit/Apply. Results appear in the
+terminal. Declining the Y/N prompt returns to Other Tools without changes;
+completed/failed results remain visible until you press Enter.
+
+| Tool | Behavior |
+| --- | --- |
+| Kiosk Launcher Task Scheduler | Selects an enabled existing local user with `Scripts\LaunchKiosk.ps1`; asks you to choose if multiple profiles match. Verifies the profile, launcher syntax and task. With confirmation, creates or repairs only the root `\Launch Kiosk` task for that user: interactive sign-in, Limited privileges, 5-second logon delay. Existing valid tasks are kept. Multiple/non-root tasks and tasks belonging to another account require manual review. |
+| Zabbix Installer | Uses the current Windows DNS hostname and the existing Zabbix installation package. Installs only when the agent service is missing, then verifies Running / Automatic and the configured hostname. Existing unhealthy installations are preserved and referred to Thorough Check for repair. |
+| Nmap Installer | Keeps an existing installation and verifies `nmap --version`; it does not run network scans. On Windows 11, uses the existing `Insecure.Nmap` winget route without upgrading an existing installation. Windows 10 uses a checksum-verified local setup wizard. |
+
+Before repairing an existing owned kiosk task, the tool saves its original XML
+under `C:\Thorough Check\Restore Points` and verifies the backup. Task changes
+detected during confirmation or immediately before registration stop the repair.
+The tool never starts the task or changes the launcher, Startup BAT, accounts or
+Windows computer name. If task readback fails, the result remains failed and
+identifies the backup for manual recovery; an unknown task state is preserved.
+
+For Windows 10 Nmap installation, prepare `Packages\Nmap` with
+`Save-NmapPackage.ps1`, then run the local project copy. The CDN bundle does not
+contain the installer. The public setup wizard requires interaction; silent
+`/S` belongs to the OEM installer. See [Nmap's Windows installation guide](https://nmap.org/book/inst-windows.html).
+The winget path retains the project's existing flags; see [Microsoft's install command reference](https://learn.microsoft.com/windows/package-manager/winget/install).
+
+For local standalone use:
+
+```powershell
+.\OtherTools\KioskMaintenance.ps1 -ToolId KioskLauncherTask
+.\OtherTools\KioskMaintenance.ps1 -ToolId ZabbixInstaller
+.\OtherTools\KioskMaintenance.ps1 -ToolId NmapInstaller
+```
+
+The tool loads an explicit allowlist of function definitions from the shared
+engine, locally or from the verified memory bundle. It does not execute the
+engine's top-level checks. Zabbix package trust limitations remain documented in
+`KNOWN-ISSUES.md`; automated fixtures do not replace test-kiosk installation.
+
 ## 5. Find and use the report
 
 Reports are saved in **C:\Thorough Check**. The exact report path is printed in the terminal.

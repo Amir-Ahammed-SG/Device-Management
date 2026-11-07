@@ -4354,13 +4354,23 @@ function Register-MissingKioskLaunchTask {
     [void]$root.RegisterTaskDefinition('Launch Kiosk',$definition,6,$Context.Sid,$null,3,$null)
 }
 
+function Assert-KioskLaunchTaskBaseline {
+    param([object[]]$Tasks,[AllowEmptyString()][string]$Xml)
+    if(-not $Xml){
+        if($Tasks.Count){throw 'A Launch Kiosk task appeared after confirmation; no task changed.'}
+    }elseif($Tasks.Count -ne 1 -or [string]$Tasks[0].TaskPath -cne '\' -or [string](Export-ScheduledTask -TaskName 'Launch Kiosk' -TaskPath '\' -ErrorAction Stop) -cne $Xml){
+        throw 'Launch Kiosk task changed after confirmation; no task changed.'
+    }
+}
+
 function Get-KioskLaunchTaskCheck {
-    param([string]$UserName,$Account)
+    param([string]$UserName,$Account,[AllowEmptyString()][string]$ExpectedTaskXml,[switch]$RequireUnchangedTask)
     $context=Get-KioskLaunchTaskContext $UserName $Account
     $status='Fail';$note='Task not verified; no task was changed.';$fields=Get-KioskLaunchTaskFields $context 'Not verified'
     $created=$false;$failure=$null
     try{
         $tasks=@(Get-KioskLaunchTaskInventory)
+        if($RequireUnchangedTask){Assert-KioskLaunchTaskBaseline -Tasks $tasks -Xml $ExpectedTaskXml}
         $snapshot=Read-KioskLaunchTaskSnapshot -Tasks $tasks -Context $context
         $isMissing = ($tasks.Count -eq 0)
         $canRepair = ($isMissing -or ($tasks.Count -eq 1 -and -not $snapshot.Passed))
@@ -4368,6 +4378,7 @@ function Get-KioskLaunchTaskCheck {
             if(-not $context.Ready){$note=if($isMissing){'Missing task was not created: '+$context.Reason}else{'Existing invalid task was not updated: '+$context.Reason}}
             else{
                 $tasks=@(Get-KioskLaunchTaskInventory)
+                if($RequireUnchangedTask){Assert-KioskLaunchTaskBaseline -Tasks $tasks -Xml $ExpectedTaskXml}
                 $snapshot=Read-KioskLaunchTaskSnapshot -Tasks $tasks -Context $context
                 if($tasks.Count -eq 0 -or ($tasks.Count -eq 1 -and -not $snapshot.Passed)){
                     try{Register-MissingKioskLaunchTask $context;$created=$true}catch{$failure=$_.Exception.Message}

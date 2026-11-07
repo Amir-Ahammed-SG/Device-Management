@@ -13,6 +13,13 @@ rename Windows, change the auto-login domain or request a computer restart.
 See the [operator guide](Docs/Device%20Management%20-%20Kiosk%20Thorough%20Check%20Guide.md)
 for backups, recovery and verification details.
 
+The main menu's **Other Tools** contains **Payment Cron Job**, **Kiosk Launcher
+Task Scheduler**, **Zabbix Installer** and **Nmap Installer**. Each maintenance
+tool inspects only its selected component and asks before creating/repairing a
+task or installing missing software. Existing healthy components are retained.
+See the [operator guide](Docs/Device%20Management%20-%20Kiosk%20Thorough%20Check%20Guide.md#standalone-maintenance-tools)
+for prerequisites and the Windows 10 Nmap package requirement.
+
 Runtime code is in `Start-DeviceManagement.ps1`, `KioskThoroughCheck.ps1`, `Core`,
 `Config`, `Checks`, `Installations` and `OtherTools`.
 Development tests are grouped under `Tests`; reference documents, validation
@@ -61,7 +68,8 @@ DeviceManagement/
 |           |-- kiosk_mode_setup.ps1     # Compatibility wrapper
 |           `-- README.md
 |-- OtherTools/
-|   `-- PaymentCronJob.ps1
+|   |-- PaymentCronJob.ps1
+|   `-- KioskMaintenance.ps1             # Launcher task, Zabbix and Nmap installers
 |-- Handlers/
 |   `-- NotAvailable.ps1                 # Pending-operation handler
 |-- Packages/

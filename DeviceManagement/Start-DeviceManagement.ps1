@@ -533,11 +533,16 @@ while (-not $exitRequested) {
         }
         'OtherTools' {
             Show-DeviceManagementHeader -Title 'Other Tools'
-            $tools=@([pscustomobject]@{Id='PaymentCronJob';DisplayName='Payment Cron Job';ImplementationState='Ready'})
+            $tools=@(
+                [pscustomobject]@{Id='PaymentCronJob';DisplayName='Payment Cron Job';ImplementationState='Ready'}
+                [pscustomobject]@{Id='KioskLauncherTask';DisplayName='Kiosk Launcher Task Scheduler';ImplementationState='Ready'}
+                [pscustomobject]@{Id='ZabbixInstaller';DisplayName='Zabbix Installer';ImplementationState='Ready'}
+                [pscustomobject]@{Id='NmapInstaller';DisplayName='Nmap Installer';ImplementationState='Ready'}
+            )
             $selection=Read-NumberedSelection -Items $tools -AllowBack -AllowExit -Prompt 'Select option'
             if($selection -eq '__BACK__'){$screen='Client';break}
             if($selection -eq '__EXIT__'){$exitRequested=$true;break}
-            Show-DeviceManagementHeader -Title 'Payment Cron Job' -Breadcrumb 'Other Tools > Payment Cron Job'
+            Show-DeviceManagementHeader -Title $selection.DisplayName -Breadcrumb ('Other Tools > '+$selection.DisplayName)
             try{
                 $toolResult=Invoke-DeviceManagementOtherTool -RootPath $architectureRoot -ToolId $selection.Id
                 if(-not $toolResult.ReturnToMenu){[void](Read-Host '  Press Enter to return to Other Tools')}
