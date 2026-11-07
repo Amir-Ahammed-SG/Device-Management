@@ -87,17 +87,9 @@ function Assert-SettingRuleParity {
             if($name -eq 'Performance Counter' -and $label -eq 'Audit'){$label='Rebuild State'}
             $label+'='+[Net.WebUtility]::HtmlDecode(([regex]::Replace($_.Groups['Value'].Value,'<[^>]*>',''))).Trim()
         })
-        # Fix now omits healthy printer siblings from a failed group. Allow
-        # only their old identity-only no-change summaries to disappear.
+        # Printer identity now belongs in the heading, never a Fix setting row.
         if($Parameters.DisplayMode -eq 'Fix' -and $name -eq 'Printer'){
-            foreach($record in @(Get-ThoroughSettingRecords $oldValues)){
-                $fields=@($record.Fields | Where-Object Kind -EQ 'Field')
-                $summary=@($record.Fields | Where-Object {$_.Html -match 'class="fix-no-change"'})
-                if($record.Identity -and $record.Identity.Label -eq 'Printer Name' -and $fields.Count -eq 1 -and $summary.Count){
-                    $identity='Printer Name='+$record.Identity.Text
-                    if($newPairs -cnotcontains $identity){$oldPairs=@($oldPairs | Where-Object {$_ -cne $identity})}
-                }
-            }
+            $oldPairs=@($oldPairs | Where-Object {-not $_.StartsWith('Printer Name=')})
         }
         if(($oldPairs -join '|') -cne ($newPairs -join '|')){
             # Unverified opaque inventory now has one row per required setting.
@@ -108,7 +100,9 @@ function Assert-SettingRuleParity {
                 $sourceRows=@($Parameters.Rows|Where-Object { (Get-ThoroughReportComponentName $_.ItemTitle) -eq $name })
                 if($sourceRows.Count -eq 1){
                     $required=@([regex]::Matches((Get-ReportRequirement $sourceRows[0]),'<span class="kv-label">([^<]+):</span>')|ForEach-Object {[Net.WebUtility]::HtmlDecode($_.Groups[1].Value)})
+                    if($Parameters.DisplayMode -eq 'Fix' -and $name -eq 'Printer'){$required=@($required | Where-Object {$_ -ne 'Printer Name'})}
                     $expectedPairs=@(for($i=0;$i -lt $required.Count;$i++){$required[$i]+'='+$(if($i -eq 0){$oldReason}else{'Not verified'})})
+                    if($Parameters.DisplayMode -eq 'Fix' -and $name -eq 'Printer' -and $currentView.Headings -contains ('Printer - '+$oldReason)){$expectedPairs=@($required | ForEach-Object {$_+'=Not verified'})}
                     if($expectedPairs.Count -and ($expectedPairs -join '|') -ceq ($newPairs -join '|')){continue}
                 }
             }

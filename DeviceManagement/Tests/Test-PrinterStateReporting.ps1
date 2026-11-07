@@ -78,6 +78,10 @@ foreach($client in @('SaaS','Subway')){
                     Assert-PrinterState ($component.Text.Contains($stateName)) ('Specific printer state lost in '+$mode+': '+$stateName)
                 }
                 if($mode -eq 'Fix'){
+                    Assert-PrinterState (@($component.Fields | Where-Object Setting -EQ 'Printer Name').Count -eq 0) 'Printer identity was rendered as a fixable setting'
+                    foreach($case in @($cases | Where-Object {$_.Expected -notin @('Idle','Active')})){
+                        Assert-PrinterState (@($component.Headings | Where-Object {$_.EndsWith('EPSON '+$case.Name)}).Count -eq 1) 'A failed printer lost its unique heading identity'
+                    }
                     $statusFields=@($component.Fields | Where-Object Setting -EQ 'Printer status')
                     $manualCount=@($cases | Where-Object {$_.Expected -in @('Not available','Offline','Paused','Error')}).Count
                     Assert-PrinterState (@($statusFields | Where-Object Value -EQ 'Manual Action Required').Count -eq $manualCount) 'A manually repairable printer status was labeled Not applied or a sibling inherited its label'
@@ -86,7 +90,8 @@ foreach($client in @('SaaS','Subway')){
                     if(-not $applyMode){Assert-PrinterState (@($retentionFields | Where-Object Value -NE 'Not applied').Count -eq 0) 'An automatic retention fix was incorrectly labeled manual'}
                     elseif(-not $retention){Assert-PrinterState (@($retentionFields | Where-Object Value -NE 'Enabled').Count -eq 0) 'A verified retention repair lost its Applied value'}
                 }
-                if($mode -eq 'Fix' -and $retention){Assert-PrinterState (@($component.Fields | Where-Object {$_.Setting -eq 'Printer Name' -and $_.Findings -eq 'EPSON Idle'}).Count -eq 0) 'Healthy unchanged printer appeared in Fix'}
+                if($mode -eq 'Fix' -and $retention){Assert-PrinterState (@($component.Headings | Where-Object {$_.EndsWith('EPSON Idle')}).Count -eq 0) 'Healthy unchanged printer appeared in Fix'}
+                if($mode -ne 'Fix'){Assert-PrinterState (@($component.Fields | Where-Object Setting -EQ 'Printer Name').Count -eq $cases.Count) 'Audit/Final lost printer identity fields'}
             }
             Assert-PrinterState ((ConvertTo-Json -InputObject $script:rows.ToArray() -Depth 16 -Compress) -ceq $original) 'Rendering changed printer observations'
         }
@@ -100,9 +105,16 @@ foreach($client in @('SaaS','Subway')){
         $snapshot=New-ThoroughReportSnapshot -Rows @($after) -BeforeRows @($before) -DisplayMode Fix -AfterApply $true
         $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
         $component=Get-SettingRenderedComponent $html 'Printer'
+        Assert-PrinterState ($component.Headings.Count -eq 1 -and $component.Headings[0].Contains($before.ItemTitle) -and @($component.Fields | Where-Object Setting -EQ 'Printer Name').Count -eq 0) 'A single printer lost its heading identity or retained a name setting row'
         $field=@($component.Fields | Where-Object Setting -EQ 'Printer status')[0]
         $expected=if($case -eq 'unverified'){'Not verified'}else{'Idle'}
         Assert-PrinterState ($field.Value -ceq $expected) 'An unknown readback or recovered queue was incorrectly labeled manual'
     }
+    $identityOnly=$script:rows[0].PSObject.Copy()
+    $identityOnly.ItemTitle='Receipt Queue'
+    $identityOnly.FoundStateHtml=$identityOnly.FoundStateHtml.Replace('EPSON Idle','Receipt Queue')
+    $snapshot=New-ThoroughReportSnapshot -Rows @($identityOnly) -DisplayMode Fix -AfterApply $false
+    $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
+    Assert-PrinterState ((Get-SettingRenderedComponent $html 'Printer').Count -eq 0 -and $html.Contains('No fixes required.')) 'A name-only difference invented a printer repair or left an empty heading'
     Write-Output ('PASS: '+$client+' 84 discovery cases and real Audit/Fix/Final reports retain unavailable/offline/paused/error states; healthy queues, combined flags and retention-only Apply remain truthful.')
 }

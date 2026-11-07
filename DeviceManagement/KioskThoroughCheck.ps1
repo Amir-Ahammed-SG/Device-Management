@@ -912,9 +912,19 @@ function ConvertTo-ThoroughSettingRows {
                 continue
             }
         }
+        if($Mode -eq 'Fix' -and $Row.ItemTitle -eq 'Printer' -and -not @($record.Fields | Where-Object {$_.Kind -ne 'Field' -or $_.Label -ne 'Printer Name'}).Count){
+            if($record.Heading){$specs.RemoveAt($specs.Count-1)}
+            continue
+        }
+        if($Mode -eq 'Fix' -and $Row.ItemTitle -eq 'Printer' -and -not $record.Heading){
+            $printerName=@($record.Fields | Where-Object {$_.Kind -eq 'Field' -and $_.Label -eq 'Printer Name'})
+            if($printerName.Count -eq 1){$specs.Add([pscustomobject]@{Kind='Heading';Html=('<div class="config-item-title">Printer - '+[Net.WebUtility]::HtmlEncode($printerName[0].Text)+'</div>')})}
+        }
         $seen=@{}
         foreach($field in $record.Fields){
             $label=[string]$field.Label
+            # Keep identity for record matching and headings, not as a repair row.
+            if($Mode -eq 'Fix' -and $Row.ItemTitle -eq 'Printer' -and $label -eq 'Printer Name'){continue}
             $ordinal=if($seen.ContainsKey($label)){[int]$seen[$label]}else{0};$seen[$label]=$ordinal+1
             $beforeHtml=if($noBaseline){'Not recorded'}else{$field.Html}
             $before=ConvertTo-ThoroughSettingValue -Html $beforeHtml -State $field.State -Description $field.Description
@@ -949,6 +959,7 @@ function ConvertTo-ThoroughSettingRows {
             $specs.Add([pscustomobject]@{Kind='Value';Label=$displayLabel;Before=$before;Value=$value})
         }
     }
+    if(-not $specs.Count -and $Mode -eq 'Fix' -and $Row.ItemTitle -eq 'Printer'){return}
     if(-not $specs.Count){$specs.Add([pscustomobject]@{Kind='Value';Label='Details';Before='Not recorded';Value=(ConvertTo-ThoroughSettingValue 'Not verified' 'unverified' '')})}
     for($index=0;$index -lt $specs.Count;$index++){
         $entry=$specs[$index]

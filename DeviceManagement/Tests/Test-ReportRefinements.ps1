@@ -60,8 +60,10 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
             Assert-Refinement (@($f.Fields|Where-Object {$_.Setting -eq 'Ports' -and $_.Found -eq 'Any'}).Count -eq 1) 'Actual broad firewall port was replaced with a desired port'
         }else {
             $p=Get-SettingRenderedComponent $html 'Printer'
-            Assert-Refinement (($p.Fields.Setting -join '|') -eq 'Printer Name|Printer status|Keep printed documents') ($mode+' collapsed unavailable printer settings')
+            $printerLabels=if($mode -eq 'Fix'){'Printer status|Keep printed documents'}else{'Printer Name|Printer status|Keep printed documents'}
+            Assert-Refinement (($p.Fields.Setting -join '|') -eq $printerLabels) ($mode+' collapsed unavailable printer settings')
             if($mode -eq 'Fix') {
+                Assert-Refinement ($p.Headings -contains 'Printer - Not verified. Please check manually.') 'The omitted name field lost its unavailable-inventory reason'
                 Assert-Refinement (@($p.Fields|Where-Object Value -NE 'Not applied').Count -eq 0) 'Audit-derived Fix fabricated applied values'
                 Assert-Refinement (-not $html.Contains('<div class="device-title">Administrative Accounts</div>')) 'Healthy detected administrators leaked into Fix'
             }
