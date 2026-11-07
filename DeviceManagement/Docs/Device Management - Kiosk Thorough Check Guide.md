@@ -46,6 +46,16 @@ Before Apply Fix has been run, the **Fix** and **Final** tabs are generated from
 
 If the Fix tab says **No fixes required**, you can use the Final tab and print it without running Apply Fix.
 
+The Final tab's **KIOSK Account** section shows only the confirmed kiosk account
+selected by the existing user-selection logic for the launcher, Startup folder
+and launch task. Other detected kiosk accounts remain in Audit and relevant Fix
+findings. Administrative accounts retain their separate reporting. If selection
+is unverified, missing or ambiguous, Final shows **Kiosk user not verified** and
+does not guess the default `SELISE-KIOSK` user. Failed/unavailable account readback
+remains **Not verified**. This is a report projection only: Windows accounts,
+selection rules and saved Audit records are not changed. Generate a new report
+with the updated script to see this layout.
+
 ## 4. Apply fixes when needed
 
 1. From the completed Audit screen, select **[2] Apply Fix**. You can also select **[8] Back**, then **[2] Apply Fix**.

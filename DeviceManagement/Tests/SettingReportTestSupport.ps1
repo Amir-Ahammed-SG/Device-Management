@@ -149,7 +149,12 @@ function Use-SettingLayoutRuleAssertions {
     $parameters=if($rendererAst -is [Management.Automation.Language.FunctionDefinitionAst]){$rendererAst.Body.ParamBlock.Extent.Text}else{$rendererAst.ParamBlock.Extent.Text}
     $body=@'
     $current=& $script:SettingRuleActualRenderer @PSBoundParameters
-    $legacy=& $script:SettingRuleLegacyRenderer @PSBoundParameters
+    $legacyParameters=@{}+$PSBoundParameters
+    if($legacyParameters.DisplayMode -eq 'Final'){
+        $confirmed=if($legacyParameters.ContainsKey('KioskUserName')){[string]$legacyParameters.KioskUserName}else{''}
+        $legacyParameters.Rows=@($legacyParameters.Rows | ForEach-Object {Get-ThoroughFinalKioskAccountRow -Row $_ -ConfirmedUser $confirmed})
+    }
+    $legacy=& $script:SettingRuleLegacyRenderer @legacyParameters
     Assert-SettingRuleParity -Current $current -Legacy $legacy -Parameters $PSBoundParameters
     $legacy
 '@

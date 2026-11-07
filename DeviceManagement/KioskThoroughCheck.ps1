@@ -1130,6 +1130,7 @@ $htmlSections = foreach ($group in $groupedSections) {
     $secName = [Net.WebUtility]::HtmlEncode($group.Group[0].SectionTitle)
     $secNum = [Net.WebUtility]::HtmlEncode($group.Name)
     $tableRows = foreach ($row in $group.Group) {
+        if($isFinalReport){$row=Get-ThoroughFinalKioskAccountRow -Row $row -ConfirmedUser $KioskUserName}
         $checkHtml = '<div class="device-title">{0}</div>' -f ([Net.WebUtility]::HtmlEncode((Get-ThoroughReportComponentName $row.ItemTitle)))
         $commandHtml=ConvertTo-ReportCommandBoxes $row.Shortcut
         $findingRow=$row;$hasBeforeRow=$false
@@ -2339,6 +2340,39 @@ function Get-AccountReportView {
     }
     if($administrative -or ($accountNames.Count -gt 0 -and -not $hasKioskPasswordRequirement)){$expected.Remove('User Cannot Change Password')}
     [pscustomobject]@{ IdentityHtml=($identityParts -join '<hr>'); ExpectedHtml=(ConvertTo-ReportDefinitionHtml $expected); FindingsHtml=($findingParts -join '<hr>'); Records=$records.ToArray() }
+}
+
+function Get-ThoroughFinalKioskAccountRow {
+    param($Row,[string]$ConfirmedUser)
+    # Project recorded data only. Do not select users, query Windows or change
+    # the original account observations used by Audit and Fix.
+    if($Row.ItemTitle -ne 'KIOSK Account'){return $Row}
+    $copy=$Row | Select-Object *
+    $view=Get-AccountReportView $Row
+    $selected=@()
+    if(-not [string]::IsNullOrWhiteSpace($ConfirmedUser) -and $ConfirmedUser -notin @('Not provided','Not verified','Not detected')){
+        $selected=@($view.Records | Where-Object {$_.AccountName -ieq $ConfirmedUser})
+    }
+    $metadata=@()
+    if($selected.Count -eq 1){
+        $copy.FoundStateHtml=$selected[0].FindingsHtml
+        if($Row.PSObject.Properties['AccountResults']){$metadata=@($Row.AccountResults | Where-Object {$null -ne $_ -and $_.PSObject.Properties['AccountName'] -and $_.AccountName -ieq $selected[0].AccountName})}
+        if($metadata.Count -eq 1){
+            $own=$metadata[0] | Select-Object *
+            if(-not $own.PSObject.Properties['Action']){$own | Add-Member NoteProperty Action 'Account-specific results are unavailable.'}
+            $copy.Status=if($own.PSObject.Properties['Status']){[string]$own.Status}else{'Fail'}
+            $copy.ActionTaken=[Net.WebUtility]::HtmlEncode([string]$own.Action)
+            $metadata=@($own)
+        }else{
+            $copy.ActionTaken='Account-specific results are unavailable.'
+        }
+    }else{
+        $copy.Status='Fail'
+        $copy.ActionTaken='Kiosk user not verified. A single confirmed account is required.'
+        $copy.FoundStateHtml=ConvertTo-ReportDefinitionHtml ([ordered]@{'Account Name'='Kiosk user not verified';'Account Privilege'='Not verified';'Account Status'='Not verified';'Password Never Expires'='Not verified';'User Cannot Change Password'='Not verified'})
+    }
+    $copy | Add-Member NoteProperty AccountResults @($metadata) -Force
+    return $copy
 }
 
 function Get-ThoroughReportHighlightFields {
@@ -6008,7 +6042,7 @@ Add-AuditEntry -SectionNumber $sec4Num -SectionTitle $sec4Title -ItemTitle 'lodc
 $snapshotModes=if($script:ApplyChanges){@('Fix','Final')}elseif($FinalReport){@('Final')}else{@('Audit','Fix','Final')}
 $auditSource=$null
 $snapshots=@(foreach($snapshotMode in $snapshotModes){
-    $snapshot=New-ThoroughReportSnapshot -Rows $auditRows.ToArray() -DisplayMode $snapshotMode -ClientLocation $clientLocation -AgentName $AgentName -DeviceType $deviceType -Hostname $reportHostname -LauncherKioskId $reportKioskId -LauncherRestaurantId $reportRestaurantId -RequestedKioskId $KioskId -KioskUserName $kioskUser -AfterApply:([bool]$script:ApplyChanges) -AuditSource $auditSource -BeforeRows $(if($script:ApplyChanges){if($savedBeforeRows.Count){$savedBeforeRows}else{$beforeApplyRows}}else{@()})
+    $snapshot=New-ThoroughReportSnapshot -Rows $auditRows.ToArray() -DisplayMode $snapshotMode -ClientLocation $clientLocation -AgentName $AgentName -DeviceType $deviceType -Hostname $reportHostname -LauncherKioskId $reportKioskId -LauncherRestaurantId $reportRestaurantId -RequestedKioskId $KioskId -KioskUserName $(if($null -ne $kioskAccount){[string]$kioskAccount.Name}else{''}) -AfterApply:([bool]$script:ApplyChanges) -AuditSource $auditSource -BeforeRows $(if($script:ApplyChanges){if($savedBeforeRows.Count){$savedBeforeRows}else{$beforeApplyRows}}else{@()})
     if($snapshotMode -eq 'Audit'){$auditSource=$snapshot}
     $snapshot
 })

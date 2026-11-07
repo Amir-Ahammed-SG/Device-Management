@@ -13,6 +13,11 @@ rename Windows, change the auto-login domain or request a computer restart.
 See the [operator guide](Docs/Device%20Management%20-%20Kiosk%20Thorough%20Check%20Guide.md)
 for backups, recovery and verification details.
 
+The Final report's **KIOSK Account** section shows only the confirmed account
+selected for the kiosk launcher. Unverified or ambiguous selection shows
+**Kiosk user not verified**. Audit retains detected account observations, Fix
+retains relevant issues/repairs, and administrative account reporting is unchanged.
+
 The main menu's **Other Tools** contains **Payment Cron Job**, **Kiosk Launcher
 Task Scheduler**, **Zabbix Installer** and **Nmap Installer**. Each maintenance
 tool inspects only its selected component and asks before creating/repairing a

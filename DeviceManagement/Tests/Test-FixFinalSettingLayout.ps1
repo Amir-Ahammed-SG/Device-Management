@@ -86,9 +86,12 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
         $snapshots=[ordered]@{}
         foreach($mode in @('Audit','Fix','Final')){
             $parameters=@{Rows=$case.Rows;BeforeRows=$case.BeforeRows;DisplayMode=$mode;AfterApply=$case.AfterApply;AuditSource=$identity;DeviceType='KIOSK';Hostname='FIXTURE-PC';LauncherKioskId='Kiosk-1';LauncherRestaurantId='R & <123>';AgentName='Fixture Agent';ClientLocation='Sample branch'}
+            $parameters.KioskUserName='Desk & <East>'
             $snapshot=New-ThoroughReportSnapshot @parameters;$snapshots[$mode]=$snapshot;$html=Decode-Setting $snapshot
             [IO.File]::WriteAllText((Join-Path $outputRoot ($client+'-'+$case.Name+'-'+$mode+'.html')),$html,$utf8)
-            $legacySnapshot=& $legacy @parameters;$legacyHtml=Decode-Setting $legacySnapshot
+            $legacyParameters=@{}+$parameters
+            if($mode -eq 'Final'){$legacyParameters.Rows=@($parameters.Rows | ForEach-Object {Get-ThoroughFinalKioskAccountRow -Row $_ -ConfirmedUser $parameters.KioskUserName})}
+            $legacySnapshot=& $legacy @legacyParameters;$legacyHtml=Decode-Setting $legacySnapshot
             [IO.File]::WriteAllText((Join-Path $outputRoot ($client+'-'+$case.Name+'-'+$mode+'-Legacy.html')),$legacyHtml,$utf8)
             if($mode -eq 'Audit'){
                 Assert-Setting ((Remove-AuditAdditionalReferenceSection $html).Replace("`r`n","`n") -ceq (Remove-AuditAdditionalReferenceSection $legacyHtml).Replace("`r`n","`n")) 'Audit presentation or observations changed outside Additional references.'
@@ -172,8 +175,8 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     $view=New-ThoroughReportSnapshot -Rows @($ambiguous) -BeforeRows @($accountBefore) -DisplayMode Fix -AfterApply $true
     $field=Get-SettingField (Get-SettingRenderedComponent (Decode-Setting $view) 'KIOSK Account') 'User Cannot Change Password' '*Desk & <East>*'
     Assert-Setting ($field.Value -ceq 'Not verified') 'Duplicate account result metadata fabricated a successful post-fix value.'
-    $view=New-ThoroughReportSnapshot -Rows @($ambiguous) -DisplayMode Final -AfterApply $true
-    $field=Get-SettingField (Get-SettingRenderedComponent (Decode-Setting $view) 'KIOSK Account') 'User Cannot Change Password' '*Desk & <East>*'
+    $view=New-ThoroughReportSnapshot -Rows @($ambiguous) -DisplayMode Final -AfterApply $true -KioskUserName 'Desk & <East>'
+    $field=Get-SettingField (Get-SettingRenderedComponent (Decode-Setting $view) 'KIOSK Account') 'User Cannot Change Password'
     Assert-Setting ($field.Value -ceq 'Not verified') 'Final treated ambiguous account results as verified current values.'
     # A sibling printer's failed readback must not invalidate a verified repair.
     $partial=@($afterPrinters|ForEach-Object {$_.PSObject.Copy()})

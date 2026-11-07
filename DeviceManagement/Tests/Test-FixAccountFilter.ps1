@@ -74,12 +74,12 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         $row=New-FixAccountRow $title @($healthy,$issue)
         $before=$row | ConvertTo-Json -Depth 12 -Compress
         $audit=New-ThoroughReportSnapshot -Rows @($row) -DisplayMode Audit -AuditSource $identity
-        $final=New-ThoroughReportSnapshot -Rows @($row) -DisplayMode Final -AuditSource $identity
+        $final=New-ThoroughReportSnapshot -Rows @($row) -DisplayMode Final -AuditSource $identity -KioskUserName $nameB
         $savedRenderer=@(@($restorePoint.Clients | Where-Object FileName -EQ $sourceName)[0].Changes | Where-Object Name -EQ 'New-ThoroughReportSnapshot')[0]
         Assert-FixAccount (-not [string]::IsNullOrWhiteSpace($savedRenderer.Before)) 'Before renderer missing from restore point.'
         . ([scriptblock]::Create($savedRenderer.Before))
         $oldAudit=New-ThoroughReportSnapshot -Rows @($row) -DisplayMode Audit -AuditSource $identity
-        $oldFinal=New-ThoroughReportSnapshot -Rows @($row) -DisplayMode Final -AuditSource $identity
+        $oldFinal=New-ThoroughReportSnapshot -Rows @((Get-ThoroughFinalKioskAccountRow -Row $row -ConfirmedUser $nameB)) -DisplayMode Final -AuditSource $identity -KioskUserName $nameB
         # Header metadata and the five-column Audit presentation are approved changes.
         # Keep the historical Final configuration parity check and verify Audit data independently.
         $configPattern='(?is)<h2>CONFIGURATION CHECK</h2>(.*?)<p class="legend">'
@@ -98,8 +98,12 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         Assert-FixAccount ($legacyFields.Count -gt 0 -and ($legacyFields -join '|') -ceq ($currentFields -join '|')) 'Audit account fields changed during account Fix filtering.'
         Assert-FixAccount ($component.Count -eq 1 -and $component.Headings.Count -eq 2 -and $accountNames.Count -eq 2 -and $accountNames[0] -ceq $nameA -and $accountNames[1] -ceq $nameB) 'Audit lost an account record or identity.'
         $html=Read-FixAccountSnapshot $final
-        Assert-FixAccount ($html.Contains('>Account 01</div>') -and $html.Contains('>Account 02</div>')) 'Final lost an account record.'
-        Assert-FixAccount ($html.Contains('Account Name:</span> '+$nameA) -and $html.Contains('Account Name:</span> '+$nameB)) 'Final lost account identities.'
+        if($title -eq 'KIOSK Account'){
+            Assert-FixAccount (-not $html.Contains('Account Name:</span> '+$nameA+'</div>') -and $html.Contains('Account Name:</span> '+$nameB)) 'Final did not retain only the confirmed kiosk account.'
+        }else{
+            Assert-FixAccount ($html.Contains('>Account 01</div>') -and $html.Contains('>Account 02</div>')) 'Final lost an administrative account record.'
+            Assert-FixAccount ($html.Contains('Account Name:</span> '+$nameA) -and $html.Contains('Account Name:</span> '+$nameB)) 'Final lost administrative account identities.'
+        }
         $fix=New-ThoroughReportSnapshot -Rows @($row) -DisplayMode Fix -AuditSource $identity
         $cells=@(Get-FixAccountCells (Read-FixAccountSnapshot $fix) $title)
         Assert-FixAccount ($cells.Count -eq 4) 'Mixed account component missing from Fix.'
