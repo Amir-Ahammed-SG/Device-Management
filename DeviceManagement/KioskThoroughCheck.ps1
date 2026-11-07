@@ -323,7 +323,7 @@ function Get-ThoroughReportBlockAlignmentScript {
 }
 
 function Format-ThoroughFixFindings {
-    param($Row,[string]$FindingsHtml,[string]$RequirementHtml,[bool]$AfterApply=$false,[bool]$RecordScope=$false)
+    param($Row,[string]$FindingsHtml,[string]$RequirementHtml,[bool]$AfterApply=$false,[bool]$RecordScope=$false,[string[]]$ChangedLabels=@())
     # Presentation only: retain unresolved observations, never infer a repair.
     if($Row.SectionTitle -eq 'AppSettings Check'){return $FindingsHtml}
     $headings=@([regex]::Matches($FindingsHtml,'(?is)<div class="config-item-title">.*?</div>'))
@@ -341,13 +341,13 @@ function Format-ThoroughFixFindings {
     }
     $fields=@([regex]::Matches($FindingsHtml,'(?is)<div\b[^>]*>(?:(?!</?div\b).)*</div>'))
     $issues=@($fields | Where-Object {$_.Value -match 'class="finding-value finding-(?:mismatch|unverified)"'})
-    if($issues.Count){
+    if($issues.Count -or $ChangedLabels.Count){
         $required=Get-ThoroughReportHighlightFields $RequirementHtml
         $selected=New-Object 'Collections.Generic.List[string]'
         foreach($field in $fields){
             $labelMatch=[regex]::Match($field.Value,'(?is)<span class="kv-label">(?<Label>[^<]+):</span>')
             $label=if($labelMatch.Success){[Net.WebUtility]::HtmlDecode($labelMatch.Groups['Label'].Value).Trim()}else{''}
-            $issue=$field.Value -match 'class="finding-value finding-(?:mismatch|unverified)"'
+            $issue=$field.Value -match 'class="finding-value finding-(?:mismatch|unverified)"' -or $ChangedLabels -contains $label
             if(-not $issue -and $label -notin @('Account Name','Printer Name','Task Name','Service Name','Ports')){continue}
             $selected.Add($field.Value)
             if($issue -and $required.ContainsKey($label)){
@@ -825,7 +825,7 @@ function Get-ThoroughSettingRecords {
 function ConvertTo-ThoroughSettingValue {
     param([AllowEmptyString()][string]$Html,[string]$State,[string]$Description)
     $plain=Convert-ReportHtmlToTerminalText $Html
-    if($plain -match '(?i)\bnot\s+verified\b|^(?:not detected|not recorded|not applied|unknown|unavailable|not executed)(?:[.\s(]|$)'){$State='unverified'}
+    if($plain -match '(?i)\bnot\s+verified\b|^(?:Restart Required|not detected|not recorded|not applied|unknown|unavailable|not executed)(?:[.\s(]|$)'){$State='unverified'}
     $class=if($State -in @('mismatch','unverified','manual')){' finding-'+$State}else{''}
     $title=if($Description){' title="'+[Net.WebUtility]::HtmlEncode($Description)+'"'}else{''}
     '<span class="setting-observed'+$class+'"'+$title+'>'+$Html+'</span>'
@@ -848,6 +848,10 @@ function ConvertTo-ThoroughSettingRows {
     if($noBaseline -and $FindingsHtml -match 'class="fix-no-change"' -and -not @($records.Fields|Where-Object Kind -EQ 'Field').Count){$records=$currentRecords}
     $specs=[Collections.Generic.List[object]]::new()
     foreach($record in $records){
+        if($Row.ItemTitle -eq 'Kiosk Launch Architecture'){
+            $launcherOrder=@('Launcher Path','URL origin','Restaurant ID','Kiosk ID','Host name')
+            $record.Fields=@($record.Fields | Sort-Object { $position=[array]::IndexOf($launcherOrder,[string]$_.Label);if($position -lt 0){99}else{$position} })
+        }
         if($record.Heading){
             $heading=$record.Heading.Html
             if($record.Heading.Kind -eq 'Record' -and $record.Identity -and $record.Identity.Label -in @('Account Name','Printer Name') -and $record.Heading.Text -match '^(?:Account|Printer)\s+\d+$'){
@@ -1154,7 +1158,15 @@ $htmlSections = foreach ($group in $groupedSections) {
                 if(-not $accountFix.RetainedCount){continue}
                 $stateHtml=$accountFix.FindingsHtml;$appliedHtml=$accountFix.AppliedHtml;$commandHtml=$accountFix.CommandHtml
             }else{
-                $stateHtml=Format-ThoroughFixFindings -Row $findingRow -FindingsHtml $stateHtml -RequirementHtml $requirementHtml -AfterApply:($AfterApply -and -not $hasBeforeRow)
+                $changedLabels=@()
+                if($AfterApply -and $row.ItemTitle -eq 'Windows Computer Name' -and $row.Status -ne 'Pass'){
+                    $changedLabels=@('Active hostname','Requested hostname','Pending hostname','Rename status')
+                }elseif($AfterApply -and $hasBeforeRow -and $row.ItemTitle -eq 'Kiosk Launch Architecture'){
+                    $oldFields=Get-ThoroughReportHighlightFields $findingRow.FoundStateHtml
+                    $newFields=Get-ThoroughReportHighlightFields $row.FoundStateHtml
+                    $changedLabels=@('URL origin','Restaurant ID','Kiosk ID','Host name' | Where-Object {$oldFields.ContainsKey($_) -and $newFields.ContainsKey($_) -and $oldFields[$_] -cne $newFields[$_]})
+                }
+                $stateHtml=Format-ThoroughFixFindings -Row $findingRow -FindingsHtml $stateHtml -RequirementHtml $requirementHtml -AfterApply:($AfterApply -and -not $hasBeforeRow) -ChangedLabels $changedLabels
                 $appliedHtml=Get-ThoroughReportAppliedHtml -Row $row -AuditBased:([bool]$AuditSource) -FindingsHtml $stateHtml
             }
             if(-not (Test-ThoroughFixReportRow -Row $row -FindingsHtml $stateHtml -AppliedHtml $appliedHtml -AfterApply $AfterApply)){continue}
@@ -2470,7 +2482,7 @@ function Format-ThoroughReportFindingHighlights {
         }
         return $FindingsHtml
     }
-    $unverifiedPattern='(?i)\bnot\s+verified\b'
+    $unverifiedPattern='(?i)\bnot\s+verified\b|^Restart Required$'
     $requirements=Get-ThoroughReportHighlightFields $RequirementHtml
     $pattern='(?is)<div>(?<Body><span class="kv-label">(?<Label>[^<]+):</span>\s*(?<Value>[^<]*))</div>'
     $highlighted=[regex]::Replace($FindingsHtml,$pattern,[Text.RegularExpressions.MatchEvaluator]{
@@ -2542,8 +2554,9 @@ function Get-ReportRequirement {
             [ordered]@{ 'Account Status'='Active / Disabled'; 'Password Never Expires'='Enabled'; 'User Cannot Change Password'='Enabled' }; break
         }
         '^Kiosk Launch Architecture$' {
-            [ordered]@{ 'Launch Script'='Available'; 'Restaurant ID'='Configured'; 'Kiosk ID'='Configured'; 'Host name'=$(if($Row.PSObject.Properties['ExpectedHostName']){$Row.ExpectedHostName}else{'Not detected'}); 'URL origin'=$script:KioskClientSettings.Origin }; break
+            [ordered]@{ 'Launch Script'='Available'; 'URL origin'=$script:KioskClientSettings.Origin; 'Restaurant ID'='Configured'; 'Kiosk ID'='Configured'; 'Host name'=$(if($Row.PSObject.Properties['ExpectedHostName']){$Row.ExpectedHostName}else{'Not detected'}) }; break
         }
+        '^Windows Computer Name$' { [ordered]@{ 'Rename status'='Verified' }; break }
         '^SELISE-KIOSK Startup Folder$' { [ordered]@{ 'Location'='Path'; 'Startup BAT'='Available'; 'Desktop Shortcut'='Available' }; break }
         '^Kiosk Auto-Login$' {
             [ordered]@{ 'Automatic Sign-In'='Enabled'; 'Default User'='Kiosk account'; 'Default Domain'='Local computer'; 'Automatic Sign-In Limit'='Unlimited' }; break
@@ -3094,10 +3107,10 @@ function Add-LauncherReportDetails {
     }
     $displayValues=[ordered]@{
         'Launcher Path'=$values['Launcher Path']
+        'URL origin'=$urlOrigin
         'Restaurant ID'=$values['Restaurant ID']
         'Kiosk ID'=$values['KIOSK ID']
         'Host name'=$values['Host Name']
-        'URL origin'=$urlOrigin
     }
     $html = ConvertTo-ReportDefinitionHtml $displayValues
     $Result | Add-Member -NotePropertyName StateHtml -NotePropertyValue $html -Force
@@ -3143,8 +3156,221 @@ function Resolve-KioskUrl {
 
 
 
+function Get-ThoroughLauncherEdit {
+    param([string]$Path)
+    $original=Read-ThoroughTextFile $Path
+    if($original.Text -match '(?im)^# SIG # Begin signature block'){throw 'A signed launcher requires manual review.'}
+    $tokens=$null;$errors=$null
+    $ast=[Management.Automation.Language.Parser]::ParseInput($original.Text,[ref]$tokens,[ref]$errors)
+    if($errors.Count){throw 'The launcher has invalid syntax.'}
+    $literals=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.StringConstantExpressionAst] -or ($n -is [Management.Automation.Language.ExpandableStringExpressionAst] -and $n.NestedExpressions.Count -eq 0)},$true))
+    $targets=@(foreach($literal in $literals){foreach($match in [regex]::Matches($literal.Value,$script:KioskClientSettings.LauncherUrlPattern)){[pscustomobject]@{Literal=$literal;Url=$match.Value}}})
+    if($targets.Count -ne 1){throw 'A single static launcher URL is required. Manual action required.'}
+    $target=$targets[0];$uri=$null
+    if(-not [uri]::TryCreate($target.Url,[UriKind]::Absolute,[ref]$uri)){throw 'The launcher URL is invalid.'}
+    $origin=$uri.GetLeftPart([UriPartial]::Authority)
+    if($origin -ine $script:KioskClientSettings.Origin -and -not (Test-KioskKnownWrongOrigin $origin)){throw 'An unknown launcher origin requires manual review.'}
+    $candidate=$script:KioskClientSettings.Origin+$target.Url.Substring($origin.Length)
+    $queryIndex=$candidate.IndexOf('?')
+    if($queryIndex -ge 0 -and $candidate.IndexOf('#',$queryIndex) -ge 0){throw 'An additional URL fragment requires manual review.'}
+    $resolved=Resolve-KioskUrl -Url $candidate
+    if(@($resolved.BlockedIssues).Count){throw ($resolved.BlockedIssues -join '; ')}
+    if([regex]::Matches($target.Literal.Extent.Text,[regex]::Escape($target.Url)).Count -ne 1){throw 'An escaped launcher URL requires manual review.'}
+    [pscustomobject]@{Original=$original;Literal=$target.Literal;Url=$target.Url;Candidate=$candidate;OriginChanged=($origin -ine $script:KioskClientSettings.Origin)}
+}
+
+function Read-ThoroughLauncherId {
+    param([string]$Label,[string]$Current,[string]$Supplied)
+    if(-not (Test-CanApply)){throw 'Launcher input requires Apply Fix.'}
+    do{
+        $value=if($Supplied){$Supplied.Trim()}else{
+            $prompt=if($Current -and $Current -ne 'Not detected'){'Verify '+$Label+' ['+$Current+'] (Enter to keep, or enter a new value)'}else{$Label+' (required)'}
+            ([string](Read-Host $prompt)).Trim()
+        }
+        if(-not $value -and $Current -and $Current -ne 'Not detected'){$value=$Current}
+        if($value.Length -gt 0 -and $value.Length -le 256 -and $value -notmatch '[\x00-\x1f\x7f]'){return $value}
+        if($Supplied){throw ('The supplied '+$Label+' is invalid.')}
+        Write-Host ('Enter a non-empty '+$Label+' (maximum 256 characters).') -ForegroundColor Yellow
+    }while($true)
+}
+
+function Set-ThoroughUrlParameter {
+    param([string]$Url,[string]$Name,[string]$Value)
+    $match=[regex]::Match($Url,'[?&]'+[regex]::Escape($Name)+'=(?<Value>[^&#]*)')
+    if($match.Success){
+        if([uri]::UnescapeDataString($match.Groups['Value'].Value.Replace('+',' ')) -ceq $Value){return $Url}
+        return $Url.Remove($match.Groups['Value'].Index,$match.Groups['Value'].Length).Insert($match.Groups['Value'].Index,[uri]::EscapeDataString($Value))
+    }
+    # A bare key (restaurantId&) is a missing value, not a second parameter.
+    $bare=[regex]::Match($Url,'(?<Prefix>[?&])'+[regex]::Escape($Name)+'(?=&|$)')
+    if($bare.Success){return $Url.Insert($bare.Index+$bare.Length,'='+[uri]::EscapeDataString($Value))}
+    return $Url+$(if($Url.Contains('?')){'&'}else{'?'})+$Name+'='+[uri]::EscapeDataString($Value)
+}
+
+function Get-ThoroughComputerNameState {
+    $systems=@(Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop)
+    if($systems.Count -ne 1){throw 'Windows computer identity could not be verified.'}
+    $active=Get-ThoroughDeviceHostname
+    if(-not (Test-ThoroughHostname $active)) {throw 'The active Windows DNS hostname could not be verified.'}
+    if(-not $systems[0].PSObject.Properties['PartOfDomain'] -or $null -eq $systems[0].PartOfDomain){throw 'Windows domain membership could not be verified.'}
+    $pending=[string](Get-ItemPropertyValue -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ComputerName' -Name ComputerName -ErrorAction Stop)
+    $activeNetbios=[string](Get-ItemPropertyValue -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ActiveComputerName' -Name ComputerName -ErrorAction Stop)
+    if(-not $pending -or -not $activeNetbios){throw 'Windows pending computer identity could not be verified.'}
+    # Registry names can be NetBIOS-shortened on existing machines. Compare them
+    # with each other, rather than treating a long active DNS name as a rename.
+    [pscustomobject]@{Active=$active;Pending=$pending;RenamePending=($pending -ine $activeNetbios);PartOfDomain=[bool]$systems[0].PartOfDomain}
+}
+
+function Test-ThoroughComputerName {
+    param([string]$Name)
+    $Name.Length -ge 1 -and $Name.Length -le 63 -and $Name -match '^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$' -and $Name -notmatch '^\d+$'
+}
+
+function Get-ThoroughRenameAutoLogin {
+    param([string]$Active,[string]$UserName)
+    $path='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+    $key=Get-Item -LiteralPath $path -ErrorAction Stop
+    $domain=[string]$key.GetValue('DefaultDomainName')
+    $localNamed=$domain -and $domain -ne '.' -and ($domain -ieq $Active -or $domain -ieq $env:COMPUTERNAME)
+    if($localNamed){
+        if([string]$key.GetValue('DefaultUserName') -ine $UserName -or -not (Get-LocalAccount $UserName)){throw 'The local auto-login identity requires manual verification before renaming.'}
+        if($key.GetValueKind('DefaultDomainName') -ne [Microsoft.Win32.RegistryValueKind]::String){throw 'The auto-login domain value requires manual review.'}
+    }
+    [pscustomobject]@{Path=$path;Domain=$domain;User=[string]$key.GetValue('DefaultUserName');NeedsChange=[bool]$localNamed}
+}
+
+function New-ThoroughLauncherPlan {
+    param([string]$Path,[string]$Restaurant,[string]$Kiosk,[string]$Hostname,[string]$UserName)
+    if(-not (Test-CanApply)){throw 'Launcher planning requires Apply Fix.'}
+    $edit=Get-ThoroughLauncherEdit $Path
+    $values=(Add-LauncherReportDetails (New-CheckResult 'Fail' '' '') $Path '').LauncherValues
+    Write-Host ('URL Origin: '+$script:KioskClientSettings.Origin) -ForegroundColor Cyan
+    if($edit.OriginChanged){Write-Host ('The URL origin will change to '+$script:KioskClientSettings.ClientType+'. Verify the Restaurant ID for this client and branch; it may differ from the current value.') -ForegroundColor Yellow}
+    $restaurantValue=Read-ThoroughLauncherId -Label 'Restaurant ID' -Current $values['Restaurant ID'] -Supplied $Restaurant
+    $kioskValue=Read-ThoroughLauncherId -Label 'Kiosk ID' -Current $values['KIOSK ID'] -Supplied $Kiosk
+    $computer=Get-ThoroughComputerNameState
+    do{
+        $hostnameValue=Read-ThoroughFixHostname -SuggestedName $computer.Active -SuppliedName $Hostname
+        if($hostnameValue -ieq $computer.Active -or (Test-ThoroughComputerName $hostnameValue)){break}
+        if($Hostname){throw 'The supplied hostname is not a valid Windows computer name.'}
+        Write-Host 'Use 1-63 letters, digits or hyphens; the name cannot contain only digits.' -ForegroundColor Yellow
+    }while($true)
+    if($computer.RenamePending -and $computer.Pending -ine $hostnameValue){throw ('A different Windows rename is already pending: '+$computer.Pending+'. Restart and audit before applying another name.')}
+    $credential=$null
+    $autoLogin=$null
+    if($hostnameValue -ine $computer.Active -and -not $computer.RenamePending){$autoLogin=Get-ThoroughRenameAutoLogin -Active $computer.Active -UserName $UserName}
+    if($hostnameValue -ine $computer.Active -and -not $computer.RenamePending -and $computer.PartOfDomain){
+        $credential=Get-Credential -Message 'Enter domain credentials authorized to rename this kiosk computer.'
+        if($null -eq $credential){throw 'Domain rename credentials were not supplied; Apply was cancelled before changes.'}
+    }
+    $url=Set-ThoroughUrlParameter $edit.Candidate 'restaurantId' $restaurantValue
+    $url=Set-ThoroughUrlParameter $url 'kioskId' $kioskValue
+    $url=Set-ThoroughUrlParameter $url 'host' $hostnameValue
+    if(@((Resolve-KioskUrl $url).Issues).Count){throw 'The proposed launcher URL failed validation.'}
+    $raw=$edit.Literal.Extent.Text
+    $text=$edit.Original.Text.Remove($edit.Literal.Extent.StartOffset,$raw.Length).Insert($edit.Literal.Extent.StartOffset,$raw.Replace($edit.Url,$url))
+    $tokens=$null;$errors=$null
+    [void][Management.Automation.Language.Parser]::ParseInput($text,[ref]$tokens,[ref]$errors)
+    if($errors.Count){throw 'The proposed launcher failed syntax validation.'}
+    [pscustomobject]@{Path=$Path;Original=$edit.Original;Text=$text;Url=$url;Restaurant=$restaurantValue;Kiosk=$kioskValue;Hostname=$hostnameValue;Computer=$computer;AutoLogin=$autoLogin;DomainCredential=$credential;Change=$null;Verified=$false}
+}
+
+function Invoke-ThoroughLauncherPlan {
+    param($Plan,[string]$Path,[string]$ShortcutPath)
+    if(-not (Test-CanApply)){throw 'Launcher changes require Apply Fix.'}
+    if([IO.Path]::GetFullPath($Path) -ine [IO.Path]::GetFullPath($Plan.Path)){throw 'The kiosk launcher selection changed after preflight.'}
+    try{
+        $current=Read-ThoroughTextFile $Path
+        if([Convert]::ToBase64String($current.Bytes) -cne [Convert]::ToBase64String($Plan.Original.Bytes)){throw 'The launcher changed after preflight; no values were overwritten.'}
+        $Plan.Change=Write-ThoroughTextChange -Original $Plan.Original -Text $Plan.Text
+        $result=Add-LauncherReportDetails (New-CheckResult 'Pass' 'Launcher URL, Restaurant ID, Kiosk ID and hostname verified. Restart Edge to load any launcher changes.' '') $Path $ShortcutPath
+        if($result.LauncherValues['URL'] -cne $Plan.Url){throw 'Launcher URL readback failed.'}
+        $Plan.Verified=$true
+        if($Plan.Change.Changed){$result.Action='Updated launcher settings; readback verified. Backup: '+$Plan.Change.BackupPath+'. Restart Edge to load the updated launcher.'}
+        else{$result.Action='Existing launcher values verified without changes.'}
+        return $result
+    }catch{
+        $Plan.Verified=$false;$reason=$_.Exception.Message
+        if($Plan.Change -and $Plan.Change.Changed){try{Restore-ThoroughTextChange $Plan.Change}catch{$reason+=' Launcher restoration could not be verified.'}}
+        return Add-LauncherReportDetails (New-CheckResult 'Fail' ('Launcher update failed: '+$reason+' Manual action required.') '') $Path $ShortcutPath
+    }
+}
+
+function Invoke-ThoroughComputerNameCheck {
+    param($Plan,[string]$UserName)
+    $state=$null
+    $status='Fail';$action='Windows computer name inspected without changes.';$renameStatus='Not verified';$requested='Not configured'
+    try{
+        $state=Get-ThoroughComputerNameState
+        $requested=if($Plan){$Plan.Hostname}else{$state.Active}
+        if($Plan -and $state.RenamePending -and $state.Pending -ine $requested){throw 'A conflicting Windows rename appeared after preflight. Restart and audit before retrying.'}
+        if((Test-CanApply) -and $Plan -and $Plan.Verified -and $state.Active -ine $requested -and -not $state.RenamePending){
+            if(-not (Test-ThoroughComputerName $requested)){throw 'The requested Windows name is invalid.'}
+            if($state.Active -ine $Plan.Computer.Active -or $state.PartOfDomain -ne $Plan.Computer.PartOfDomain){throw 'Windows identity changed after preflight.'}
+            $login=Get-ThoroughRenameAutoLogin -Active $state.Active -UserName $UserName
+            if(-not $Plan.AutoLogin -or $login.Domain -cne $Plan.AutoLogin.Domain -or $login.User -cne $Plan.AutoLogin.User){throw 'Auto-login settings changed after preflight.'}
+            $winlogon=$login.Path;$domain=$login.Domain;$domainChanged=$false
+            # A local computer-qualified automatic sign-in would refer to the old
+            # machine after reboot. Dot always means this computer; keep secrets.
+            try{
+            if($login.NeedsChange){
+                $domainChanged=$true
+                New-ItemProperty -LiteralPath $winlogon -Name DefaultDomainName -Value '.' -PropertyType String -Force -ErrorAction Stop | Out-Null
+                if([string](Get-Item -LiteralPath $winlogon -ErrorAction Stop).GetValue('DefaultDomainName') -ne '.'){throw 'Local auto-login domain readback failed.'}
+            }
+                $arguments=@{NewName=$requested;Force=$true;PassThru=$true;ErrorAction='Stop'}
+                if($state.PartOfDomain){if(-not $Plan.DomainCredential){throw 'Domain rename credentials are unavailable.'};$arguments.DomainCredential=$Plan.DomainCredential}
+                $renamed=Rename-Computer @arguments
+                $state=Get-ThoroughComputerNameState
+                if(-not $renamed.HasSucceeded -or -not $state.RenamePending -or $state.Pending -ine $requested){throw 'Windows rename readback failed. Verify the pending computer name manually.'}
+            }catch{
+                $renameError=$_.Exception.Message
+                $latest=Get-ThoroughComputerNameState
+                if(-not $latest.RenamePending){
+                    if($domainChanged){New-ItemProperty -LiteralPath $winlogon -Name DefaultDomainName -Value $domain -PropertyType String -Force -ErrorAction Stop | Out-Null
+                        if([string](Get-Item -LiteralPath $winlogon -ErrorAction Stop).GetValue('DefaultDomainName') -cne $domain){throw 'Auto-login domain restoration could not be verified.'}}
+                    if($Plan.Change -and $Plan.Change.Changed){Restore-ThoroughTextChange $Plan.Change;$Plan.Verified=$false}
+                }
+                throw $renameError
+            }
+        }
+        if($state.RenamePending){
+            $renameStatus='Restart Required';$action='Restart Required. Active Windows name: '+$state.Active+'; pending name: '+$state.Pending+'. Restart, then run Audit to verify the new name and kiosk sign-in.'
+            if((Test-CanApply) -and $Plan -and $Plan.Verified -and $state.Pending -ieq $requested){$script:ThoroughRestartRequired=$true}
+        }elseif($state.Active -ieq $requested){$renameStatus='Verified';$status='Pass';$action='Windows computer name verified; no rename or restart required.'}
+        else{$action='The launcher was not verified; Windows computer renaming was not applied. Manual action required.'}
+    }catch{
+        $action='Windows computer rename failed: '+$_.Exception.Message+' Manual action required.'
+        if((Test-CanApply) -and $Plan -and $Plan.Verified){
+            try{
+                $current=Get-ThoroughComputerNameState
+                if(-not $current.RenamePending -and $current.Active -ieq $Plan.Computer.Active){
+                    if($Plan.Change -and $Plan.Change.Changed){Restore-ThoroughTextChange $Plan.Change}
+                    $Plan.Verified=$false
+                    $action+=' Launcher restored to its pre-Apply state.'
+                }
+            }catch{$action+=' Launcher restoration could not be verified: '+$_.Exception.Message}
+        }
+    }
+    finally{if($Plan){$Plan.DomainCredential=$null}}
+    $active=if($state){$state.Active}else{'Not verified'}
+    $pending=if($state -and $state.RenamePending){$state.Pending}else{'None'}
+    $result=New-CheckResult $status $action $renameStatus
+    $result|Add-Member NoteProperty StateHtml (ConvertTo-ReportDefinitionHtml ([ordered]@{'Active hostname'=$active;'Requested hostname'=$requested;'Pending hostname'=$pending;'Rename status'=$renameStatus}))
+    return $result
+}
+
+function Confirm-ThoroughRestart {
+    if(-not (Test-CanApply) -or -not $script:ThoroughRestartRequired){return}
+    Write-Host 'Restart Required. Save your work before restarting. Run Audit after restart to verify the computer name and kiosk sign-in.' -ForegroundColor Yellow
+    if(([string](Read-Host 'Restart this computer now? [y/N]')).Trim() -ieq 'y'){Restart-Computer -Confirm:$false -ErrorAction Stop}
+}
+
 function Repair-LauncherDetails {
     param([string]$Path,[string]$ShortcutPath,[string]$Restaurant,[string]$Kiosk,[string]$Hostname)
+    if((Test-CanApply) -and (Get-Variable -Name ConfirmedLauncherPlan -Scope Script -ErrorAction SilentlyContinue) -and $script:ConfirmedLauncherPlan){
+        return Invoke-ThoroughLauncherPlan -Plan $script:ConfirmedLauncherPlan -Path $Path -ShortcutPath $ShortcutPath
+    }
     # Inspect existing values; Apply may repair a known client origin and confirmed host.
     $result=Add-LauncherReportDetails (New-CheckResult 'Fail' 'Launcher inspected; existing values preserved.' '') $Path $ShortcutPath
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {$result.Action='Launcher script is missing. Manual action required.';return $result}
@@ -3536,8 +3762,20 @@ $savedBeforeRows=@()
 if($script:ApplyChanges -and $existingBundle){
     $savedBeforeRows=@(Get-ThoroughSnapshotObservations $existingBundle.State.Reports.Audit)
 }
+$script:ConfirmedLauncherPlan=$null
+$script:ThoroughRestartRequired=$false
 if($script:ApplyChanges){
-    $KioskHostname=Read-ThoroughFixHostname -SuggestedName (Get-ThoroughDeviceHostname) -SuppliedName $KioskHostname
+    # Select the existing account with mutation disabled. Complete all launcher
+    # input and computer-rename preflight before any component repair starts.
+    $script:ApplyChanges=$false
+    try{$preflightAccount=Get-KioskAccountCheck}finally{$script:ApplyChanges=$true}
+    if(-not $preflightAccount.Account){throw 'Apply cancelled: a single existing kiosk account must be verified first.'}
+    $preflightProfile=Get-KioskProfilePath $preflightAccount.Account.Name
+    if(-not $preflightProfile){throw 'Apply cancelled: the existing kiosk profile is unavailable.'}
+    $script:ConfirmedLauncherPlan=New-ThoroughLauncherPlan -Path (Join-Path $preflightProfile 'Scripts\LaunchKiosk.ps1') -Restaurant $RestaurantId -Kiosk $KioskId -Hostname $KioskHostname -UserName $preflightAccount.Account.Name
+    $RestaurantId=$script:ConfirmedLauncherPlan.Restaurant
+    $KioskId=$script:ConfirmedLauncherPlan.Kiosk
+    $KioskHostname=$script:ConfirmedLauncherPlan.Hostname
 }
 $applyRequested=[bool]$script:ApplyChanges
 $beforeApplyRows=@()
@@ -4297,6 +4535,24 @@ try {
     Add-ResultEntry $sec2Num $sec2Title 'Kiosk Launch Architecture' $result
     $auditRows[-1]|Add-Member NoteProperty ExpectedHostName $(if(Test-CanApply){$KioskHostname}else{Get-ThoroughDeviceHostname})
 } catch { Add-ResultEntry $sec2Num $sec2Title 'Kiosk Launch Architecture' (New-CheckResult 'Fail' $_.Exception.Message 'Launcher configuration failed') }
+
+# Verify/schedule the Windows name before later policy repairs can edit launcher
+# flags, so rename failure can still restore this exact launcher transaction.
+$namePlan=if($inspectOnly -or -not $applyRequested){$null}else{$script:ConfirmedLauncherPlan}
+if($namePlan -and @($auditRows | Where-Object {$_.ItemTitle -eq 'Kiosk Launch Architecture' -and $_.Status -eq 'Pass'}).Count -ne 1){
+    if($namePlan.Change -and $namePlan.Change.Changed){Restore-ThoroughTextChange $namePlan.Change}
+    $namePlan.Verified=$false
+}
+$nameResult=Invoke-ThoroughComputerNameCheck -Plan $namePlan -UserName $kioskUser
+Add-ResultEntry 2 'Kiosk Application & Policies' 'Windows Computer Name' $nameResult
+if($namePlan -and -not $namePlan.Verified){
+    foreach($launcherRow in @($auditRows | Where-Object ItemTitle -EQ 'Kiosk Launch Architecture')){
+        $readback=Add-LauncherReportDetails (New-CheckResult 'Fail' '' '') $namePlan.Path ''
+        $launcherRow.FoundStateHtml=$readback.StateHtml
+        $launcherRow.Status='Fail'
+        $launcherRow.ActionTaken=[Net.WebUtility]::HtmlEncode('Launcher/Windows name update was not completed. '+$nameResult.Action)
+    }
+}
 
 try {
     $profile = Get-KioskProfilePath $kioskUser
@@ -5893,6 +6149,9 @@ $reportPath=Save-ThoroughReportBundle -Path $reportPath -ClientType $script:Kios
     }
 }
 $global:LASTEXITCODE = if ($failCount -gt 0) { 1 } else { 0 }
+if($script:ConfirmedLauncherPlan){$script:ConfirmedLauncherPlan.DomainCredential=$null}
+# Reports must be persisted before the operator can explicitly restart.
+if($generateReport){Confirm-ThoroughRestart}
 if ($ArchitectureRun -and -not [string]::IsNullOrWhiteSpace($ArchitectureResultPath)) {
     [IO.File]::WriteAllText($ArchitectureResultPath, 'Completed', [Text.UTF8Encoding]::new($false))
 }

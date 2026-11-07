@@ -147,7 +147,7 @@ foreach ($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroug
         $findingLabels=@([regex]::Matches($result.StateHtml,'class="kv-label">([^<]+):</span>') | ForEach-Object {$_.Groups[1].Value})
         $requirement=Get-ReportRequirement ([pscustomobject]@{ItemTitle='Kiosk Launch Architecture';ItemSub='Verified configuration'})
         $requiredLabels=@([regex]::Matches($requirement,'class="kv-label">([^<]+):</span>') | ForEach-Object {$_.Groups[1].Value})
-        Assert-Inspection (($findingLabels -join '|') -ceq 'Launcher Path|Restaurant ID|Kiosk ID|Host name|URL origin' -and ($requiredLabels -join '|') -ceq 'Launch Script|Restaurant ID|Kiosk ID|Host name|URL origin') 'Launcher requirements or Findings have incorrect field labels/order'
+        Assert-Inspection (($findingLabels -join '|') -ceq 'Launcher Path|URL origin|Restaurant ID|Kiosk ID|Host name' -and ($requiredLabels -join '|') -ceq 'Launch Script|URL origin|Restaurant ID|Kiosk ID|Host name') 'Launcher requirements or Findings have incorrect field labels/order'
         Assert-Inspection ($requirement.Contains('Launch Script:</span> Available') -and $requirement.Contains(('URL origin:</span> '+$script:origin))) 'Launcher availability or client-specific origin reference changed'
         Assert-Inspection ($result.StateHtml -notmatch 'Desktop Shortcut|Startup BAT|Launch Script:') 'Extra or outdated launcher Findings fields remain'
         Assert-Inspection ($result.StateHtml.Contains(('Launcher Path:</span> '+[Net.WebUtility]::HtmlEncode($script:launchPath)))) 'Launcher Path value or its HTML escaping changed'

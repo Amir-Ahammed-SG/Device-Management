@@ -87,6 +87,12 @@ function Assert-SettingRuleParity {
             if($name -eq 'Performance Counter' -and $label -eq 'Audit'){$label='Rebuild State'}
             $label+'='+[Net.WebUtility]::HtmlDecode(([regex]::Replace($_.Groups['Value'].Value,'<[^>]*>',''))).Trim()
         })
+        # The approved launcher field order changed; compare the same values
+        # against that explicit order, including historical saved observations.
+        if($name -eq 'Kiosk Launch Script'){
+            $order=@('Launcher Path','URL origin','Restaurant ID','Kiosk ID','Host name')
+            $oldPairs=@($oldPairs | Sort-Object { $label=$_.Substring(0,$_.IndexOf('='));$index=[array]::IndexOf($order,$label);if($index -lt 0){99}else{$index} })
+        }
         # Fix now omits healthy printer siblings from a failed group. Allow
         # only their old identity-only no-change summaries to disappear.
         if($Parameters.DisplayMode -eq 'Fix' -and $name -eq 'Printer'){

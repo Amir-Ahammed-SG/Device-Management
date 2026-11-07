@@ -49,7 +49,7 @@ If the Fix tab says **No fixes required**, you can use the Final tab and print i
 ## 4. Apply fixes when needed
 
 1. From the completed Audit screen, select **[2] Apply Fix**. You can also select **[8] Back**, then **[2] Apply Fix**.
-2. Confirm or enter **Hostname**. The suggestion is the current Windows computer name; press Enter to accept it. This prompt appears only in Apply Fix.
+2. Review **URL Origin**, then verify **Restaurant ID**, **Kiosk ID** and **Hostname**, in that order. Missing IDs require input. Press Enter to keep a suggested value, or enter a replacement. The hostname suggestion is the active Windows DNS hostname. These prompts appear only in Apply Fix.
 3. Wait for the initial read-only inspection, supported repairs and verification to finish.
 4. Read the saved report path in the terminal, then reopen or refresh that HTML file.
 5. Review **Fix → Findings** and **Applied**, then check **Final → Status**.
@@ -62,16 +62,24 @@ Apply prompts:
 
 | Prompt | What to enter |
 | --- | --- |
+| **Restaurant ID [existing value]** | Verify the branch-specific ID for the selected client, or enter its replacement. Missing IDs are required. When the URL changes between SaaS and Subway, check this ID carefully: the two clients can use different restaurant IDs. |
+| **Kiosk ID [existing value]** | Verify the kiosk ID, or enter its replacement. Missing IDs are required. |
 | **EXACT Service Name for Payment Middleware** | The Windows service's **Service name**, available in `services.msc`. Enter `skip` if you cannot identify it; do not guess. |
-| **Hostname [current Windows name]** | Confirm the suggestion or enter the approved launcher hostname. Zabbix separately uses the actual Windows computer name. |
+| **Hostname [current Windows name]** | Confirm the suggestion or enter the approved Windows/launcher hostname. Existing `host=` is replaced with the confirmed value, or added when missing. A different Windows name schedules a computer rename. |
+| **Domain credentials** | On a domain-joined kiosk, an authorized domain identity is required for a new computer rename. Credentials are not stored in reports. Cancelling stops Apply before repairs. |
+| **Restart this computer now? [y/N]** | Enter `y` only when ready. Reports are saved first. Enter defaults to no restart. |
 
-Apply can replace an incorrect existing `host` value in a verified static launcher URL. It preserves the Restaurant ID, Kiosk ID, URL origin and other arguments. Missing or ambiguous URLs/parameters require manual correction. The Windows computer itself is not renamed, and the flow does not request a kiosk password.
+Apply validates all confirmed launcher inputs before starting component repairs. A known SaaS/Subway URL origin is corrected for the selected client; the onboarding route must already be valid. Restaurant ID, Kiosk ID and host are then updated together, with URI encoding, an exact original-file backup, readback and rollback on failure. Unrelated query parameters, command arguments and file encoding are preserved. Unknown sites, signed/dynamic/ambiguous launchers, duplicate recognized parameters and concurrent edits require manual review. Audit never asks for these Apply-only values or changes the launcher/computer name.
 
-An existing Zabbix Agent's single explicit `Hostname` setting can be updated to the Windows computer name, followed by an agent restart and readback. Dynamic, duplicate or multi-host configurations require manual review. Only the hostname setting is changed; monitoring server addresses are preserved. Original launcher/configuration files are backed up under **Desktop → Thorough Check → Restore Points** before hostname edits. A failed Zabbix activation attempts to restore the original configuration.
+When the confirmed hostname already matches the active Windows DNS hostname (ignoring case), no computer rename is performed. A different valid name is scheduled without restarting automatically. The report shows **Restart Required**, not Pass, until a fresh Audit verifies the active name after reboot. A conflicting pending rename blocks Apply. Local automatic sign-in that explicitly names the old computer is changed to `.` (this computer), with readback and failure recovery; the user and password are preserved. Kiosk task identities use the local account SID. A failed rename restores the launcher when no rename was scheduled and the original Windows name remains active. If Windows state cannot be verified, the report requires manual action rather than assuming rollback or success.
+
+After reboot, run Audit and verify kiosk sign-in, launcher operation and Zabbix. Zabbix uses the active Windows name during each run; it may require a subsequent Apply after the Windows rename takes effect.
+
+An existing Zabbix Agent's single explicit `Hostname` setting can be updated to the Windows computer name, followed by an agent restart and readback. Dynamic, duplicate or multi-host configurations require manual review. Only the hostname setting is changed; monitoring server addresses are preserved. Original launcher/configuration files are backed up under **C:\Thorough Check\Restore Points** before edits. A failed Zabbix activation attempts to restore the original configuration.
 
 ## 5. Find and use the report
 
-Reports are saved in **Desktop → Thorough Check** for the Windows account running the elevated PowerShell process. If you start from a standard user and supply a different administrator's credentials, check that administrator's Desktop. The exact path is printed in the terminal.
+Reports are saved in **C:\Thorough Check**. The exact report path is printed in the terminal.
 
 The usual filename is:
 

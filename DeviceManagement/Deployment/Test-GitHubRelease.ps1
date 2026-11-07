@@ -76,6 +76,7 @@ $fixtures=@(
     'Test-ConsoleKioskIdentity.ps1',
     'Test-ClientUrlMismatch.ps1',
     'Test-ClientUrlRepair.ps1',
+    'Test-LauncherConfirmation.ps1',
     'Test-PrinterStateReporting.ps1',
     'Test-LauncherInspection.ps1',
     'Test-KioskLaunchTask.ps1',
