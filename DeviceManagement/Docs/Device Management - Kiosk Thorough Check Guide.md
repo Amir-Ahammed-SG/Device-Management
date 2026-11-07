@@ -49,12 +49,28 @@ If the Fix tab says **No fixes required**, you can use the Final tab and print i
 The Final tab's **KIOSK Account** section shows only the confirmed kiosk account
 selected by the existing user-selection logic for the launcher, Startup folder
 and launch task. Other detected kiosk accounts remain in Audit and relevant Fix
-findings. Administrative accounts retain their separate reporting. If selection
+findings. Administrative accounts retain their separate section. If kiosk selection
 is unverified, missing or ambiguous, Final shows **Kiosk user not verified** and
 does not guess the default `SELISE-KIOSK` user. Failed/unavailable account readback
 remains **Not verified**. This is a report projection only: Windows accounts,
 selection rules and saved Audit records are not changed. Generate a new report
 with the updated script to see this layout.
+
+Final includes only detected receipt printers whose recorded status is **Active**
+or **Idle**. Unavailable, Offline, Paused, Error and unverified printers remain in
+Audit/Fix, and are omitted from Final. If none qualifies, the printer component
+is omitted; PrintService Log and other checks remain. An eligible printer's
+remaining setting problems, such as disabled retention, are still shown. A
+failed/unverified post-fix printer readback is not presented as Active/Idle.
+
+Final's administrative section shows one account with verified **Active/Enabled**
+status and **Administrator** privilege. Priority is **Admin**, **Administrator**,
+then another eligible account (alphabetically when several remain). A named
+Admin/Administrator without admin privilege or with disabled/unknown status is
+not eligible. Missing, ambiguous or failed post-fix evidence does not qualify an
+account. If none qualifies, Final shows **Administrative account not verified**.
+Audit and Fix retain their existing account and printer evidence. These filters
+do not remove printers, change accounts, alter repair scope or rewrite saved Audit.
 
 ## 4. Apply fixes when needed
 

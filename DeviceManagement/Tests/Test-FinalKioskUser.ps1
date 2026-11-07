@@ -75,10 +75,12 @@ foreach($client in @('SaaS','Subway')){
     $final=New-ThoroughReportSnapshot -Rows @($escapedRow) -DisplayMode Final -KioskUserName $escaped
     $view=Get-SettingRenderedComponent (Read-FinalUserHtml $final) 'KIOSK Account'
     Assert-FinalUser ($view.Text.Contains($escaped) -and $view.Html.Contains('&lt;East&gt;') -and -not $view.Html.Contains('SELISE-KIOSK')) 'Selected account escaping/identity failed'
-    $admin=New-FinalUserRow @((New-FinalUserEntry Administrator),(New-FinalUserEntry Admin)) 'Administrative Accounts'
+    $adminEntries=@((New-FinalUserEntry Administrator),(New-FinalUserEntry Admin))
+    foreach($entry in $adminEntries){$entry.StateHtml=$entry.StateHtml.Replace('Standard Local User','Local Administrator')}
+    $admin=New-FinalUserRow $adminEntries 'Administrative Accounts'
     $final=New-ThoroughReportSnapshot -Rows @($admin) -DisplayMode Final -KioskUserName 'SaaS Test'
     $view=Get-SettingRenderedComponent (Read-FinalUserHtml $final) 'Administrative Accounts'
-    Assert-FinalUser (@($view.Fields|Where-Object Setting -EQ 'Account Name').Count -eq 2) 'Final kiosk filtering removed administrative accounts'
+    Assert-FinalUser (@($view.Fields|Where-Object Setting -EQ 'Account Name').Count -eq 1 -and @($view.Fields|Where-Object Setting -EQ 'Account Name')[0].Value -eq 'Admin') 'Confirmed kiosk projection interfered with administrative priority'
     Assert-FinalUser (($row|ConvertTo-Json -Depth 12 -Compress) -ceq $before) 'Final projection mutated Audit/Apply observations'
     $auditAfter=New-ThoroughReportSnapshot -Rows @($row) -DisplayMode Audit -KioskUserName 'SaaS Test' -AuditSource $identity
     $fixAfter=New-ThoroughReportSnapshot -Rows @($row) -DisplayMode Fix -KioskUserName 'SaaS Test' -AuditSource $identity

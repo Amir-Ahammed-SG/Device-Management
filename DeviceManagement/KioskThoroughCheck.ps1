@@ -1111,7 +1111,7 @@ $htmlHeader = @"
 <h2>CONFIGURATION CHECK</h2>
 "@
 
-$reportRows = @(Get-ThoroughReportDisplayRows -Rows $Rows)
+$reportRows = @(if($isFinalReport){Get-ThoroughFinalReportRows -Rows $Rows -ConfirmedKioskUser $KioskUserName -AfterApply $AfterApply}else{Get-ThoroughReportDisplayRows -Rows $Rows})
 $baselineReportRows=@()
 if($isApplyReport -and $AfterApply -and $BeforeRows.Count){
     $baselineReportRows=@(Get-ThoroughReportDisplayRows -Rows $BeforeRows)
@@ -1130,7 +1130,6 @@ $htmlSections = foreach ($group in $groupedSections) {
     $secName = [Net.WebUtility]::HtmlEncode($group.Group[0].SectionTitle)
     $secNum = [Net.WebUtility]::HtmlEncode($group.Name)
     $tableRows = foreach ($row in $group.Group) {
-        if($isFinalReport){$row=Get-ThoroughFinalKioskAccountRow -Row $row -ConfirmedUser $KioskUserName}
         $checkHtml = '<div class="device-title">{0}</div>' -f ([Net.WebUtility]::HtmlEncode((Get-ThoroughReportComponentName $row.ItemTitle)))
         $commandHtml=ConvertTo-ReportCommandBoxes $row.Shortcut
         $findingRow=$row;$hasBeforeRow=$false
@@ -1178,7 +1177,7 @@ $htmlSections = foreach ($group in $groupedSections) {
             ConvertTo-ThoroughSettingRows -Row $row -Mode Final -ComponentHtml $checkHtml -FindingsHtml $stateHtml -CurrentHtml $stateHtml -AfterApply $AfterApply
         }
     }
-    if($isApplyReport -and -not @($tableRows).Count){continue}
+    if(($isApplyReport -or $isFinalReport) -and -not @($tableRows).Count){continue}
     $columnCount=if($isFinalReport){3}else{5}
     if($isApplyReport){
         $columnWidths='<col style="width:17%"><col style="width:23%"><col style="width:20%"><col style="width:20%"><col style="width:20%">'
@@ -2344,9 +2343,14 @@ function Get-AccountReportView {
 
 function Get-ThoroughFinalKioskAccountRow {
     param($Row,[string]$ConfirmedUser)
+    if($Row.ItemTitle -ne 'KIOSK Account'){return $Row}
+    Get-ThoroughFinalAccountRow -Row $Row -ConfirmedUser $ConfirmedUser -UnverifiedLabel 'Kiosk user not verified'
+}
+
+function Get-ThoroughFinalAccountRow {
+    param($Row,[string]$ConfirmedUser,[string]$UnverifiedLabel)
     # Project recorded data only. Do not select users, query Windows or change
     # the original account observations used by Audit and Fix.
-    if($Row.ItemTitle -ne 'KIOSK Account'){return $Row}
     $copy=$Row | Select-Object *
     $view=Get-AccountReportView $Row
     $selected=@()
@@ -2368,11 +2372,76 @@ function Get-ThoroughFinalKioskAccountRow {
         }
     }else{
         $copy.Status='Fail'
-        $copy.ActionTaken='Kiosk user not verified. A single confirmed account is required.'
-        $copy.FoundStateHtml=ConvertTo-ReportDefinitionHtml ([ordered]@{'Account Name'='Kiosk user not verified';'Account Privilege'='Not verified';'Account Status'='Not verified';'Password Never Expires'='Not verified';'User Cannot Change Password'='Not verified'})
+        $copy.ActionTaken=[Net.WebUtility]::HtmlEncode($UnverifiedLabel+'. A single confirmed account is required.')
+        $unknown=[ordered]@{'Account Name'=$UnverifiedLabel;'Account Privilege'='Not verified';'Account Status'='Not verified';'Password Never Expires'='Not verified'}
+        if($Row.ItemTitle -notmatch '^Administrative Account'){$unknown['User Cannot Change Password']='Not verified'}
+        $copy.FoundStateHtml=ConvertTo-ReportDefinitionHtml $unknown
     }
     $copy | Add-Member NoteProperty AccountResults @($metadata) -Force
     return $copy
+}
+
+function Test-ThoroughFinalAccountReadback {
+    param($Row,[string]$Name)
+    if(-not $Row.PSObject.Properties['AccountResults']){return $false}
+    $own=@($Row.AccountResults | Where-Object {$null -ne $_ -and $_.PSObject.Properties['AccountName'] -and $_.AccountName -ieq $Name})
+    if($own.Count -ne 1 -or -not $own[0].PSObject.Properties['Status'] -or [string]::IsNullOrWhiteSpace([string]$own[0].Status) -or $own[0].Status -in @('Unknown','Bypass') -or -not $own[0].PSObject.Properties['Action']){return $false}
+    $note=[string]$own[0].Action
+    if([string]::IsNullOrWhiteSpace($note) -or $note -match '(?i)\breadback\b[^.;]*(?:fail|could not|not verified|unavailable)|(?:fail|could not)[^.;]*\breadback\b|\bnot reverified\b|account-specific results are unavailable'){return $false}
+    if($own[0].Status -notin @('Pass','Online','Remediated') -and $note -match '(?i)reject|exception|could not|failed|not verified'){return $false}
+    return $true
+}
+
+function Get-ThoroughFinalAdministrativeAccountRow {
+    param($Row,[bool]$AfterApply)
+    $view=Get-AccountReportView $Row
+    $eligible=@(foreach($record in $view.Records){
+        $values=Get-ThoroughReportHighlightFields $record.FindingsHtml
+        if($values['Account Status'] -ne 'Active' -or $values['Account Privilege'] -ne 'Administrator'){continue}
+        if(@($view.Records | Where-Object {$_.AccountName -ieq $record.AccountName}).Count -ne 1){continue}
+        if($AfterApply -and -not (Test-ThoroughFinalAccountReadback -Row $Row -Name $record.AccountName)){continue}
+        $record
+    })
+    $selected=@($eligible | Sort-Object @{Expression={switch($_.AccountName){'Admin'{0};'Administrator'{1};default{2}}}},AccountName | Select-Object -First 1)
+    $name=if($selected.Count){$selected[0].AccountName}else{''}
+    Get-ThoroughFinalAccountRow -Row $Row -ConfirmedUser $name -UnverifiedLabel 'Administrative account not verified'
+}
+
+function Get-ThoroughFinalPrinterRow {
+    param($Row,[bool]$AfterApply)
+    $records=@(Get-ThoroughSettingRecords $Row.FoundStateHtml)
+    $names=@($records | Where-Object {$_.Identity -and $_.Identity.Label -eq 'Printer Name'} | ForEach-Object {[regex]::Escape($_.Identity.Text)})
+    $action=Convert-ReportHtmlToTerminalText ([string]$Row.ActionTaken)
+    $markers=if($names.Count){@([regex]::Matches($action,'(?<Name>'+($names -join '|')+'):\s*'))}else{@()}
+    $printers=@(foreach($record in $records){
+        $status=@($record.Fields | Where-Object {$_.Kind -eq 'Field' -and $_.Label -eq 'Printer status'})
+        if(-not $record.Identity -or $record.Identity.Label -ne 'Printer Name' -or $status.Count -ne 1 -or $status[0].Text -notin @('Active','Idle') -or $status[0].State -eq 'unverified'){continue}
+        $name=[string]$record.Identity.Text
+        if([string]::IsNullOrWhiteSpace($name) -or $name -match '(?i)^(?:Not verified|Not detected|Not recorded|Unknown)(?:[.!](?:\s.*)?)?$'){continue}
+        $own=@(for($i=0;$i -lt $markers.Count;$i++){if($markers[$i].Groups['Name'].Value -ieq $name){$i}})
+        $note=''
+        if($own.Count -eq 1){
+            $start=$markers[$own[0]].Index+$markers[$own[0]].Length
+            $end=if($own[0]+1 -lt $markers.Count){$markers[$own[0]+1].Index}else{$action.Length}
+            $note=$action.Substring($start,$end-$start).Trim(' ',';')
+        }elseif($records.Count -eq 1){$note=$action}
+        if($AfterApply -and ($own.Count -gt 1 -or [string]::IsNullOrWhiteSpace($note) -or $note -match '(?i)\bnot\s+verified\b|\breadback\b[^.;]*(?:fail|could not|unavailable)|(?:fail|could not)[^.;]*\breadback\b|\bnot reverified\b')){continue}
+        $body=@($record.Fields | ForEach-Object {
+            if($_.Kind -eq 'Field'){'<div><span class="kv-label">'+[Net.WebUtility]::HtmlEncode($_.Label)+':</span> '+$_.Html+'</div>'}else{$_.Html}
+        }) -join ''
+        [pscustomobject]@{SectionNumber=$Row.SectionNumber;SectionTitle=$Row.SectionTitle;ItemTitle=$name;ItemSub='Type: Receipt / POS Printer';Shortcut='';FoundStateHtml=('<div class="kv-block">'+$body+'</div>');Status=$Row.Status;ActionTaken=[Net.WebUtility]::HtmlEncode($note)}
+    })
+    if($printers.Count){New-ThoroughPrinterReportRow -Rows $printers}
+}
+
+function Get-ThoroughFinalReportRows {
+    param([object[]]$Rows,[string]$ConfirmedKioskUser,[bool]$AfterApply)
+    # Final-only projections use recorded evidence and never mutate source rows.
+    foreach($row in @(Get-ThoroughReportDisplayRows -Rows $Rows)){
+        if($row.ItemTitle -eq 'Printer' -and $row.SectionTitle -ne 'AppSettings Check'){Get-ThoroughFinalPrinterRow -Row $row -AfterApply $AfterApply}
+        elseif($row.ItemTitle -match '^Administrative Account'){Get-ThoroughFinalAdministrativeAccountRow -Row $row -AfterApply $AfterApply}
+        else{Get-ThoroughFinalKioskAccountRow -Row $row -ConfirmedUser $ConfirmedKioskUser}
+    }
 }
 
 function Get-ThoroughReportHighlightFields {

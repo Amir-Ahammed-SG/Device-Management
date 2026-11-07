@@ -16,7 +16,10 @@ for backups, recovery and verification details.
 The Final report's **KIOSK Account** section shows only the confirmed account
 selected for the kiosk launcher. Unverified or ambiguous selection shows
 **Kiosk user not verified**. Audit retains detected account observations, Fix
-retains relevant issues/repairs, and administrative account reporting is unchanged.
+retains relevant issues/repairs. Final lists only printers with verified **Active**
+or **Idle** status. Its administrative section shows one enabled admin-privileged
+account: **Admin**, then **Administrator**, then another eligible account. If none
+qualifies, it shows **Administrative account not verified**.
 
 The main menu's **Other Tools** contains **Payment Cron Job**, **Kiosk Launcher
 Task Scheduler**, **Zabbix Installer** and **Nmap Installer**. Each maintenance

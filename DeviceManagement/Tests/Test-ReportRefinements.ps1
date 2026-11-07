@@ -61,7 +61,8 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
         }else {
             $p=Get-SettingRenderedComponent $html 'Printer'
             $printerLabels='Printer Name|Printer status|Keep printed documents'
-            Assert-Refinement (($p.Fields.Setting -join '|') -eq $printerLabels) ($mode+' collapsed unavailable printer settings')
+            if($mode -eq 'Final'){Assert-Refinement ($p.Count -eq 0) 'Final retained an unverified printer'}
+            else{Assert-Refinement (($p.Fields.Setting -join '|') -eq $printerLabels) ($mode+' collapsed unavailable printer settings')}
             if($mode -eq 'Fix') {
                 Assert-Refinement ($p.Headings -contains 'Printer - Not verified. Please check manually.') 'Single printer heading lost the unavailable-inventory reason'
                 Assert-Refinement (@($p.Fields|Where-Object {$_.Setting -ne 'Printer Name' -and $_.Value -ne 'Not applied'}).Count -eq 0 -and @($p.Fields | Where-Object {$_.Setting -eq 'Printer Name' -and $_.Html -ne ''}).Count -eq 0) 'Audit-derived Fix fabricated applied values or labeled identity'
@@ -102,7 +103,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
                 Assert-Refinement (@($component.Fields | Where-Object {$_.Setting -eq 'Printer status' -and $_.Found -eq 'Error' -and $_.Html -match 'finding-mismatch'}).Count -eq 1) 'Printer Error must be shown as a requirement mismatch'
             }else{
                 $component=Get-SettingRenderedComponent $html 'Printer'
-                Assert-Refinement ($component.Text.Contains('EPSON Broken')) 'Failed printer disappeared'
+                Assert-Refinement ($component.Text.Contains('EPSON Broken') -eq ($mode -eq 'Fix')) 'Printer eligibility changed Fix or retained an Error printer in Final'
                 Assert-Refinement ($component.Text.Contains('EPSON Healthy') -eq ($mode -eq 'Final')) 'Healthy printer appeared in Fix or disappeared from Final'
                 if($mode -eq 'Fix'){Assert-Refinement (@($component.Fields | Where-Object Setting -EQ 'Printer status').Count -eq 1) 'Actual printer Error was replaced by a no-change summary'}
             }

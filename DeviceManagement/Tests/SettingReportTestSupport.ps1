@@ -152,7 +152,7 @@ function Use-SettingLayoutRuleAssertions {
     $legacyParameters=@{}+$PSBoundParameters
     if($legacyParameters.DisplayMode -eq 'Final'){
         $confirmed=if($legacyParameters.ContainsKey('KioskUserName')){[string]$legacyParameters.KioskUserName}else{''}
-        $legacyParameters.Rows=@($legacyParameters.Rows | ForEach-Object {Get-ThoroughFinalKioskAccountRow -Row $_ -ConfirmedUser $confirmed})
+        $legacyParameters.Rows=@(Get-ThoroughFinalReportRows -Rows $legacyParameters.Rows -ConfirmedKioskUser $confirmed -AfterApply ([bool]$legacyParameters.AfterApply))
     }
     $legacy=& $script:SettingRuleLegacyRenderer @legacyParameters
     Assert-SettingRuleParity -Current $current -Legacy $legacy -Parameters $PSBoundParameters

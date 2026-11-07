@@ -90,7 +90,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
             $snapshot=New-ThoroughReportSnapshot @parameters;$snapshots[$mode]=$snapshot;$html=Decode-Setting $snapshot
             [IO.File]::WriteAllText((Join-Path $outputRoot ($client+'-'+$case.Name+'-'+$mode+'.html')),$html,$utf8)
             $legacyParameters=@{}+$parameters
-            if($mode -eq 'Final'){$legacyParameters.Rows=@($parameters.Rows | ForEach-Object {Get-ThoroughFinalKioskAccountRow -Row $_ -ConfirmedUser $parameters.KioskUserName})}
+            if($mode -eq 'Final'){$legacyParameters.Rows=@(Get-ThoroughFinalReportRows -Rows $parameters.Rows -ConfirmedKioskUser $parameters.KioskUserName -AfterApply $parameters.AfterApply)}
             $legacySnapshot=& $legacy @legacyParameters;$legacyHtml=Decode-Setting $legacySnapshot
             [IO.File]::WriteAllText((Join-Path $outputRoot ($client+'-'+$case.Name+'-'+$mode+'-Legacy.html')),$legacyHtml,$utf8)
             if($mode -eq 'Audit'){
@@ -186,7 +186,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     Assert-Setting ($printer.Value -ceq 'Enabled') 'A sibling printer failure invalidated the verified printer result.'
     $view=New-ThoroughReportSnapshot -Rows $partial -DisplayMode Final -AfterApply $true
     $printers=Get-SettingRenderedComponent (Decode-Setting $view) 'Printer'
-    Assert-Setting ((Get-SettingField $printers 'Keep printed documents' '*BIXOLON*').Value -ceq 'Not verified' -and (Get-SettingField $printers 'Keep printed documents' '*EPSON*').Value -ceq 'Enabled') 'Final mixed printer readback outcomes.'
+    Assert-Setting (-not $printers.Text.Contains('BIXOLON') -and (Get-SettingField $printers 'Keep printed documents').Value -ceq 'Enabled') 'Final retained unverified printer state or lost its verified sibling.'
     # Repeated labels may be paired by occurrence only when counts agree.
     $duplicate=New-SettingFixture 4 'Duplicate property fixture' ((ConvertTo-ReportDefinitionHtml ([ordered]@{'Value'='One'}))+(ConvertTo-ReportDefinitionHtml ([ordered]@{'Value'='Two'})))
     $single=New-SettingFixture 4 'Duplicate property fixture' ([ordered]@{'Value'='Three'}) Remediated 'Fixture repair completed; readback verified'

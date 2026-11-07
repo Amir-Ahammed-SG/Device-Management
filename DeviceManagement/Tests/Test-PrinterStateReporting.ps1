@@ -75,7 +75,7 @@ foreach($client in @('SaaS','Subway')){
                 $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
                 $component=if($mode -eq 'Audit'){Get-AuditRenderedComponent $html 'Printer'}else{Get-SettingRenderedComponent $html 'Printer'}
                 foreach($stateName in @('Not available','Offline','Paused','Error')){
-                    Assert-PrinterState ($component.Text.Contains($stateName)) ('Specific printer state lost in '+$mode+': '+$stateName)
+                    Assert-PrinterState ($component.Text.Contains($stateName) -eq ($mode -ne 'Final')) ('Printer state visibility changed unexpectedly in '+$mode+': '+$stateName)
                 }
                 if($mode -eq 'Fix'){
                     $nameFields=@($component.Fields | Where-Object Setting -EQ 'Printer Name')
@@ -92,7 +92,10 @@ foreach($client in @('SaaS','Subway')){
                     elseif(-not $retention){Assert-PrinterState (@($retentionFields | Where-Object Value -NE 'Enabled').Count -eq 0) 'A verified retention repair lost its Applied value'}
                 }
                 if($mode -eq 'Fix' -and $retention){Assert-PrinterState (@($component.Headings | Where-Object {$_.EndsWith('EPSON Idle')}).Count -eq 0) 'Healthy unchanged printer appeared in Fix'}
-                if($mode -ne 'Fix'){Assert-PrinterState (@($component.Fields | Where-Object Setting -EQ 'Printer Name').Count -eq $cases.Count) 'Audit/Final lost printer identity fields'}
+                if($mode -ne 'Fix'){
+                    $expectedCount=if($mode -eq 'Final'){@($cases | Where-Object {$_.Expected -in @('Idle','Active')}).Count}else{$cases.Count}
+                    Assert-PrinterState (@($component.Fields | Where-Object Setting -EQ 'Printer Name').Count -eq $expectedCount) 'Audit/Final printer identity selection changed'
+                }
             }
             Assert-PrinterState ((ConvertTo-Json -InputObject $script:rows.ToArray() -Depth 16 -Compress) -ceq $original) 'Rendering changed printer observations'
         }
@@ -122,5 +125,5 @@ foreach($client in @('SaaS','Subway')){
     $snapshot=New-ThoroughReportSnapshot -Rows @($identityOnly) -DisplayMode Fix -AfterApply $false
     $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
     Assert-PrinterState ((Get-SettingRenderedComponent $html 'Printer').Count -eq 0 -and $html.Contains('No fixes required.')) 'A name-only difference invented a printer repair or left an empty heading'
-    Write-Output ('PASS: '+$client+' 84 discovery cases and real Audit/Fix/Final reports retain unavailable/offline/paused/error states; healthy queues, combined flags and retention-only Apply remain truthful.')
+    Write-Output ('PASS: '+$client+' 84 discovery cases, full Audit/Fix evidence and Active/Idle-only Final; combined flags and retention-only Apply remain truthful.')
 }

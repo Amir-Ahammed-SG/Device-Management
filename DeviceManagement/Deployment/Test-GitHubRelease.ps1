@@ -66,6 +66,7 @@ $fixtures=@(
     'Test-ApprovedReportFixes.ps1',
     'Test-FixAccountFilter.ps1',
     'Test-FinalKioskUser.ps1',
+    'Test-FinalInventorySelection.ps1',
     'Test-AuditBasedReports.ps1',
     'Test-AuditClientInput.ps1',
     'Test-ReportAgentName.ps1',

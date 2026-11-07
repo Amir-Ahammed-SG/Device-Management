@@ -79,7 +79,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         Assert-FixAccount (-not [string]::IsNullOrWhiteSpace($savedRenderer.Before)) 'Before renderer missing from restore point.'
         . ([scriptblock]::Create($savedRenderer.Before))
         $oldAudit=New-ThoroughReportSnapshot -Rows @($row) -DisplayMode Audit -AuditSource $identity
-        $oldFinal=New-ThoroughReportSnapshot -Rows @((Get-ThoroughFinalKioskAccountRow -Row $row -ConfirmedUser $nameB)) -DisplayMode Final -AuditSource $identity -KioskUserName $nameB
+        $oldFinal=New-ThoroughReportSnapshot -Rows @(Get-ThoroughFinalReportRows -Rows @($row) -ConfirmedKioskUser $nameB -AfterApply $false) -DisplayMode Final -AuditSource $identity -KioskUserName $nameB
         # Header metadata and the five-column Audit presentation are approved changes.
         # Keep the historical Final configuration parity check and verify Audit data independently.
         $configPattern='(?is)<h2>CONFIGURATION CHECK</h2>(.*?)<p class="legend">'
@@ -101,8 +101,7 @@ foreach($sourceName in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThorough
         if($title -eq 'KIOSK Account'){
             Assert-FixAccount (-not $html.Contains('Account Name:</span> '+$nameA+'</div>') -and $html.Contains('Account Name:</span> '+$nameB)) 'Final did not retain only the confirmed kiosk account.'
         }else{
-            Assert-FixAccount ($html.Contains('>Account 01</div>') -and $html.Contains('>Account 02</div>')) 'Final lost an administrative account record.'
-            Assert-FixAccount ($html.Contains('Account Name:</span> '+$nameA) -and $html.Contains('Account Name:</span> '+$nameB)) 'Final lost administrative account identities.'
+            Assert-FixAccount (-not $html.Contains('Account Name:</span> '+$nameA+'</div>') -and $html.Contains('Account Name:</span> '+$nameB)) 'Final did not retain the priority administrative account.'
         }
         $fix=New-ThoroughReportSnapshot -Rows @($row) -DisplayMode Fix -AuditSource $identity
         $cells=@(Get-FixAccountCells (Read-FixAccountSnapshot $fix) $title)
