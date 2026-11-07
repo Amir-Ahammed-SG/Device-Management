@@ -45,7 +45,7 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
     foreach($snapshot in $snapshots){
         $html=$utf8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64))
         $footer=[regex]::Match($html,'(?s)<footer class="report-footer">.*?</footer>').Value
-        Assert-AgentName ($snapshot.AgentName -ceq $agent -and $footer.Contains('<strong>Prepared by:</strong> '+[Net.WebUtility]::HtmlEncode($agent))) 'Report did not inherit or escape the agent name.'
+        Assert-AgentName ($snapshot.AgentName -ceq $agent -and $html.Contains('<th>Prepared by</th><td>'+[Net.WebUtility]::HtmlEncode($agent)+'</td>') -and $footer -notmatch 'Prepared by|report-prepared-by' -and $footer.Contains('<strong>Generated Time:</strong> '+$snapshot.GeneratedAt)) 'Header attribution or footer timestamp is incorrect.'
         Assert-AgentName (-not $footer.Contains('<script>') -and $footer.Contains('Retain with the device configuration records.')) 'Agent input injected markup or displaced the existing footer.'
     }
     [void](Save-ThoroughReportBundle $reportPath $client $env:COMPUTERNAME $snapshots Audit)
@@ -83,13 +83,13 @@ foreach($name in @('SaaSKioskThoroughCheckScript.ps1','SubwayKioskThoroughCheck.
         Assert-AgentName ($AgentName -ceq 'Not provided') 'Unavailable Audit attribution was guessed.'
         if($existed){Assert-AgentName ((Get-FileHash -LiteralPath $reportPath).Hash -ceq $before) 'Reading metadata changed a legacy/unsupported report.'}
         $fallback=New-ThoroughReportSnapshot -Rows @() -DisplayMode Final -AgentName $AgentName
-        Assert-AgentName ($utf8.GetString([Convert]::FromBase64String($fallback.HtmlBase64)).Contains('<strong>Prepared by:</strong> Not provided')) 'Legacy report fallback failed.'
+        Assert-AgentName ($utf8.GetString([Convert]::FromBase64String($fallback.HtmlBase64)).Contains('<th>Prepared by</th><td>Not provided</td>')) 'Legacy report fallback failed.'
     }
     $script:Replies=[Collections.Generic.Queue[string]]::new();$script:Replies.Enqueue('New Agent')
     function Read-Host {param($Prompt) if($Prompt -ne 'Agent Name'){throw 'Unexpected metadata prompt.'};$script:Replies.Dequeue()}
     $AuditOnly=$true;. $inputBlock
     Assert-AgentName ($AgentName -ceq 'New Agent' -and -not (Test-CanApply)) 'Fix-first suppressed subsequent Audit agent input or enabled repairs.'
-    Write-Output ('PASS: '+$client+' agent-before-branch input, blank retry, escaped footer, all views, saved/session identity, Apply preserves Audit, legacy/conflict isolation and no device changes.')
+    Write-Output ('PASS: '+$client+' agent-before-branch input, blank retry, escaped header attribution, timestamp-only footer, all views, saved/session identity, Apply preserves Audit, legacy/conflict isolation and no device changes.')
 }
 # Named local child-process arguments, including a name containing special characters.
 $handler=[KioskTestSource]::ReadAllText((Join-Path $projectRoot 'Checks\KIOSK\ThoroughCheck.ps1'))

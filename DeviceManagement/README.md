@@ -291,8 +291,9 @@ result. Reports and explicitly selected software installers still write their
 normal output. The repository's local file-based execution path is retained.
 
 Thorough Check collects mandatory **Agent Name**, then **Branch Name**, when
-Audit is selected. Every newly generated report view shows **Prepared by: <Agent Name>**
-at the bottom right, including the printed Final report. Apply Fix
+Audit is selected. Every newly generated report view retains **Prepared by** in
+the Client Details header, including the printed Final report. The bottom-right
+footer shows **Generated Time** only. Apply Fix
 does not ask again: it reuses the selected client's input from the current
 session, including when the Audit report was declined. A fresh Apply run can
 reuse Branch from a validated saved Audit for the same client and Windows
@@ -303,7 +304,7 @@ remain supported. No separate metadata/cache file is created.
 Agent Name follows the same session reuse and is recovered from a uniquely
 identified saved Audit in a fresh Apply run. Older reports without an agent
 remain readable; newly generated views show **Prepared by: Not provided** until
-Audit collects a name. Names are HTML-encoded before appearing in the footer.
+Audit collects a name. Names are HTML-encoded before appearing in the header.
 
 The responsive report frame has a maximum width of 1200px. Header, tabs and
 report frame share the same alignment. The inner report/table content is centered
@@ -823,13 +824,13 @@ snapshot round-trips and inconsistent saved metadata rejection.
 CLIENT DETAILS retains its original bordered table with three rows:
 Client Type / Branch, Restaurant ID / Hostname, and Device / Prepared by.
 Device combines the type and identifier (for example, Kiosk-1); there is no
-separate Device Number field. Prepared by uses the same Agent Name as the
-report footer. Restaurant ID comes
+separate Device Number field. Prepared by records the collected Agent Name in the header. Restaurant ID comes
 from the kiosk launcher's URL restaurantId parameter, or Not detected when
 unavailable. The internal report identity remains
 available for saved-report validation; older reports with a visible Report ID
-remain readable. Generated Time appears in the report footer alongside
-Prepared by, using dd MMM yyyy, h:mm tt BST in Bangladesh time (UTC+06:00).
+remain readable. Generated Time appears once at the bottom right of the report footer, using
+dd MMM yyyy, h:mm tt BST in Bangladesh time (UTC+06:00). Prepared by remains
+in the Client Details header and is omitted from the footer.
 It no longer occupies a header field. Older boxed metadata reports remain
 readable, including recovery of their saved Branch values. Branch Name rejects empty/whitespace-only input but has no
 additional character or length restriction; it is HTML-encoded for display.

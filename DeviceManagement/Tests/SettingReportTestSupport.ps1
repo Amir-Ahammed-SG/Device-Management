@@ -39,7 +39,13 @@ function Get-LegacySettingCells {
 function Remove-AuditAdditionalReferenceSection {
     param([string]$Html)
     # The requested manual references are tested in Test-AuditColumnLayout.
-    # Historical comparison still covers every existing report byte outside it.
+    # Historical comparison covers report bytes outside the approved reference/footer changes.
+    # Normalize only the exact historical footer layout to the requested layout.
+    # Test-ClientDetailsHeader independently checks the new footer and attribution.
+    $Html=[regex]::Replace($Html,'(?s)<footer class="report-footer"><span>Retain with the device configuration records\.<br><span class="report-generated-at"><strong>Generated Time:</strong> (?<Time>[^<]*)</span></span><span class="report-prepared-by"><strong>Prepared by:</strong> .*?</span></footer>',[Text.RegularExpressions.MatchEvaluator]{
+        param($match)
+        '<footer class="report-footer"><span>Retain with the device configuration records.</span><span class="report-generated-at"><strong>Generated Time:</strong> '+$match.Groups['Time'].Value+'</span></footer>'
+    })
     [regex]::Replace($Html,'(?s)<section class="report-additional" aria-labelledby="additional-heading">.*?</section>\r?\n','')
 }
 

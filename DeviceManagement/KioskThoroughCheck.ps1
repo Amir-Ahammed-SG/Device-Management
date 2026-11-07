@@ -1205,7 +1205,7 @@ if($isApplyReport -and -not @($htmlSections).Count){$message=if($reportRows.Coun
 
 $htmlFooter = @"
 <p class="legend">Green = Matched requirement or collected value; Red = Mismatched requirement or missing value; Amber = Not verified; Uncolored = Informational only. AppSettings values are a configuration record, not confirmation of the site assignment.</p>
-<footer class="report-footer"><span>Retain with the device configuration records.<br><span class="report-generated-at"><strong>Generated Time:</strong> $([Net.WebUtility]::HtmlEncode($generatedAt))</span></span><span class="report-prepared-by"><strong>Prepared by:</strong> $([Net.WebUtility]::HtmlEncode($preparedBy))</span></footer>
+<footer class="report-footer"><span>Retain with the device configuration records.</span><span class="report-generated-at"><strong>Generated Time:</strong> $([Net.WebUtility]::HtmlEncode($generatedAt))</span></footer>
 $(Get-ThoroughReportCopyScript)
 $(Get-ThoroughReportBlockAlignmentScript)
 </main>

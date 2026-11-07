@@ -39,7 +39,8 @@ foreach($client in @('SaaS','Subway')){
             Assert-Header ($metadata.Contains('Bochum &amp; &lt;fixture&gt;') -and $metadata.Contains('R-123 &amp; &lt;fixture&gt;')) 'Metadata was not safely encoded.'
             Assert-Header (-not $metadata.Contains('Generated Time')) 'Generated Time remains in the header.'
             $footer=[regex]::Match($html,'(?is)<footer class="report-footer">(.*?)</footer>').Groups[1].Value
-            Assert-Header ($footer.Contains('<strong>Generated Time:</strong> '+$identity.GeneratedAt) -and $footer.Contains('<strong>Prepared by:</strong> Test Agent')) 'Footer time or agent is missing.'
+            Assert-Header ($footer -ceq ('<span>Retain with the device configuration records.</span><span class="report-generated-at"><strong>Generated Time:</strong> '+$identity.GeneratedAt+'</span>')) 'Footer must contain the retention note on the left and one timestamp on the right.'
+            Assert-Header ($footer -notmatch 'Prepared by|report-prepared-by|<br>' -and [regex]::Matches($html,'<strong>Generated Time:</strong>').Count -eq 1) 'Footer retains agent attribution or duplicates the timestamp.'
             Assert-Header ($snapshot.ReportId -ceq $identity.ReportId -and $snapshot.GeneratedAt -ceq $identity.GeneratedAt) 'Presentation changed the report identity or time.'
             if($case -eq $cases[0]){
                 $previews[$mode]=$snapshot
@@ -52,5 +53,5 @@ foreach($client in @('SaaS','Subway')){
     $roundTrip=Read-ThoroughReportBundleState $bundle
     Assert-Header ($roundTrip.Reports.Final.GeneratedAt -ceq $identity.GeneratedAt) 'Header reordering broke the saved report.'
     [IO.File]::WriteAllText((Join-Path $previewRoot ($client+'-Combined.html')),$bundle,[Text.UTF8Encoding]::new($false))
-    Write-Output ('PASS: '+$client+' Audit/Fix/Final client details order, device numbers, safe values, footer timestamp/agent and saved-report round-trip.')
+    Write-Output ('PASS: '+$client+' Audit/Fix/Final client details order, device numbers, safe values, footer-only timestamp and header agent and saved-report round-trip.')
 }

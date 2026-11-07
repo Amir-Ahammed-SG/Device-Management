@@ -40,7 +40,7 @@ Use **[8] Back** to return to the previous screen and **[0] Exit** to leave. The
 3. At **Branch Name:**, enter the branch label to display in the report, for example `Glatt` or `Redo - FRANK`.
 4. Wait for the checks to finish and review the terminal findings.
 5. At **Generate HTML report? [Y/N]**, enter **Y** to save the report. **N** leaves any existing report unchanged and creates no new report.
-6. Open the saved HTML file and review its **Audit** and **Fix** tabs. Each report view includes **Prepared by: <Agent Name>** at the bottom right; it is also included when printing Final.
+6. Open the saved HTML file and review its **Audit** and **Fix** tabs. Each report view keeps **Prepared by** in the Client Details header. The bottom-right footer shows **Generated Time** only, including when printing Final.
 
 Before Apply Fix has been run, the **Fix** and **Final** tabs are generated from the Audit observations and labelled **Based on Audit**. This does not mean a repair has been performed.
 
@@ -56,7 +56,7 @@ If the Fix tab says **No fixes required**, you can use the Final tab and print i
 
 Apply Fix reuses the Branch Name from the same client selection and does not ask again. This also works in the same session if you declined to save the Audit report. In a new session, it can reuse a validated saved Audit for the same client and device. If the information is missing or conflicting, Branch is shown as **Not provided**; run Audit to enter the correct branch.
 
-Agent Name is reused in the same session or read from the uniquely identified saved Audit in a new session. Apply Fix does not ask for Agent Name. For older reports that have no agent information, newly generated views show **Prepared by: Not provided**; run Audit to enter a name. Existing saved Audit content is preserved when applying fixes.
+Agent Name is reused in the same session or read from the uniquely identified saved Audit in a new session. Apply Fix does not ask for Agent Name. For older reports that have no agent information, newly generated views show **Prepared by: Not provided** in the header; run Audit to enter a name. Existing saved Audit content is preserved when applying fixes.
 
 Apply prompts:
 
