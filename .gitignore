@@ -4,15 +4,15 @@
 !/.github/
 !/.gitignore
 !/README.md
-!/Scripts/
+!/DeviceManagement/
 
 # Generated and device-specific material never belongs in the source repository.
-/Scripts/DeviceManagement/output/
-/Scripts/DeviceManagement/Backups/
-/Scripts/DeviceManagement/Docs/*
-!/Scripts/DeviceManagement/Docs/Device Management - Kiosk Thorough Check Guide.md
-/Scripts/DeviceManagement/Docs/Validation/
-/Scripts/DeviceManagement/Docs/Deployments/
+/DeviceManagement/output/
+/DeviceManagement/Backups/
+/DeviceManagement/Docs/*
+!/DeviceManagement/Docs/*.md
+/DeviceManagement/Docs/Validation/
+/DeviceManagement/Docs/Deployments/
 **/node_modules/
 **/__pycache__/
 **/.aws/

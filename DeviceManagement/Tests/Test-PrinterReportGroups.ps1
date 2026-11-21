@@ -1,0 +1,120 @@
+
+. (Join-Path $PSScriptRoot 'KioskTestSupport.ps1')
+. (Join-Path $PSScriptRoot 'SettingReportTestSupport.ps1')
+. (Join-Path $PSScriptRoot 'AuditColumnTestSupport.ps1')
+# Render the real finalizer with fixture printers. Never contact printer APIs.
+$ErrorActionPreference='Stop'
+$projectRoot=Split-Path $PSScriptRoot -Parent
+$sourceRoot=$projectRoot
+$previewRoot=Join-Path $projectRoot 'output\printer-reports'
+[void][IO.Directory]::CreateDirectory($previewRoot)
+function Assert-PrinterReport {param([bool]$Condition,[string]$Message) if(-not $Condition){throw $Message}}
+
+foreach($sourceName in @('SaaS','Subway')){
+    Set-KioskTestClient -ClientType $sourceName
+    $tokens=$null;$errors=$null
+    $ast=[KioskTestSource]::ParseFile((Join-Path $sourceRoot 'KioskThoroughCheck.ps1'),[ref]$tokens,[ref]$errors)
+    Assert-PrinterReport ($errors.Count -eq 0) 'Client source parse failed.'
+    $functions=$ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst]},$true)
+    . ([scriptblock]::Create(($functions | ForEach-Object {$_.Extent.Text}) -join "`r`n"))
+    . (Join-Path $PSScriptRoot 'ReportRenderTestSupport.ps1')
+    $finalizer=$ast.FindAll({param($node) $node -is [Management.Automation.Language.TryStatementAst] -and $node.Finally -and $node.Finally.Extent.Text -match 'Writing HTML report'},$true) | Select-Object -Last 1
+    $render=[scriptblock]::Create(($finalizer.Finally.Statements | ForEach-Object {$_.Extent.Text}) -join "`r`n")
+    function Read-AuditReportChoice {return $true}
+    function Start-AuditStep {param($Number,$Name)}
+    function Complete-ThoroughConsole {param($IsApply,$FailedCount)}
+    function New-PrinterFixture {
+        param([string]$Name,[string]$Status='Pass',[string]$State='Idle',[string]$Retention='Enabled',[switch]$Missing)
+        $fields=[ordered]@{'Printer Name'=$Name;'Printer status'=$State;'Keep printed documents'=$Retention}
+        [pscustomobject]@{
+            SectionNumber=1;SectionTitle='Hardware & Peripherals'
+            ItemTitle=$(if($Missing){'Physical Printers'}else{$Name})
+            ItemSub=$(if($Missing){'Type: Receipt / Hardware'}else{'Type: Receipt / POS Printer'})
+            Shortcut=$(if($Missing){New-ReportCommand @('control printers')}else{New-ReportCommand @('control printers',('rundll32 printui.dll,PrintUIEntry /o /n "{0}"' -f $Name))})
+            FoundStateHtml=$(if($Missing){'Not verified. Please check manually.'}else{ConvertTo-ReportDefinitionHtml $fields})
+            Status=$(if($Missing){'Fail'}else{$Status});ActionTaken='Fixture observation only'
+        }
+    }
+    $client=if($sourceName -like 'Subway*'){'Subway'}else{'SaaS'}
+    foreach($isApply in @($false,$true)){
+        $script:ApplyChanges=$isApply
+        $mode=if($isApply){'Apply'}else{'Audit'}
+        foreach($case in @('single','multiple','error','disabled','unknown','missing','partial')){
+            $printers=@(switch($case){
+                'single' {New-PrinterFixture 'BIXOLON BK3-3'}
+                'multiple' {New-PrinterFixture 'BIXOLON BK3-3';New-PrinterFixture 'Kitchen & Bar <One>' -State Active}
+                'error' {New-PrinterFixture 'BIXOLON BK3-3';New-PrinterFixture 'Receipt 2' -Status Fail -State Error}
+                'disabled' {New-PrinterFixture 'BIXOLON BK3-3';New-PrinterFixture 'Receipt 2' -Status Fail -Retention Disabled}
+                'unknown' {New-PrinterFixture 'BIXOLON BK3-3';New-PrinterFixture 'Receipt 2' -Status Bypass -State 'Not verified. Please check manually.'}
+                'missing' {New-PrinterFixture '' -Missing}
+                'partial' {New-PrinterFixture 'BIXOLON BK3-3';New-PrinterFixture '' -Missing}
+            })
+            $log=[pscustomobject]@{SectionNumber=1;SectionTitle='Hardware & Peripherals';ItemTitle='PrintService Operational Log';ItemSub='Type: Event Viewer Channel';Shortcut='<code>eventvwr.msc</code>';FoundStateHtml='Enabled';Status='Pass';ActionTaken='Fixture observation only'}
+            $rawRows=@($printers)+@($log)
+            $before=$rawRows | ConvertTo-Json -Depth 5 -Compress
+            $display=@(Get-ThoroughReportDisplayRows -Rows $rawRows)
+            Assert-PrinterReport ($display.Count -eq 2 -and $display[0].ItemTitle -ceq 'Printer' -and $display[1].ItemTitle -ceq 'PrintService Operational Log') 'Printers were not grouped in their original section order.'
+            Assert-PrinterReport (($rawRows | ConvertTo-Json -Depth 5 -Compress) -ceq $before) 'Grouping changed original observations.'
+            $repeated=@(Get-ThoroughReportDisplayRows -Rows $display)
+            Assert-PrinterReport (($repeated | ConvertTo-Json -Depth 5 -Compress) -ceq ($display | ConvertTo-Json -Depth 5 -Compress)) 'Grouping an already grouped report changed its result.'
+            $group=$display[0]
+            $expectedStatus=if($case -in @('single','multiple')){'Pass'}else{'Fail'}
+            Assert-PrinterReport ($group.Status -ceq $expectedStatus) ('A partial/failed/unverified printer was reported healthy: '+$case)
+            Assert-PrinterReport ($group.ExpectedHtml -notmatch 'Printer detection' -and $group.ExpectedHtml -match 'Printer Name:</span> Brand/Model' -and $group.ExpectedHtml -match 'Printer status:</span> Active / Idle' -and $group.ExpectedHtml -match 'Keep printed documents:</span> Enabled') 'Printer requirements were incorrect.'
+            Assert-PrinterReport ($group.ExpectedHtml -notmatch 'config-item-title|<hr>' -and [regex]::Matches($group.ExpectedHtml,'class="kv-label"').Count -eq 3) 'Printer requirements were repeated or numbered.'
+            Assert-PrinterReport ($group.FoundStateHtml -notmatch 'Printer detection|Detected -') 'Legacy printer-detection wording remains.'
+            $printerNumber=0
+            foreach($printer in @($printers | Where-Object ItemSub -eq 'Type: Receipt / POS Printer')){
+                $printerNumber++
+                $encoded=[Net.WebUtility]::HtmlEncode($printer.ItemTitle)
+                Assert-PrinterReport ($group.FoundStateHtml.Contains(('Printer Name:</span> '+$encoded))) 'A printer name was lost or not encoded.'
+                if($printers.Count -gt 1){
+                    $heading='<div class="config-item-title">[Printer '+$printerNumber+']</div>'
+                    Assert-PrinterReport (-not $group.ExpectedHtml.Contains($heading) -and $group.FoundStateHtml.Contains($heading)) 'Printer numbering must appear only in Findings.'
+                    Assert-PrinterReport (-not $group.ExpectedHtml.Contains(('['+$encoded+']')) -and -not $group.FoundStateHtml.Contains(('['+$encoded+']'))) 'A printer name remains in a group heading.'
+                }
+            }
+            $copyCommands=@([regex]::Matches($group.Shortcut,'(?is)<code\b[^>]*>(.*?)</code>') | ForEach-Object {[Net.WebUtility]::HtmlDecode($_.Groups[1].Value)})
+            Assert-PrinterReport (@($copyCommands | Where-Object {$_ -ceq 'control printers'}).Count -eq 1) 'The shared printer command was lost or duplicated.'
+            Assert-PrinterReport ($copyCommands.Count -eq (1+@($printers | Where-Object ItemSub -eq 'Type: Receipt / POS Printer').Count)) 'A per-printer command was lost or changed.'
+            if($case -eq 'missing'){Assert-PrinterReport ($group.FoundStateHtml.Contains('Not verified. Please check manually.')) 'Missing printers did not request manual verification.'}
+
+            $auditRows=[Collections.Generic.List[psobject]]::new()
+            foreach($row in $rawRows){$auditRows.Add($row)}
+            $outputFolder=$previewRoot;$reportPath=Join-Path $previewRoot ($client+'-'+$mode+'-'+$case+'.html')
+            $runId='PRINTER-PREVIEW';$clientLocation='Printer grouping preview';$deviceType='KIOSK'
+            $reportHostname='SAMPLE-KIOSK-01';$reportKioskId='Kiosk-1';$KioskId=$null
+            $expectedApplied=Get-ThoroughReportAppliedHtml -Row $group
+            . $render
+            $html=[KioskTestSource]::ReadAllText($reportPath)
+            if(-not $isApply){
+                $auditView=Get-AuditRenderedComponent $html 'Printer'
+                Assert-PrinterReport ($auditView.Count -eq 1) 'Audit duplicated the grouped printer component.'
+                Assert-PrinterReport (($auditView.Commands -join "`n") -ceq ($copyCommands -join "`n")) 'Audit copy commands changed.'
+                Assert-PrinterReport ($auditView.Headings.Count -eq $(if($printers.Count -gt 1){$printers.Count}else{0})) 'Audit lost per-printer records.'
+                foreach($printer in @($printers|Where-Object ItemSub -EQ 'Type: Receipt / POS Printer')){
+                    Assert-PrinterReport (@($auditView.Fields|Where-Object {$_.Setting -eq 'Printer Name' -and $_.Found -ceq $printer.ItemTitle}).Count -eq 1) 'An actual printer identity was lost.'
+                }
+                if($case -in @('missing','partial')){Assert-PrinterReport ($auditView.Text -match 'Not verified') 'Missing-printer evidence was hidden.'}
+                if($case -eq 'disabled'){Assert-PrinterReport (@($auditView.Fields|Where-Object {$_.Setting -eq 'Keep printed documents' -and $_.Found -eq 'Disabled' -and $_.Html -match 'finding-mismatch'}).Count -eq 1) 'A failed printer retention value was hidden.'}
+                continue
+            }
+            $view=Get-SettingRenderedComponent $html 'Printer'
+            $unresolved=@($printers | Where-Object Status -NE 'Pass')
+            Assert-PrinterReport ($view.Count -eq [int]($unresolved.Count -gt 0)) 'Fix retained a healthy printer or hid an unresolved printer.'
+            if($view.Count){
+                Assert-PrinterReport ($view.Commands -contains 'control printers') 'Fix omitted printer management.'
+                foreach($printer in $unresolved){
+                    if($printer.ItemSub -eq 'Type: Receipt / POS Printer'){
+                        Assert-PrinterReport (@($view.Fields | Where-Object {$_.Setting -eq 'Printer Name' -and $_.Findings -ceq $printer.ItemTitle}).Count -eq 1) 'Fix lost the unresolved printer identity.'
+                    }
+                }
+                # An unnamed missing-printer record retains known identity as context.
+                foreach($printer in $printers | Where-Object {$_.Status -eq 'Pass' -and $case -ne 'partial'}){
+                    Assert-PrinterReport (@($view.Fields | Where-Object {$_.Setting -eq 'Printer Name' -and $_.Findings -ceq $printer.ItemTitle}).Count -eq 0) 'Fix retained an unchanged healthy printer.'
+                }
+            }
+        }
+        Write-Output ('PASS: '+$client+'/'+$mode+' single/multiple/missing printers, encoded headings, commands, mixed statuses, unchanged observations and real report rendering')
+    }
+}
