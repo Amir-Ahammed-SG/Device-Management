@@ -578,6 +578,13 @@ try {
     $startupPath = Join-Path $profile 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup'
     $startupLauncher = Join-Path $startupPath 'LaunchKiosk.bat'
     $desktopShortcut = Join-Path $profile 'Desktop\Launch Kiosk.lnk'
+    $legacyDesktopShortcut = Join-Path $profile 'Desktop\LaunchKiosk.lnk'
+    if ((Test-Path -LiteralPath $desktopShortcut -PathType Leaf) -and (Test-Path -LiteralPath $legacyDesktopShortcut -PathType Leaf) -and (Test-CanApply)) {
+        try { Remove-Item -LiteralPath $legacyDesktopShortcut -Force -ErrorAction SilentlyContinue } catch {}
+    }
+    if (-not (Test-Path -LiteralPath $desktopShortcut -PathType Leaf) -and (Test-Path -LiteralPath $legacyDesktopShortcut -PathType Leaf)) {
+        $desktopShortcut = $legacyDesktopShortcut
+    }
     $startupLauncherAvailable = Test-Path -LiteralPath $startupLauncher -PathType Leaf -ErrorAction Stop
     $desktopShortcutAvailable = Test-Path -LiteralPath $desktopShortcut -PathType Leaf -ErrorAction Stop
     $startupHtml = ConvertTo-ReportDefinitionHtml ([ordered]@{
@@ -689,6 +696,12 @@ $secAppTitle = 'AppSettings Check'
 # KioskFunction Get-PaymentRestartTaskAction
 
 # KioskFunction Get-PaymentRestartTaskSchedule
+
+# KioskFunction New-PaymentRestartTaskDefinition
+
+# KioskFunction Register-MissingPaymentRestartTask
+
+# KioskFunction Get-PaymentRestartTaskRecords
 
 # KioskFunction Invoke-PaymentRestartTaskCheck
 
@@ -824,7 +837,7 @@ if (-not $appSettingsRowAdded) {
     Add-AuditEntry -SectionNumber $secAppNum -SectionTitle $secAppTitle -ItemTitle 'Payment Service appsettings.json' -ItemSub 'Type: Read-only Configuration Inspection' -Shortcut '<code>appsettings.json</code>' -FoundStateHtml '<div class="kv-block">Running Payment Service or configuration path not available</div>' -Status 'Fail' -ActionTaken ([Net.WebUtility]::HtmlEncode($appSettingsAction))
 }
 
-# Read-only for Audit, Apply Fix and Thorough Check Report; only selected NETS / NEXIDE.
+# Verified for Audit and Final; missing task repaired in Apply Fix mode; only selected NETS / NEXIDE.
 Invoke-PaymentRestartTaskCheck -PaymentProvider $detectedPaymentProvider -ServiceName $selectedPaymentServiceName
 
 # KioskFunction Get-ZabbixConfiguredHostname
@@ -1105,11 +1118,11 @@ $reportPath=Save-ThoroughReportBundle -Path $reportPath -ClientType $script:Kios
         if ($FinalReport) { Write-Host "Report saved: $reportPath" -ForegroundColor Gray }
         else { Write-Host "`nAudit report saved to:`n$reportPath" -ForegroundColor Green }
     }
-    if (Test-Path -LiteralPath $reportPath -PathType Leaf) {
+    if ([IO.File]::Exists($reportPath)) {
         $edgeExe = @(
             (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),
             (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe')
-        ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+        ) | Where-Object { [IO.File]::Exists($_) } | Select-Object -First 1
 
         try {
             if ($edgeExe) {

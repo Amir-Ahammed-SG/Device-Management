@@ -1080,73 +1080,127 @@ function Get-PaymentRestartTaskSchedule {
     [pscustomobject]@{Configured=($triggers.Count -gt 0);Enabled=($active -gt 0);Unknown=$unknown;Details=($details -join ' | ')}
 }
 
+function New-PaymentRestartTaskDefinition {
+    param($ServiceObj, [string]$ServiceName)
+    $definition = $ServiceObj.NewTask(0)
+    $definition.RegistrationInfo.Description = "Restart $ServiceName daily at 04:15 AM."
+    $definition.Principal.UserId = 'NT AUTHORITY\SYSTEM'
+    $definition.Principal.LogonType = 5
+    $definition.Principal.RunLevel = 1
+    $trigger = $definition.Triggers.Create(2)
+    $trigger.StartBoundary = (Get-Date -Hour 4 -Minute 15 -Second 0).ToString("yyyy-MM-dd'T'HH:mm:ss")
+    $trigger.DaysInterval = 1
+    $trigger.Enabled = $true
+    $action = $definition.Actions.Create(0)
+    $action.Path = 'powershell.exe'
+    $action.Arguments = '-NoProfile -ExecutionPolicy Bypass -Command "Restart-Service -Name ''' + $ServiceName + ''' -Force"'
+    $definition.Settings.Enabled = $true
+    $definition.Settings.StartWhenAvailable = $true
+    $definition.Settings.DisallowStartIfOnBatteries = $false
+    $definition.Settings.StopIfGoingOnBatteries = $false
+    $definition.Settings.ExecutionTimeLimit = 'PT10M'
+    return $definition
+}
+
+function Register-MissingPaymentRestartTask {
+    param([string]$ServiceName)
+    if (-not (Test-CanApply)) { throw 'Task creation requires approved Apply mode.' }
+    if ([string]::IsNullOrWhiteSpace($ServiceName)) { throw 'Selected Payment Service name is unavailable.' }
+    $taskName = "Restart $ServiceName"
+    $serviceObj = New-Object -ComObject 'Schedule.Service'
+    $serviceObj.Connect()
+    $rootFolder = $serviceObj.GetFolder('\')
+    $definition = New-PaymentRestartTaskDefinition $serviceObj $ServiceName
+    [void]$rootFolder.RegisterTaskDefinition($taskName, $definition, 6, $null, $null, 5, $null)
+}
+
+function Get-PaymentRestartTaskRecords {
+    param([string]$ServiceName)
+    $tasks = @(Get-ScheduledTask -ErrorAction Stop)
+    $records = New-Object 'Collections.Generic.List[object]'
+    foreach($task in $tasks){
+        $name=[string](Get-ThoroughPaymentConfigValue $task 'TaskName')
+        $path=[string](Get-ThoroughPaymentConfigValue $task 'TaskPath')
+        $actions=@(Get-ThoroughPaymentConfigValue $task 'Actions' | Where-Object {$null -ne $_})
+        $summaries=New-Object 'Collections.Generic.List[string]'
+        $operations=New-Object 'Collections.Generic.List[object]'
+        $actionVerified=$actions.Count -gt 0
+        $nameHint=$name -match '(?i)restart' -and ($name -match '(?i)payment' -or $name.IndexOf($ServiceName,[StringComparison]::OrdinalIgnoreCase) -ge 0)
+        $referencesService=$false
+        foreach($action in $actions){
+            $evidence=Get-PaymentRestartTaskAction $action $ServiceName
+            $summaries.Add($evidence.Summary)
+            if(-not $evidence.Verified){$actionVerified=$false}
+            if($evidence.ReferencesService){$referencesService=$true}
+            foreach($operation in $evidence.Operations){$operations.Add($operation)}
+        }
+        $restartTargets=@{};$stopped=@{}
+        foreach($operation in $operations){
+            if($operation.Operation -eq 'restart' -or ($operation.Operation -eq 'start' -and $stopped.ContainsKey($operation.Target))){$restartTargets[$operation.Target]=$true;[void]$stopped.Remove($operation.Target)}
+            if($operation.Operation -eq 'stop'){$stopped[$operation.Target]=$true;[void]$restartTargets.Remove($operation.Target)}
+        }
+        $restarts=@($restartTargets.Keys)
+        $targetVerified=$actionVerified -and $restarts -icontains $ServiceName
+        $related=$nameHint -or (-not $actionVerified -and $referencesService)
+        if(-not $targetVerified -and -not $related){continue}
+        $enabled=Get-ThoroughPaymentConfigValue (Get-ThoroughPaymentConfigValue $task 'Settings') 'Enabled'
+        $state=[string](Get-ThoroughPaymentConfigValue $task 'State')
+        $enabledKnown=$enabled -is [bool] -and $state -in @('Ready','Running','Queued','Disabled')
+        $taskEnabled=$enabledKnown -and $enabled -and $state -ne 'Disabled'
+        $schedule=Get-PaymentRestartTaskSchedule $task
+        $fields=[ordered]@{'Task Name'=$name;'Task Location'=$path;'Task'='Available';'Task State'=$state;'Task Enabled'=$(if(-not $enabledKnown){'Not verified'}elseif($taskEnabled){'Yes'}else{'No'});'Restart Target'=$(if($targetVerified){$ServiceName}elseif($actionVerified -and $restarts.Count){$restarts -join ', '}else{'Not verified. Please check manually.'});'Schedule'=$(if($schedule.Configured){'Configured'}else{'Missing'});'Schedule Enabled'=$(if($schedule.Unknown){'Not verified'}elseif($schedule.Enabled){'Yes'}else{'No'});'Trigger Details'=$(if($schedule.Details){$schedule.Details}else{'No trigger configured'});'Action'=($summaries -join ' | ')}
+        $historyVerified=$true
+        try{
+            $info=Get-ScheduledTaskInfo -TaskName $name -TaskPath $path -ErrorAction Stop
+            foreach($field in @('LastRunTime','NextRunTime','LastTaskResult')){
+                $value=Get-ThoroughPaymentConfigValue $info $field
+                $label=switch($field){'LastRunTime'{'Last Run'};'NextRunTime'{'Next Run'};default{'Last Result'}}
+                $fields[$label]=if($null -eq $value){'Not recorded'}elseif($value -is [datetime] -and $value.Year -le 1900){'Not recorded'}elseif($value -is [datetime]){$value.ToString('dd-MMM-yyyy HH:mm:ss',[Globalization.CultureInfo]::InvariantCulture)}else{[string]$value}
+            }
+        }catch{$historyVerified=$false;$fields['Run History']='Not verified. Please check Task Scheduler manually.'}
+        $records.Add([pscustomobject]@{Html=(ConvertTo-ReportDefinitionHtml $fields);Passed=($targetVerified -and $taskEnabled -and $schedule.Configured -and $schedule.Enabled -and -not $schedule.Unknown -and $historyVerified)})
+    }
+    return $records
+}
+
 function Invoke-PaymentRestartTaskCheck {
     param([string]$PaymentProvider,[string]$ServiceName)
     if(([string]$PaymentProvider).Trim().ToUpperInvariant() -notin @('NETS','NEXIDE')){return}
     $expected=ConvertTo-ReportDefinitionHtml ([ordered]@{'Task'='Available';'Task Enabled'='Yes';'Restart Target'=$ServiceName;'Schedule'='Configured';'Schedule Enabled'='Yes'})
     $status='Fail';$note='Task not verified. Please check Task Scheduler manually.'
     $parts=New-Object 'Collections.Generic.List[string]'
+    $created=$false;$creationFailure=$null
     try{
         if([string]::IsNullOrWhiteSpace($ServiceName)){throw 'Selected Payment Service name is unavailable.'}
-        $tasks=@(Get-ScheduledTask -ErrorAction Stop)
-        $records=New-Object 'Collections.Generic.List[object]'
-        foreach($task in $tasks){
-            $name=[string](Get-ThoroughPaymentConfigValue $task 'TaskName')
-            $path=[string](Get-ThoroughPaymentConfigValue $task 'TaskPath')
-            $actions=@(Get-ThoroughPaymentConfigValue $task 'Actions' | Where-Object {$null -ne $_})
-            $summaries=New-Object 'Collections.Generic.List[string]'
-            $operations=New-Object 'Collections.Generic.List[object]'
-            $actionVerified=$actions.Count -gt 0
-            $nameHint=$name -match '(?i)restart' -and ($name -match '(?i)payment' -or $name.IndexOf($ServiceName,[StringComparison]::OrdinalIgnoreCase) -ge 0)
-            $referencesService=$false
-            foreach($action in $actions){
-                $evidence=Get-PaymentRestartTaskAction $action $ServiceName
-                $summaries.Add($evidence.Summary)
-                if(-not $evidence.Verified){$actionVerified=$false}
-                if($evidence.ReferencesService){$referencesService=$true}
-                foreach($operation in $evidence.Operations){$operations.Add($operation)}
+        $records = @(Get-PaymentRestartTaskRecords $ServiceName)
+        if($records.Count -eq 0 -and (Test-CanApply)){
+            try {
+                Register-MissingPaymentRestartTask -ServiceName $ServiceName
+                $created = $true
+                $records = @(Get-PaymentRestartTaskRecords $ServiceName)
+            } catch {
+                $creationFailure = $_.Exception.Message
             }
-            $restartTargets=@{};$stopped=@{}
-            foreach($operation in $operations){
-                if($operation.Operation -eq 'restart' -or ($operation.Operation -eq 'start' -and $stopped.ContainsKey($operation.Target))){$restartTargets[$operation.Target]=$true;[void]$stopped.Remove($operation.Target)}
-                if($operation.Operation -eq 'stop'){$stopped[$operation.Target]=$true;[void]$restartTargets.Remove($operation.Target)}
-            }
-            $restarts=@($restartTargets.Keys)
-            $targetVerified=$actionVerified -and $restarts -icontains $ServiceName
-            $related=$nameHint -or (-not $actionVerified -and $referencesService)
-            if(-not $targetVerified -and -not $related){continue}
-            $enabled=Get-ThoroughPaymentConfigValue (Get-ThoroughPaymentConfigValue $task 'Settings') 'Enabled'
-            $state=[string](Get-ThoroughPaymentConfigValue $task 'State')
-            $enabledKnown=$enabled -is [bool] -and $state -in @('Ready','Running','Queued','Disabled')
-            $taskEnabled=$enabledKnown -and $enabled -and $state -ne 'Disabled'
-            $schedule=Get-PaymentRestartTaskSchedule $task
-            $fields=[ordered]@{'Task Name'=$name;'Task Location'=$path;'Task'='Available';'Task State'=$state;'Task Enabled'=$(if(-not $enabledKnown){'Not verified'}elseif($taskEnabled){'Yes'}else{'No'});'Restart Target'=$(if($targetVerified){$ServiceName}elseif($actionVerified -and $restarts.Count){$restarts -join ', '}else{'Not verified. Please check manually.'});'Schedule'=$(if($schedule.Configured){'Configured'}else{'Missing'});'Schedule Enabled'=$(if($schedule.Unknown){'Not verified'}elseif($schedule.Enabled){'Yes'}else{'No'});'Trigger Details'=$(if($schedule.Details){$schedule.Details}else{'No trigger configured'});'Action'=($summaries -join ' | ')}
-            $historyVerified=$true
-            try{
-                $info=Get-ScheduledTaskInfo -TaskName $name -TaskPath $path -ErrorAction Stop
-                foreach($field in @('LastRunTime','NextRunTime','LastTaskResult')){
-                    $value=Get-ThoroughPaymentConfigValue $info $field
-                    $label=switch($field){'LastRunTime'{'Last Run'};'NextRunTime'{'Next Run'};default{'Last Result'}}
-                    $fields[$label]=if($null -eq $value){'Not recorded'}elseif($value -is [datetime] -and $value.Year -le 1900){'Not recorded'}elseif($value -is [datetime]){$value.ToString('dd-MMM-yyyy HH:mm:ss',[Globalization.CultureInfo]::InvariantCulture)}else{[string]$value}
-                }
-            }catch{$historyVerified=$false;$fields['Run History']='Not verified. Please check Task Scheduler manually.'}
-            $records.Add([pscustomobject]@{Html=(ConvertTo-ReportDefinitionHtml $fields);Passed=($targetVerified -and $taskEnabled -and $schedule.Configured -and $schedule.Enabled -and -not $schedule.Unknown -and $historyVerified)})
         }
         if($records.Count -eq 0){
             $parts.Add((ConvertTo-ReportDefinitionHtml ([ordered]@{'Task'='Not found';'Restart Target'=$ServiceName;'Verification'='No verified restart task found. Please check Task Scheduler manually.'})))
-            $note='Restart task not found. Please configure or verify it manually.'
+            $note = if ($creationFailure) { 'Task creation failed: ' + $creationFailure + ' Manual action required.' } else { 'Restart task not found. Please configure or verify it manually.' }
         }else{
             for($index=0;$index -lt $records.Count;$index++){
                 if($records.Count -gt 1){$parts.Add('<div class="config-item-title">[Task '+($index+1)+']</div>')}
                 $parts.Add($records[$index].Html)
             }
-            if(@($records | Where-Object {-not $_.Passed}).Count -eq 0){$status='Pass';$note='Existing restart task and schedule verified. No task was changed or executed.'}
+            if(@($records | Where-Object {-not $_.Passed}).Count -eq 0){
+                $status = if ($created) { 'Remediated' } else { 'Pass' }
+                $note = if ($created) { 'Created missing Payment Service restart task; readback verified. Daily schedule at 04:15 AM configured. The task was not executed.' } else { 'Existing restart task and schedule verified. No task was changed or executed.' }
+            }
         }
     }catch{
         $parts.Add((ConvertTo-ReportDefinitionHtml ([ordered]@{'Task'='Not verified. Please check Task Scheduler manually.';'Restart Target'=$ServiceName})))
         $note='Task Scheduler check not verified: '+$_.Exception.Message
     }
-    Add-AuditEntry -SectionNumber 3 -SectionTitle 'Core Background Services' -ItemTitle 'Payment Service Restart Task' -ItemSub 'Type: Read-only Scheduled Task Verification' -Shortcut (New-ReportCommand @('taskschd.msc')) -FoundStateHtml ($parts -join '') -Status $status -ActionTaken ([Net.WebUtility]::HtmlEncode($note))
+    $itemSub = if ($created -or (Test-CanApply)) { 'Type: Missing-only scheduled task repair' } else { 'Type: Read-only Scheduled Task Verification' }
+    Add-AuditEntry -SectionNumber 3 -SectionTitle 'Core Background Services' -ItemTitle 'Payment Service Restart Task' -ItemSub $itemSub -Shortcut (New-ReportCommand @('taskschd.msc')) -FoundStateHtml ($parts -join '') -Status $status -ActionTaken ([Net.WebUtility]::HtmlEncode($note))
     $auditRows[$auditRows.Count-1] | Add-Member -NotePropertyName ExpectedHtml -NotePropertyValue $expected
 }
 

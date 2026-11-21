@@ -1269,9 +1269,9 @@ function Get-ThoroughReportAppliedHtml {
         return '<div class="applied-result"><strong>Not Verified</strong><div>No action was recorded. Please check manually.</div></div>'
     }
     $passed=$Row.Status -in @('Pass','Online','Remediated') -or ($Row.Status -eq 'Offline' -and $Row.ItemSub -eq 'Type: Old Payment Service')
-    $readOnlyCheck=$Row.ItemTitle -in @('Kiosk Auto-Login','SELISE-KIOSK Startup Folder','Payment Service Restart Task','PaymentService Restart Task')
+    $readOnlyCheck=$Row.ItemTitle -in @('Kiosk Auto-Login','SELISE-KIOSK Startup Folder')
     $parts=@($note -split ';\s*' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    $changePattern='(?i)\b(?:Allowed password changes|Updated launcher URL origin|Updated Local Network Allowlist|Enabled (?:Keep printed documents|Password Never Expires|User Cannot Change Password)|Updated (?:launcher|Zabbix) hostname|Startup set to (?:Automatic|Manual|Disabled)|Service (?:started|stopped|stop requested)|Crash recovery configured|Recovery actions (?:configured|set to Take No Action)|PrintService log enabled|Created (?:missing |the )?desktop shortcut|(?:Created|Updated) inbound TCP \d+ rule|Installed missing (?:Nmap|Zabbix Agent)|Performance counters rebuilt|Added (?:only --disable-pinch|Local Network Allowlist|Translation|Visual Search|Edge Gestures))\b'
+    $changePattern='(?i)\b(?:Allowed password changes|Updated launcher URL origin|Updated Local Network Allowlist|Enabled (?:Keep printed documents|Password Never Expires|User Cannot Change Password)|Updated (?:launcher|Zabbix) hostname|Startup set to (?:Automatic|Manual|Disabled)|Service (?:started|stopped|stop requested)|Crash recovery configured|Recovery actions (?:configured|set to Take No Action)|PrintService log enabled|Created (?:missing |the )?desktop shortcut|Created (?:missing )?(?:Payment Service )?restart task|(?:Created|Updated) inbound TCP \d+ rule|Installed missing (?:Nmap|Zabbix Agent)|Performance counters rebuilt|Added (?:only --disable-pinch|Local Network Allowlist|Translation|Visual Search|Edge Gestures))\b'
     $hasRecordedChange=$note -match $changePattern
     $noChangeOnly=$true
     $hasNoChangeNote=$false
@@ -2112,7 +2112,7 @@ function Get-ThoroughReportFindingComparison {
         return 'match'
     }
     if($expected -eq 'Available' -and $Label -in @('Startup BAT','Desktop Shortcut')){
-        if($actual -eq 'Available' -or ($Label -eq 'Startup BAT' -and $actual -eq 'LaunchKiosk.bat') -or ($Label -eq 'Desktop Shortcut' -and $actual -eq 'Launch Kiosk.lnk')){return 'match'}
+        if($actual -eq 'Available' -or ($Label -eq 'Startup BAT' -and $actual -eq 'LaunchKiosk.bat') -or ($Label -eq 'Desktop Shortcut' -and $actual -in @('Launch Kiosk.lnk','LaunchKiosk.lnk'))){return 'match'}
         return 'mismatch'
     }
 

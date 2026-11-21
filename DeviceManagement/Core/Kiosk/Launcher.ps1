@@ -424,6 +424,18 @@ function Invoke-KioskLauncherConfiguration {
     $batch = Join-Path $base 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\LaunchKiosk.bat'
     $desktop = Join-Path $base 'Desktop'
     $shortcut = Join-Path $desktop 'Launch Kiosk.lnk'
+    $legacyShortcut = Join-Path $desktop 'LaunchKiosk.lnk'
+    if (-not (Test-Path -LiteralPath $shortcut -PathType Leaf) -and (Test-Path -LiteralPath $legacyShortcut -PathType Leaf)) {
+        if (Test-CanApply) {
+            try { Move-Item -LiteralPath $legacyShortcut -Destination $shortcut -Force -ErrorAction Stop }
+            catch { $shortcut = $legacyShortcut }
+        } else {
+            $shortcut = $legacyShortcut
+        }
+    }
+    if ((Test-Path -LiteralPath $shortcut -PathType Leaf) -and (Test-Path -LiteralPath $legacyShortcut -PathType Leaf) -and (Test-CanApply)) {
+        try { Remove-Item -LiteralPath $legacyShortcut -Force -ErrorAction SilentlyContinue } catch {}
+    }
     $result = Repair-LauncherDetails -Path $launch -ShortcutPath $shortcut -Restaurant $Restaurant -Kiosk $Kiosk -Hostname $Hostname
     $result = Add-LauncherReportDetails $result $launch $shortcut $batch
     if (-not (Test-Path -LiteralPath $batch -PathType Leaf)) {
@@ -449,11 +461,17 @@ function Invoke-KioskLauncherConfiguration {
             $link.Save()
             if (-not (Test-KioskDesktopShortcut -Batch $batch -LaunchPath $launch -Shortcut $shortcut)) { throw 'Created desktop shortcut target could not be verified.' }
             $notes.Add('Created missing desktop shortcut to the existing launcher; target readback verified.')
+            if (Test-Path -LiteralPath $legacyShortcut -PathType Leaf) {
+                try { Remove-Item -LiteralPath $legacyShortcut -Force -ErrorAction SilentlyContinue } catch {}
+            }
         } catch {
             if ($createdShortcut -and (Test-Path -LiteralPath $shortcut -PathType Leaf)) { Remove-Item -LiteralPath $shortcut -Force -ErrorAction Stop }
             $result.Status='Fail'
             $notes.Add($_.Exception.Message)
         }
+    }
+    if ((Test-Path -LiteralPath $shortcut -PathType Leaf) -and (Test-Path -LiteralPath $legacyShortcut -PathType Leaf) -and (Test-CanApply)) {
+        try { Remove-Item -LiteralPath $legacyShortcut -Force -ErrorAction SilentlyContinue } catch {}
     }
     try { $notes.Add((Verify-KioskLaunchTargets -Batch $batch -Shortcut $shortcut -LaunchPath $launch)) }
     catch { $result.Status='Fail'; $notes.Add($_.Exception.Message) }
