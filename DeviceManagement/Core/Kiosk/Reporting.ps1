@@ -228,7 +228,7 @@ function Test-ThoroughFixReportRow {
     if(-not $passed){return $true}
     if($FindingsHtml -match 'class="finding-value finding-(?:mismatch|unverified)"'){return $true}
     $text=Convert-ReportHtmlToTerminalText $FindingsHtml
-    if($text -match '(?i)\bnot\s+verified\b|\bmanual\s+(?:action|review|verification)\s+(?:required|needed)\b'){return $true}
+    if($text -match '(?i)\bnot\s+verified\b|\bmanual\s+(?:action|review|verification)\s+(?:required|needed)\b|\bmissing\s+allow\s+rules\b'){return $true}
     if($AfterApply){
         if($Row.Status -eq 'Remediated' -or $AppliedHtml -match '<strong>(?:Completed|Not Verified|Manual Action Required)</strong>'){return $true}
         $note=Convert-ReportHtmlToTerminalText ([string]$Row.ActionTaken)
@@ -611,7 +611,7 @@ function ConvertTo-ThoroughSettingValue {
     param([AllowEmptyString()][string]$Html,[string]$State,[string]$Description)
     $plain=Convert-ReportHtmlToTerminalText $Html
     if($plain -match '(?i)\bnot\s+verified\b|^(?:not detected|no printer detected|not recorded|not applied|unknown|unavailable|not executed)(?:[.\s(]|$)'){$State='unverified'}
-    $class=if($State -in @('mismatch','unverified','manual','readonly') -or ($State -eq 'match' -and $Description -in @('Matches installed USB printer','Matches installed IP printer','Matches required service URL'))){' finding-'+$State}else{''}
+    $class=if($State -in @('mismatch','unverified','manual','readonly') -or ($State -eq 'match' -and ($Html -eq 'Created' -or $Description -in @('Matches installed USB printer','Matches installed IP printer','Matches required service URL')))){' finding-'+$State}else{''}
     $title=if($Description){' title="'+[Net.WebUtility]::HtmlEncode($Description)+'"'}else{''}
     '<span class="setting-observed'+$class+'"'+$title+'>'+$Html+'</span>'
 }
@@ -723,7 +723,11 @@ function ConvertTo-ThoroughSettingRows {
                         # Duplicate property names retain their occurrence only when
                         # both records contain the same number. Never guess a match.
                         if($candidates.Count -eq $beforeCount -and $ordinal -lt $candidates.Count){$afterHtml=$candidates[$ordinal].Html;$afterState=$candidates[$ordinal].State}
-                        elseif($Row.ItemTitle -eq 'Firewall Inbound Port' -and $Row.Status -eq 'Pass' -and $label -in @('Missing Allow Rules (Ports)','Unverified Ports') -and -not $candidates.Count){$afterHtml='None';$afterState='match'}
+                        elseif($Row.ItemTitle -eq 'Firewall Inbound Port' -and $Row.Status -eq 'Pass' -and $label -in @('Missing Allow Rules (Ports)','Unverified Ports') -and -not $candidates.Count){
+                            $afterHtml=if($label -eq 'Missing Allow Rules (Ports)'){'Created'} else {'None'}
+                            $afterState='match'
+                            $valueNote=if($label -eq 'Missing Allow Rules (Ports)'){'Inbound firewall rule was created and readback verified.'} else {$valueNote}
+                        }
                     }
                     if($Row.ItemTitle -eq 'Printer' -and $label -eq 'Printer status' -and $field.Kind -eq 'Field'){
                         $observedStatus=if($AfterApply){Convert-ReportHtmlToTerminalText $afterHtml}else{$field.Text}
@@ -1019,7 +1023,7 @@ if(-not $isAuditReport){
     $bodyClass=if($isFinalReport){'final-report setting-report'}else{'fix-report setting-report'}
     $finalHtml=$finalHtml.Replace('<body>','<body class="'+$bodyClass+'">').Replace('</style>',(Get-ThoroughSettingColumnStyle)+"`n</style>")
     $finalHtml=$finalHtml.Replace('</main>',(Get-ThoroughSettingHoverScript)+"`n</main>")
-    $legend=if($isFinalReport){'Status shows the latest recorded setting values. This report records the observed configuration without applying repairs. Red = Requirement not met or missing value; Amber = Not verified. AppSettings values are a configuration record, not confirmation of the site assignment.'}else{'Findings shows recorded pre-fix values when available; Applied shows recorded post-fix values. Not applied = No fix was run; Not verified = A post-fix value could not be verified. Red = Requirement not met or missing value; Amber = Not verified. Hover over Applied values for recorded action details.'}
+    $legend=if($isFinalReport){'Status shows the latest recorded setting values. This report records the observed configuration without applying repairs. Red = Requirement not met or missing value; Amber = Not verified. AppSettings values are a configuration record, not confirmation of the site assignment.'}else{'Findings shows recorded pre-fix values when available; Applied shows recorded post-fix values. Not applied = No fix was run; Created = Inbound firewall rule created; Not verified = A post-fix value could not be verified. Red = Requirement not met or missing value; Amber = Not verified. Hover over Applied values for recorded action details.'}
     $finalHtml=[regex]::Replace($finalHtml,'(?is)<p class="legend">.*?</p>','<p class="legend">'+$legend+'</p>')
 }
     if($isFinalReport -and $AfterApply){

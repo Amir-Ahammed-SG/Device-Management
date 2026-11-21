@@ -46,7 +46,7 @@ foreach($name in @('SaaS','Subway')){
     $port=@((Get-SettingRenderedComponent $appliedHtml 'Firewall').Fields|Where-Object Setting -EQ 'Ports')[0]
     Assert-Diagnostic ($port.Findings -eq 'None' -and $port.Value -eq '5009') 'Changed firewall port list prevented verified Applied values from matching their baseline'
     $resolved=@((Get-SettingRenderedComponent $appliedHtml 'Firewall').Fields|Where-Object Setting -EQ 'Missing Allow Rules (Ports)')
-    Assert-Diagnostic ($resolved.Count -eq 1 -and $resolved[0].Value -eq 'None' -and $resolved[0].Html -notmatch 'finding-unverified') 'Resolved missing ports were not cleared using the verified readback'
+    Assert-Diagnostic ($resolved.Count -eq 1 -and $resolved[0].Value -eq 'Created' -and $resolved[0].Html -match 'finding-match') 'Resolved missing ports were not reported as Created with match styling'
     $nmap=New-DiagnosticRow 'Nmap Diagnostic Tool' (ConvertTo-ReportDefinitionHtml ([ordered]@{'Tool State'='Installed';'Version'='7.993';'Executable Path'='C:\Private\nmap.exe'}))
     $nmap|Add-Member NoteProperty RecordedRequirementHtml (ConvertTo-ReportDefinitionHtml ([ordered]@{'Installed'='Yes';'Version'='Readable'}))
     $policy=New-DiagnosticRow 'System & Browser Policies' (ConvertTo-ReportDefinitionHtml ([ordered]@{'Pinch-to-Zoom'='Not verified. Please check manually.'}))

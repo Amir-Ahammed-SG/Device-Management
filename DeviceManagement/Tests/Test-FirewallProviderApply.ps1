@@ -87,12 +87,20 @@ foreach($client in @('SaaS','Subway')){
             Assert-ProviderFirewall ($unrelatedAfter -ceq $unrelatedBefore) 'Apply changed an unrelated, broad or customer Block rule.'
             $group=@(Get-ThoroughReportDisplayRows $auditRows.ToArray())[0];$values=Get-ThoroughReportHighlightFields $group.FoundStateHtml
             Assert-ProviderFirewall ($group.Status -eq 'Pass' -and $values.Ports -eq ($script:allowed -join ', ') -and -not $values.ContainsKey('Missing Allow Rules (Ports)') -and $values.Ports -notmatch 'Any') 'Final verified port list is inaccurate.'
-            if($case -eq 'all-missing'){
+            if($case -in @('all-missing','partial') -and $detectedPaymentProvider -in @('NETS','NEXIDE')){
+                $expectedMissingPorts=if($case -eq 'partial'){
+                    if($detectedPaymentProvider -eq 'NETS'){'4100, 4101, 4102, 4103'}else{'20002, 20007'}
+                }else{ $script:allowed -join ', ' }
+                $auditFix=New-ThoroughReportSnapshot -Rows $beforeRows -DisplayMode Fix -AfterApply $false -Hostname FIXTURE-PC
+                $auditFixHtml=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($auditFix.HtmlBase64));$auditFixView=Get-SettingRenderedComponent $auditFixHtml Firewall
+                $auditFixMissing=@($auditFixView.Fields | Where-Object Setting -EQ 'Missing Allow Rules (Ports)')
+                Assert-ProviderFirewall ($auditFixMissing.Count -eq 1 -and $auditFixMissing[0].Findings -eq $expectedMissingPorts -and $auditFixMissing[0].Value -eq 'Not applied' -and $auditFixMissing[0].Html -match 'finding-unverified') 'Fix before Apply did not show Missing Allow Rules with Not applied amber tag.'
+
                 $snapshot=New-ThoroughReportSnapshot -Rows $auditRows.ToArray() -BeforeRows $beforeRows -DisplayMode Fix -AfterApply $true -Hostname FIXTURE-PC
                 $html=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($snapshot.HtmlBase64));$view=Get-SettingRenderedComponent $html Firewall
                 $ports=@($view.Fields | Where-Object Setting -EQ Ports);$missing=@($view.Fields | Where-Object Setting -EQ 'Missing Allow Rules (Ports)')
-                Assert-ProviderFirewall ($ports.Count -eq 1 -and $ports[0].Value -eq ($script:allowed -join ', ') -and $missing.Count -eq 1 -and $missing[0].Value -eq 'None') 'Fix Applied retained missing ports or lost verified port readback.'
-                [IO.File]::WriteAllText((Join-Path $preview ($client+'-'+$detectedPaymentProvider+'-Applied.html')),$html,[Text.UTF8Encoding]::new($false))
+                Assert-ProviderFirewall ($ports.Count -eq 1 -and $ports[0].Value -eq ($script:allowed -join ', ') -and $missing.Count -eq 1 -and $missing[0].Value -eq 'Created' -and $missing[0].Html -match 'finding-match') 'Fix Applied retained missing ports or lost verified port readback.'
+                [IO.File]::WriteAllText((Join-Path $preview ($client+'-'+$detectedPaymentProvider+'-'+$case+'-Applied.html')),$html,[Text.UTF8Encoding]::new($false))
             }
             $writesBefore=$script:writes.Count;$auditRows=New-Object 'Collections.Generic.List[psobject]'
             . $dispatch
