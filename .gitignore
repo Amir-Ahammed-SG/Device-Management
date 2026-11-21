@@ -5,6 +5,7 @@
 !/.gitignore
 !/README.md
 !/DeviceManagement.ps1
+!/dm.ps1
 !/DeviceManagement/
 
 # Generated and device-specific material never belongs in the source repository.
