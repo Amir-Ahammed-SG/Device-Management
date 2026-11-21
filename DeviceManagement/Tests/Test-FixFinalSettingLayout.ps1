@@ -128,7 +128,7 @@ foreach($name in @('SaaS','Subway')){
                     }
                     if(-not $case.AfterApply){
                         $automaticFields=@($component.Fields | Where-Object {-not ($componentName -eq 'Printer' -and $_.Setting -eq 'Printer Name')})
-                        Assert-Setting (-not @($automaticFields|Where-Object Value -NE 'Not applied').Count) 'An Audit-derived Fix claims applied values.'
+                        Assert-Setting (-not @($automaticFields|Where-Object {$_.Value -notin @('Not applied','Read only')}).Count) 'An Audit-derived Fix claims applied values.'
                     }
                 }else{
                     $legacyFields=@(Get-LegacyFieldPairs $legacyCells[1])
@@ -148,7 +148,7 @@ foreach($name in @('SaaS','Subway')){
                 $counter=Get-SettingField (Get-SettingRenderedComponent $html 'Performance Counter') 'Rebuild State'
                 Assert-Setting ($counter.Findings -ceq 'Not executed' -and $counter.Value -ceq 'Exit code: 0') 'Counter readback was inferred from its command exit instead of the recorded property.'
                 $appView=Get-SettingRenderedComponent $html 'Payment Configuration'
-                Assert-Setting (-not @($appView.Fields|Where-Object Value -NE 'Not applied').Count) 'Read-only AppSettings claims repairs.'
+                Assert-Setting (-not @($appView.Fields|Where-Object Value -NE 'Read only').Count) 'Read-only AppSettings claims repairs.'
             }
             if($mode -eq 'Final'){
                 $appView=Get-SettingRenderedComponent $html 'Payment Configuration'

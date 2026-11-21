@@ -515,6 +515,8 @@ function Get-ThoroughAuditColumnStyle {
     .audit-report .audit-observed.finding-mismatch { padding:1px 4px; border-radius:2px; background:#fdecec; color:#9b1c1c; }
     .audit-report .audit-observed.finding-unverified,
     .audit-report .finding-value.finding-unverified { padding:1px 4px; border:1px solid #d3a83e; border-radius:2px; background:#ffe3a0; color:#593900; }
+    .audit-report .audit-observed.finding-readonly,
+    .audit-report .finding-value.finding-readonly { padding:1px 4px; border:1px solid #b9c3cd; border-radius:2px; background:#eef1f4; color:#253b53; }
     .audit-report .finding-match { background:transparent; color:inherit; }
     .audit-report .audit-observed.finding-match { padding:1px 4px; border-radius:2px; background:#e8f5e9; color:#1b5e20; }
     .audit-report .audit-record-row td { border-bottom-color:#e4e7eb; }
@@ -609,7 +611,7 @@ function ConvertTo-ThoroughSettingValue {
     param([AllowEmptyString()][string]$Html,[string]$State,[string]$Description)
     $plain=Convert-ReportHtmlToTerminalText $Html
     if($plain -match '(?i)\bnot\s+verified\b|^(?:not detected|no printer detected|not recorded|not applied|unknown|unavailable|not executed)(?:[.\s(]|$)'){$State='unverified'}
-    $class=if($State -in @('mismatch','unverified','manual') -or ($State -eq 'match' -and $Description -in @('Matches installed USB printer','Matches installed IP printer','Matches required service URL'))){' finding-'+$State}else{''}
+    $class=if($State -in @('mismatch','unverified','manual','readonly') -or ($State -eq 'match' -and $Description -in @('Matches installed USB printer','Matches installed IP printer','Matches required service URL'))){' finding-'+$State}else{''}
     $title=if($Description){' title="'+[Net.WebUtility]::HtmlEncode($Description)+'"'}else{''}
     '<span class="setting-observed'+$class+'"'+$title+'>'+$Html+'</span>'
 }
@@ -646,7 +648,7 @@ function ConvertTo-ThoroughSettingRows {
         $post=if($matches.Count -eq 1){$matches[0]}else{$null}
         $note=if($Mode -eq 'Final'){Convert-ReportHtmlToTerminalText ([string]$Row.ActionTaken)}else{Convert-ReportHtmlToTerminalText $AppliedHtml}
         $trusted=$AfterApply -and $null -ne $post
-        $readOnly=$Row.SectionTitle -eq 'AppSettings Check' -and $Row.ItemTitle -notin @('MonitoringServiceBaseUrl','CmsGatewayBaseUrl','OrderServiceBaseUrl')
+        $readOnly=$Row.SectionTitle -eq 'AppSettings Check' -and $Row.ItemTitle -notin @('MonitoringServiceBaseUrl','CmsGatewayBaseUrl','OrderServiceBaseUrl','Monitoring Service','CMS Gateway','Order Service')
         if($AfterApply){
             if($record.Identity -and $record.Identity.Label -eq 'Account Name'){
                 $own=@();if($Row.PSObject.Properties['AccountResults']){$own=@($Row.AccountResults|Where-Object {$_.AccountName -ieq $record.Identity.Text})}
@@ -706,23 +708,29 @@ function ConvertTo-ThoroughSettingRows {
                 }else{$value=ConvertTo-ThoroughSettingValue -Html $field.Html -State $field.State -Description $field.Description}
             }else{
                 $afterHtml='Not verified';$afterState='unverified'
-                if($AfterApply -and $field.Kind -eq 'Text' -and $field.Html -match 'class="fix-no-change"'){$afterHtml='&#8212;';$afterState=''}
-                elseif(-not $AfterApply -or $readOnly){$afterHtml='Not applied'}
-                elseif($trusted){
-                    $postLabel=if($Row.ItemTitle -eq 'lodctr /R Performance Counter' -and $label -eq 'Audit'){'Rebuild State'}else{$label}
-                    $candidates=@($post.Fields|Where-Object {$_.Kind -eq $field.Kind -and $_.Label -ieq $postLabel})
-                    $beforeCount=@($record.Fields|Where-Object {$_.Kind -eq $field.Kind -and $_.Label -ieq $label}).Count
-                    # Duplicate property names retain their occurrence only when
-                    # both records contain the same number. Never guess a match.
-                    if($candidates.Count -eq $beforeCount -and $ordinal -lt $candidates.Count){$afterHtml=$candidates[$ordinal].Html;$afterState=$candidates[$ordinal].State}
-                    elseif($Row.ItemTitle -eq 'Firewall Inbound Port' -and $Row.Status -eq 'Pass' -and $label -in @('Missing Allow Rules (Ports)','Unverified Ports') -and -not $candidates.Count){$afterHtml='None';$afterState='match'}
+                if($readOnly){
+                    $afterHtml='Read only';$afterState='readonly'
+                    $valueNote='Configuration setting is read-only; no automated fix applies.'
                 }
-                $valueNote=$note
-                if($Row.ItemTitle -eq 'Printer' -and $label -eq 'Printer status' -and $field.Kind -eq 'Field'){
-                    $observedStatus=if($AfterApply){Convert-ReportHtmlToTerminalText $afterHtml}else{$field.Text}
-                    if($observedStatus -in @('Not available','Offline','Paused','Error')){
-                        $afterHtml='Manual Action Required';$afterState='manual'
-                        $valueNote='Printer status requires manual attention; this check does not repair availability or resume queues.'
+                else{
+                    $valueNote=$note
+                    if($AfterApply -and $field.Kind -eq 'Text' -and $field.Html -match 'class="fix-no-change"'){$afterHtml='&#8212;';$afterState=''}
+                    elseif(-not $AfterApply){$afterHtml='Not applied'}
+                    elseif($trusted){
+                        $postLabel=if($Row.ItemTitle -eq 'lodctr /R Performance Counter' -and $label -eq 'Audit'){'Rebuild State'}else{$label}
+                        $candidates=@($post.Fields|Where-Object {$_.Kind -eq $field.Kind -and $_.Label -ieq $postLabel})
+                        $beforeCount=@($record.Fields|Where-Object {$_.Kind -eq $field.Kind -and $_.Label -ieq $label}).Count
+                        # Duplicate property names retain their occurrence only when
+                        # both records contain the same number. Never guess a match.
+                        if($candidates.Count -eq $beforeCount -and $ordinal -lt $candidates.Count){$afterHtml=$candidates[$ordinal].Html;$afterState=$candidates[$ordinal].State}
+                        elseif($Row.ItemTitle -eq 'Firewall Inbound Port' -and $Row.Status -eq 'Pass' -and $label -in @('Missing Allow Rules (Ports)','Unverified Ports') -and -not $candidates.Count){$afterHtml='None';$afterState='match'}
+                    }
+                    if($Row.ItemTitle -eq 'Printer' -and $label -eq 'Printer status' -and $field.Kind -eq 'Field'){
+                        $observedStatus=if($AfterApply){Convert-ReportHtmlToTerminalText $afterHtml}else{$field.Text}
+                        if($observedStatus -in @('Not available','Offline','Paused','Error')){
+                            $afterHtml='Manual Action Required';$afterState='manual'
+                            $valueNote='Printer status requires manual attention; this check does not repair availability or resume queues.'
+                        }
                     }
                 }
                 $value=ConvertTo-ThoroughSettingValue -Html $afterHtml -State $afterState -Description $valueNote

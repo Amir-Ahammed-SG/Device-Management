@@ -132,13 +132,13 @@ foreach($sourceName in @('SaaS','Subway')){
             }else{
                 $webFix=Get-SettingRenderedComponent $html 'WebApp Printer'
                 if($kitchenUnavailable){
-                    Assert-Payout ($webFix.Count -eq 1 -and -not @($webFix.Fields|Where-Object Value -NE 'Not applied').Count) 'Fix hid a missing BranchUUID or claimed a configuration repair'
+                    Assert-Payout ($webFix.Count -eq 1 -and -not @($webFix.Fields|Where-Object Value -NE 'Read only').Count) 'Fix hid a missing BranchUUID or claimed a configuration repair'
                     $displayBranches=@($webFix.Fields|Where-Object Setting -EQ 'BranchUUID'|ForEach-Object {$_.Findings})
                     Assert-Payout (($displayBranches -join '|') -ceq ($expectedBranches -join '|')) 'Fix lost the original missing BranchUUID observation'
                 }
                 else{Assert-Payout ($webFix.Count -eq 0) 'A complete WebApp Printer record appeared in Fix'}
                 $cron=Get-SettingRenderedComponent $html 'Cron Job'
-                if($supported -and $missing){Assert-Payout ($cron.Count -eq 1 -and -not @($cron.Fields|Where-Object Value -NE 'Not applied').Count) 'Fix hid missing Cron data or claimed read-only repairs'}
+                if($supported -and $missing){Assert-Payout ($cron.Count -eq 1 -and -not @($cron.Fields|Where-Object Value -NE 'Read only').Count) 'Fix hid missing Cron data or claimed read-only repairs'}
                 else{Assert-Payout ($cron.Count -eq 0) 'Healthy or unsupported Cron Job data appeared in Fix'}
             }
         }

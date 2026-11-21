@@ -72,7 +72,7 @@ foreach($client in @('SaaS','Subway')){
             }elseif($mode -eq 'Fix' -and -not $case.Pass){
                 $view=Get-SettingRenderedComponent $html Printer
                 $field=@($view.Fields | Where-Object Setting -EQ 'Disable Chinese Mode')
-                Assert-ChineseMode ($field.Count -eq 1 -and $field[0].Value -eq 'Not applied') 'Apply claimed to change the read-only Chinese mode.'
+                Assert-ChineseMode ($field.Count -eq 1 -and $field[0].Value -eq 'Read only') 'Apply claimed to change the read-only Chinese mode.'
             }
             if($case.Id -in @('string-true','boolean-false','missing')){[IO.File]::WriteAllText((Join-Path $fixture ($client+'-'+$mode+'-'+$case.Id+'.html')),$html,[Text.UTF8Encoding]::new($false))}
         }
