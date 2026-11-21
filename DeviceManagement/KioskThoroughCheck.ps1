@@ -381,16 +381,19 @@ if($script:ApplyChanges -and $existingBundle){
 $script:ConfirmedLauncherPlan=$null
 if($script:ApplyChanges){
     # Select the existing account with mutation disabled. Complete all launcher
-    # input validation before any component repair starts.
+    # input validation before any component repair starts when a launcher exists.
     $script:ApplyChanges=$false
     try{$preflightAccount=Get-KioskAccountCheck}finally{$script:ApplyChanges=$true}
-    if(-not $preflightAccount.Account){throw 'Apply cancelled: a single existing kiosk account must be verified first.'}
-    $preflightProfile=Get-KioskProfilePath $preflightAccount.Account.Name
-    if(-not $preflightProfile){throw 'Apply cancelled: the existing kiosk profile is unavailable.'}
-    $script:ConfirmedLauncherPlan=New-ThoroughLauncherPlan -Path (Join-Path $preflightProfile 'Scripts\LaunchKiosk.ps1') -Restaurant $RestaurantId -Kiosk $KioskId -Hostname $KioskHostname
-    $RestaurantId=$script:ConfirmedLauncherPlan.Restaurant
-    $KioskId=$script:ConfirmedLauncherPlan.Kiosk
-    $KioskHostname=$script:ConfirmedLauncherPlan.Hostname
+    if($preflightAccount -and $preflightAccount.Account){
+        $preflightProfile=Get-KioskProfilePath $preflightAccount.Account.Name
+        $preflightScript=if($preflightProfile){Join-Path $preflightProfile 'Scripts\LaunchKiosk.ps1'}else{$null}
+        if($preflightScript -and (Test-Path -LiteralPath $preflightScript -PathType Leaf)){
+            $script:ConfirmedLauncherPlan=New-ThoroughLauncherPlan -Path $preflightScript -Restaurant $RestaurantId -Kiosk $KioskId -Hostname $KioskHostname
+            $RestaurantId=$script:ConfirmedLauncherPlan.Restaurant
+            $KioskId=$script:ConfirmedLauncherPlan.Kiosk
+            $KioskHostname=$script:ConfirmedLauncherPlan.Hostname
+        }
+    }
 }
 $applyRequested=[bool]$script:ApplyChanges
 $beforeApplyRows=@()
