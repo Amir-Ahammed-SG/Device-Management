@@ -429,8 +429,6 @@ try {
     if ($installedPrinters.Count -eq 0) {
         $noPrinterHtml = ConvertTo-ReportDefinitionHtml ([ordered]@{
             'Printer Name' = 'No printer detected'
-            'Printer status' = 'Not detected'
-            'Keep printed documents' = 'Not detected'
         })
         Add-AuditEntry -SectionNumber $sec1Num -SectionTitle $sec1Title -ItemTitle 'Physical Printers' -ItemSub 'Type: Receipt / Hardware' -Shortcut '<code>control printers</code>' -FoundStateHtml $noPrinterHtml -Status 'Fail' -ActionTaken 'No physical printer detected. Check connection and printer driver.'
     } else {
@@ -477,8 +475,6 @@ try {
 } catch {
     $errHtml = ConvertTo-ReportDefinitionHtml ([ordered]@{
         'Printer Name' = 'No printer detected'
-        'Printer status' = 'Not verified'
-        'Keep printed documents' = 'Not verified'
     })
     Add-AuditEntry -SectionNumber $sec1Num -SectionTitle $sec1Title -ItemTitle 'Physical Printers' -ItemSub 'Type: Receipt / Hardware' -Shortcut '<code>control printers</code>' -FoundStateHtml $errHtml -Status 'Fail' -ActionTaken ([System.Net.WebUtility]::HtmlEncode($_.Exception.Message))
 }
@@ -1130,31 +1126,20 @@ $reportPath=Save-ThoroughReportBundle -Path $reportPath -ClientType $script:Kios
     } else {
         if ($FinalReport) { Write-Host "Report saved: $reportPath" -ForegroundColor Gray }
         else { Write-Host "`nAudit report saved to:`n$reportPath" -ForegroundColor Green }
-    }
-    if ([IO.File]::Exists($reportPath)) {
-        $edgeExe = @(
-            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),
-            (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe')
-        ) | Where-Object { [IO.File]::Exists($_) } | Select-Object -First 1
+        if ([IO.File]::Exists($reportPath)) {
+            $edgeExe = @(
+                (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),
+                (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),
+                (Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\Application\msedge.exe')
+            ) | Where-Object { [IO.File]::Exists($_) } | Select-Object -First 1
 
-        $refreshed = $false
-        try {
-            $wshell = New-Object -ComObject WScript.Shell
-            $reportName = [IO.Path]::GetFileNameWithoutExtension($reportPath)
-            if ($wshell.AppActivate('Thorough Check Reports')) {
-                Start-Sleep -Milliseconds 200
-                $wshell.SendKeys('{F5}')
-                $refreshed = $true
-            } elseif ($wshell.AppActivate($reportName)) {
-                Start-Sleep -Milliseconds 200
-                $wshell.SendKeys('{F5}')
-                $refreshed = $true
+            if (-not $edgeExe) {
+                try {
+                    $regPath = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe' -ErrorAction SilentlyContinue).'(default)'
+                    if ($regPath -and [IO.File]::Exists($regPath)) { $edgeExe = $regPath }
+                } catch {}
             }
-        } catch {
-            $refreshed = $false
-        }
 
-        if (-not $refreshed) {
             try {
                 if ($edgeExe) {
                     [void](Start-Process -FilePath $edgeExe -ArgumentList "`"$reportPath`"")

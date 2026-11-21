@@ -273,8 +273,6 @@ function Get-ThoroughFinalPrinterRow {
     } elseif ($Row.ActionTaken -match '(?i)No physical printer detected|No printer detected' -or $Row.FoundStateHtml -match '(?i)No printer detected') {
         $noPrinterHtml = ConvertTo-ReportDefinitionHtml ([ordered]@{
             'Printer Name' = 'No printer detected'
-            'Printer status' = 'Not detected'
-            'Keep printed documents' = 'Not detected'
         })
         [pscustomobject]@{
             SectionNumber = $Row.SectionNumber
@@ -282,7 +280,7 @@ function Get-ThoroughFinalPrinterRow {
             ItemTitle = 'Printer'
             ItemSub = 'Type: Receipt / Hardware'
             Shortcut = ''
-            ExpectedHtml = (Get-ReportRequirement $Row)
+            ExpectedHtml = (ConvertTo-ReportDefinitionHtml ([ordered]@{ 'Printer Name' = 'Brand/Model' }))
             FoundStateHtml = $noPrinterHtml
             Status = 'Fail'
             ActionTaken = 'No physical printer detected. Check connection and printer driver.'
