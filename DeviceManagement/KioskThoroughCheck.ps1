@@ -1127,27 +1127,48 @@ $reportPath=Save-ThoroughReportBundle -Path $reportPath -ClientType $script:Kios
         if ($FinalReport) { Write-Host "Report saved: $reportPath" -ForegroundColor Gray }
         else { Write-Host "`nAudit report saved to:`n$reportPath" -ForegroundColor Green }
         if ([IO.File]::Exists($reportPath)) {
-            $edgeExe = @(
-                (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),
-                (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),
-                (Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\Application\msedge.exe')
-            ) | Where-Object { [IO.File]::Exists($_) } | Select-Object -First 1
+            $opened = $false
+            # 1. Desktop shell delegation via explorer.exe:
+            # When PowerShell runs elevated under a Standard User account, direct Chromium/Edge
+            # execution fails because Chromium sandbox cannot initialize across user profile/integrity
+            # boundaries. Delegating to explorer.exe hands execution off to the logged-in desktop shell,
+            # which launches the report in the user's default browser (Edge) at normal Medium integrity.
+            try {
+                [void](Start-Process explorer.exe -ArgumentList "`"$reportPath`"")
+                $opened = $true
+            } catch {}
 
-            if (-not $edgeExe) {
+            # 2. Shell.Application COM fallback
+            if (-not $opened) {
                 try {
-                    $regPath = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe' -ErrorAction SilentlyContinue).'(default)'
-                    if ($regPath -and [IO.File]::Exists($regPath)) { $edgeExe = $regPath }
+                    $shell = New-Object -ComObject Shell.Application
+                    $shell.ShellExecute($reportPath)
+                    $opened = $true
                 } catch {}
             }
 
-            try {
-                if ($edgeExe) {
-                    [void](Start-Process -FilePath $edgeExe -ArgumentList "`"$reportPath`"")
-                } else {
-                    [void](Start-Process -FilePath $reportPath)
+            # 3. Direct browser or file association fallback
+            if (-not $opened) {
+                $edgeExe = @(
+                    (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),
+                    (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),
+                    (Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\Application\msedge.exe')
+                ) | Where-Object { [IO.File]::Exists($_) } | Select-Object -First 1
+
+                if (-not $edgeExe) {
+                    try {
+                        $regPath = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe' -ErrorAction SilentlyContinue).'(default)'
+                        if ($regPath -and [IO.File]::Exists($regPath)) { $edgeExe = $regPath }
+                    } catch {}
                 }
-            } catch {
-                # Fallback if running headless, in automated test mocks, or restricted process launch
+
+                try {
+                    if ($edgeExe) {
+                        [void](Start-Process -FilePath $edgeExe -ArgumentList "`"$reportPath`"")
+                    } else {
+                        [void](Start-Process -FilePath $reportPath)
+                    }
+                } catch {}
             }
         }
     }
