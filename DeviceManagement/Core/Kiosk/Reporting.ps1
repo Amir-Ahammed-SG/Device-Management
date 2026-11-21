@@ -1068,9 +1068,8 @@ function New-ThoroughReportBundleHtml {
       <button type="button" role="tab" id="tab-Fix" data-mode="Fix" aria-controls="report-frame" aria-selected="false" tabindex="-1">Fix</button>
       <button type="button" role="tab" id="tab-Final" data-mode="Final" aria-controls="report-frame" aria-selected="false" tabindex="-1">Final</button>
     </div>
-    <div class="bundle-actions" id="bundle-actions">
-      <button type="button" class="bundle-action" id="reload-report" title="Reload report from disk">&#x21bb; Refresh</button>
-      <button type="button" class="bundle-action" id="print-final" hidden>Print</button>
+    <div class="bundle-actions" id="bundle-actions" hidden>
+      <button type="button" class="bundle-action" id="print-final">Print</button>
     </div>
   </div>
 </header>
@@ -1105,7 +1104,7 @@ function update(){
   message('');var snapshot=active.Reports[mode];
   document.querySelectorAll('[data-mode]').forEach(function(button){var selected=button.dataset.mode===mode;button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;});
   frame.setAttribute('aria-labelledby','tab-'+mode);frame.title=active.ClientType+' '+labels[mode];
-  document.getElementById('print-final').hidden=mode!=='Final'||!snapshot;
+  document.getElementById('bundle-actions').hidden=mode!=='Final'||!snapshot;
   document.getElementById('bundle-description').textContent=descriptions[mode]+(snapshot?(snapshot.Origin==='Audit observations'?' Based on Audit.':'')+' Saved: '+snapshot.GeneratedAt+' | Restaurant ID: '+(snapshot.RestaurantId||'Not detected'):' Not run.');
   if(snapshot){frame.srcdoc=decode(snapshot.HtmlBase64);}
   else{var empty=document.implementation.createHTMLDocument(labels[mode]);var main=empty.createElement('main');main.style.cssText='font:14px/1.5 Arial,sans-serif;color:#253b53;padding:32px';var title=empty.createElement('h2');title.textContent=labels[mode]+' has not been run';var note=empty.createElement('p');note.textContent='Run this mode in Device Management to add its results to this file.';main.append(title,note);empty.body.appendChild(main);frame.srcdoc='<!doctype html>'+empty.documentElement.outerHTML;}
@@ -1116,10 +1115,7 @@ document.querySelectorAll('[data-mode]').forEach(function(button){
   button.addEventListener('click',function(){mode=button.dataset.mode;update();});
   button.addEventListener('keydown',function(event){var index=modes.indexOf(mode),next;if(event.key==='ArrowRight')next=(index+1)%modes.length;else if(event.key==='ArrowLeft')next=(index+modes.length-1)%modes.length;else if(event.key==='Home')next=0;else if(event.key==='End')next=modes.length-1;else return;event.preventDefault();mode=modes[next];update();document.getElementById('tab-'+mode).focus();});
 });
-var reloadBtn=document.getElementById('reload-report');if(reloadBtn){reloadBtn.addEventListener('click',function(){window.location.reload();});}
-var lastActive=Date.now();
-window.addEventListener('focus',function(){if(Date.now()-lastActive>2500){lastActive=Date.now();window.location.reload();}});
-document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&(Date.now()-lastActive>2500)){lastActive=Date.now();window.location.reload();}});
+
 document.getElementById('print-final').addEventListener('click',function(){if(mode==='Final'&&active.Reports.Final){preparePrint();window.print();}});
 var originalTitle=document.title;
 window.addEventListener('beforeprint',function(){preparePrint();if(active.Reports.Final){document.title=(active.Reports.Final.ExportFileName||'Thorough Check Report').replace(/\.html$/i,'');}});
