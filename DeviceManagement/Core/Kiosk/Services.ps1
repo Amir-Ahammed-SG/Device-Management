@@ -1083,12 +1083,12 @@ function Get-PaymentRestartTaskSchedule {
 function New-PaymentRestartTaskDefinition {
     param($ServiceObj, [string]$ServiceName)
     $definition = $ServiceObj.NewTask(0)
-    $definition.RegistrationInfo.Description = "Restart $ServiceName daily at 04:15 AM."
+    $definition.RegistrationInfo.Description = "Restart $ServiceName daily at 06:00 AM."
     $definition.Principal.UserId = 'NT AUTHORITY\SYSTEM'
     $definition.Principal.LogonType = 5
     $definition.Principal.RunLevel = 1
     $trigger = $definition.Triggers.Create(2)
-    $trigger.StartBoundary = (Get-Date -Hour 4 -Minute 15 -Second 0).ToString("yyyy-MM-dd'T'HH:mm:ss")
+    $trigger.StartBoundary = (Get-Date -Hour 6 -Minute 0 -Second 0).ToString("yyyy-MM-dd'T'HH:mm:ss")
     $trigger.DaysInterval = 1
     $trigger.Enabled = $true
     $action = $definition.Actions.Create(0)
@@ -1158,7 +1158,7 @@ function Get-PaymentRestartTaskRecords {
                 $fields[$label]=if($null -eq $value){'Not recorded'}elseif($value -is [datetime] -and $value.Year -le 1900){'Not recorded'}elseif($value -is [datetime]){$value.ToString('dd-MMM-yyyy HH:mm:ss',[Globalization.CultureInfo]::InvariantCulture)}else{[string]$value}
             }
         }catch{$historyVerified=$false;$fields['Run History']='Not verified. Please check Task Scheduler manually.'}
-        $records.Add([pscustomobject]@{Html=(ConvertTo-ReportDefinitionHtml $fields);Passed=($targetVerified -and $taskEnabled -and $schedule.Configured -and $schedule.Enabled -and -not $schedule.Unknown -and $historyVerified)})
+        $records.Add([pscustomobject]@{Html=(ConvertTo-ReportDefinitionHtml $fields);Passed=($targetVerified -and $taskEnabled -and $schedule.Configured -and $schedule.Enabled -and -not $schedule.Unknown -and $historyVerified);TaskName=$name;Details=$schedule.Details})
     }
     return $records
 }
@@ -1169,7 +1169,7 @@ function Invoke-PaymentRestartTaskCheck {
     $expected=ConvertTo-ReportDefinitionHtml ([ordered]@{'Task'='Available';'Task Enabled'='Yes';'Restart Target'=$ServiceName;'Schedule'='Configured';'Schedule Enabled'='Yes'})
     $status='Fail';$note='Task not verified. Please check Task Scheduler manually.'
     $parts=New-Object 'Collections.Generic.List[string]'
-    $created=$false;$creationFailure=$null
+    $created=$false;$updated=$false;$creationFailure=$null
     try{
         if([string]::IsNullOrWhiteSpace($ServiceName)){throw 'Selected Payment Service name is unavailable.'}
         $records = @(Get-PaymentRestartTaskRecords $ServiceName)
@@ -1177,6 +1177,14 @@ function Invoke-PaymentRestartTaskCheck {
             try {
                 Register-MissingPaymentRestartTask -ServiceName $ServiceName
                 $created = $true
+                $records = @(Get-PaymentRestartTaskRecords $ServiceName)
+            } catch {
+                $creationFailure = $_.Exception.Message
+            }
+        } elseif ($records.Count -eq 1 -and (Test-CanApply) -and $records[0].PSObject.Properties['TaskName'] -and $records[0].TaskName -ieq "Restart $ServiceName" -and $records[0].PSObject.Properties['Details'] -and $records[0].Details -match 'T04:15:00') {
+            try {
+                Register-MissingPaymentRestartTask -ServiceName $ServiceName
+                $updated = $true
                 $records = @(Get-PaymentRestartTaskRecords $ServiceName)
             } catch {
                 $creationFailure = $_.Exception.Message
@@ -1191,15 +1199,15 @@ function Invoke-PaymentRestartTaskCheck {
                 $parts.Add($records[$index].Html)
             }
             if(@($records | Where-Object {-not $_.Passed}).Count -eq 0){
-                $status = if ($created) { 'Remediated' } else { 'Pass' }
-                $note = if ($created) { 'Created missing Payment Service restart task; readback verified. Daily schedule at 04:15 AM configured. The task was not executed.' } else { 'Existing restart task and schedule verified. No task was changed or executed.' }
+                $status = if ($created -or $updated) { 'Remediated' } else { 'Pass' }
+                $note = if ($created) { 'Created missing Payment Service restart task; readback verified. Daily schedule at 06:00 AM configured. The task was not executed.' } elseif ($updated) { 'Updated Payment Service restart task schedule to 06:00 AM; readback verified. The task was not executed.' } else { 'Existing restart task and schedule verified. No task was changed or executed.' }
             }
         }
     }catch{
         $parts.Add((ConvertTo-ReportDefinitionHtml ([ordered]@{'Task'='Not verified. Please check Task Scheduler manually.';'Restart Target'=$ServiceName})))
         $note='Task Scheduler check not verified: '+$_.Exception.Message
     }
-    $itemSub = if ($created -or (Test-CanApply)) { 'Type: Missing-only scheduled task repair' } else { 'Type: Read-only Scheduled Task Verification' }
+    $itemSub = if ($created -or $updated -or (Test-CanApply)) { 'Type: Missing-only scheduled task repair' } else { 'Type: Read-only Scheduled Task Verification' }
     Add-AuditEntry -SectionNumber 3 -SectionTitle 'Core Background Services' -ItemTitle 'Payment Service Restart Task' -ItemSub $itemSub -Shortcut (New-ReportCommand @('taskschd.msc')) -FoundStateHtml ($parts -join '') -Status $status -ActionTaken ([Net.WebUtility]::HtmlEncode($note))
     $auditRows[$auditRows.Count-1] | Add-Member -NotePropertyName ExpectedHtml -NotePropertyValue $expected
 }

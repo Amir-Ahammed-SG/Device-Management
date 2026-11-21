@@ -2216,7 +2216,7 @@ function Get-ReportRequirement {
     if($Row.ItemTitle -in @('Payment Service Restart Task','PaymentService Restart Task')){
         return ConvertTo-ReportDefinitionHtml ([ordered]@{
             'Task Name'='e.g. Restart PS';'Task Status'='Active';'Target'='Payment Service'
-            'Trigger Time'='time';'Last Run'='date & time';'Next Run'='date & time'
+            'Trigger Time'='Everyday at 6:00 AM';'Last Run'='date & time';'Next Run'='date & time'
         })
     }
     if ($Row.PSObject.Properties['ExpectedHtml']) { return $Row.ExpectedHtml }
