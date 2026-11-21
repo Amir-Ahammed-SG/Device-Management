@@ -1102,6 +1102,22 @@ $reportPath=Save-ThoroughReportBundle -Path $reportPath -ClientType $script:Kios
         if ($FinalReport) { Write-Host "Report saved: $reportPath" -ForegroundColor Gray }
         else { Write-Host "`nAudit report saved to:`n$reportPath" -ForegroundColor Green }
     }
+    if (Test-Path -LiteralPath $reportPath -PathType Leaf) {
+        $edgeExe = @(
+            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe'),
+            (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe')
+        ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+
+        try {
+            if ($edgeExe) {
+                [void](Start-Process -FilePath $edgeExe -ArgumentList "`"$reportPath`"")
+            } else {
+                [void](Start-Process -FilePath $reportPath)
+            }
+        } catch {
+            # Fallback if running headless, in automated test mocks, or restricted process launch
+        }
+    }
     }
 }
 $global:LASTEXITCODE = if ($failCount -gt 0) { 1 } else { 0 }
