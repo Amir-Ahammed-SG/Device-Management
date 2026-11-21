@@ -9,12 +9,7 @@
         @{
             Id          = 'SaaS'
             DisplayName = 'SaaS'
-            Devices     = @('KIOSK', 'POS', 'KDS')
-        }
-        @{
-            Id          = 'ViCafe'
-            DisplayName = 'ViCafe'
-            Devices     = @('POS')
+            Devices     = @('KIOSK', 'KDS')
         }
     )
 }
