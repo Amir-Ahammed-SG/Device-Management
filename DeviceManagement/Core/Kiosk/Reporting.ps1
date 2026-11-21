@@ -624,7 +624,7 @@ function ConvertTo-ThoroughSettingRows {
     $currentRecords=@(Get-ThoroughSettingRecords $CurrentHtml)
     # This component is one aggregate; its port list can legitimately change
     # from None/Any to explicit ports after a verified repair or fresh readback.
-    if($Row.ItemTitle -eq 'Firewall Inbound Port' -and $records.Count -eq 1 -and $currentRecords.Count -eq 1){$currentRecords[0].Key=$records[0].Key}
+    if($Row.ItemTitle -in @('Firewall Inbound Port','Payment Service Restart Task','PaymentService Restart Task') -and $records.Count -eq 1 -and $currentRecords.Count -eq 1){$currentRecords[0].Key=$records[0].Key}
     $noBaseline=$Mode -eq 'Fix' -and $AfterApply -and -not $HasBeforeRow
     # A retained repair may have only an old generic no-change summary. Show the
     # recorded post-fix properties without inventing their missing pre-fix values.
