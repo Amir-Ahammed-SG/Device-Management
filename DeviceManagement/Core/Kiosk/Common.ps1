@@ -254,7 +254,7 @@ function Get-ThoroughFinalPrinterRow {
         $status=@($record.Fields | Where-Object {$_.Kind -eq 'Field' -and $_.Label -eq 'Printer status'})
         if(-not $record.Identity -or $record.Identity.Label -ne 'Printer Name' -or $status.Count -ne 1 -or $status[0].Text -notin @('Active','Idle') -or $status[0].State -eq 'unverified'){continue}
         $name=[string]$record.Identity.Text
-        if([string]::IsNullOrWhiteSpace($name) -or $name -match '(?i)^(?:Not verified|Not detected|Not recorded|Unknown)(?:[.!](?:\s.*)?)?$'){continue}
+        if([string]::IsNullOrWhiteSpace($name) -or $name -match '(?i)^(?:Not verified|Not detected|No printer detected|Not recorded|Unknown)(?:[.!](?:\s.*)?)?$'){continue}
         $own=@(for($i=0;$i -lt $markers.Count;$i++){if($markers[$i].Groups['Name'].Value -ieq $name){$i}})
         $note=''
         if($own.Count -eq 1){
@@ -268,7 +268,26 @@ function Get-ThoroughFinalPrinterRow {
         }) -join ''
         [pscustomobject]@{SectionNumber=$Row.SectionNumber;SectionTitle=$Row.SectionTitle;ItemTitle=$name;ItemSub='Type: Receipt / POS Printer';Shortcut='';FoundStateHtml=('<div class="kv-block">'+$body+'</div>');Status=$Row.Status;ActionTaken=[Net.WebUtility]::HtmlEncode($note)}
     })
-    if($printers.Count){New-ThoroughPrinterReportRow -Rows $printers}
+    if($printers.Count){
+        New-ThoroughPrinterReportRow -Rows $printers
+    } elseif ($Row.ActionTaken -match '(?i)No physical printer detected|No printer detected' -or $Row.FoundStateHtml -match '(?i)No printer detected') {
+        $noPrinterHtml = ConvertTo-ReportDefinitionHtml ([ordered]@{
+            'Printer Name' = 'No printer detected'
+            'Printer status' = 'Not detected'
+            'Keep printed documents' = 'Not detected'
+        })
+        [pscustomobject]@{
+            SectionNumber = $Row.SectionNumber
+            SectionTitle = $Row.SectionTitle
+            ItemTitle = 'Printer'
+            ItemSub = 'Type: Receipt / Hardware'
+            Shortcut = ''
+            ExpectedHtml = (Get-ReportRequirement $Row)
+            FoundStateHtml = $noPrinterHtml
+            Status = 'Fail'
+            ActionTaken = 'No physical printer detected. Check connection and printer driver.'
+        }
+    }
 }
 
 function Add-ResultEntry {

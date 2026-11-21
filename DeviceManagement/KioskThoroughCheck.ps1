@@ -426,48 +426,61 @@ try {
     $installedPrinters = @(Get-Printer -ErrorAction Stop | Where-Object { $_.Name -notmatch 'OneNote|PDF|XPS|Fax' })
     Write-AuditOperation 'Reading printer hardware state from Windows CIM...'
     $cimPrinters = @(Get-CimInstance -ClassName Win32_Printer -ErrorAction Stop)
-    if ($installedPrinters.Count -eq 0) { throw 'No physical printer detected. Check connection and printer driver.' }
-    foreach ($ptr in $installedPrinters) {
-        $pName = $ptr.Name
-        $printerAction = 'No changes needed'
-        $printerChanges = [Collections.Generic.List[string]]::new()
-        $printerStatus = 'Fail'
-        $printerState = 'Not verified. Please check manually.'
-        $keepPrintedState = 'Not verified. Please check manually.'
-        try {
-            $cimPrinter = @($cimPrinters | Where-Object { $_.Name -eq $pName }) | Select-Object -First 1
-            if (-not $cimPrinter) { throw 'Win32_Printer state is unavailable for this queue.' }
-            $health = Get-PrinterHealth -Printer $ptr -CimPrinter $cimPrinter
-            $printerState = $health.State
-            $keepPrinted = $ptr.KeepPrintedJobs
-            if ($null -eq $keepPrinted) { $keepPrinted = $cimPrinter.KeepPrintedJobs }
-            if ($null -eq $keepPrinted) { throw 'Cannot read Keep printed documents setting.' }
-            $keepPrintedState = if ($keepPrinted) { 'Enabled' } else { 'Disabled' }
-            if (-not $keepPrinted -and (Test-CanApply)) {
-                Set-Printer -Name ([WildcardPattern]::Escape($pName)) -KeepPrintedJobs $true -ErrorAction Stop
-                $ptr = Get-Printer -Name ([WildcardPattern]::Escape($pName)) -ErrorAction Stop
+    if ($installedPrinters.Count -eq 0) {
+        $noPrinterHtml = ConvertTo-ReportDefinitionHtml ([ordered]@{
+            'Printer Name' = 'No printer detected'
+            'Printer status' = 'Not detected'
+            'Keep printed documents' = 'Not detected'
+        })
+        Add-AuditEntry -SectionNumber $sec1Num -SectionTitle $sec1Title -ItemTitle 'Physical Printers' -ItemSub 'Type: Receipt / Hardware' -Shortcut '<code>control printers</code>' -FoundStateHtml $noPrinterHtml -Status 'Fail' -ActionTaken 'No physical printer detected. Check connection and printer driver.'
+    } else {
+        foreach ($ptr in $installedPrinters) {
+            $pName = $ptr.Name
+            $printerAction = 'No changes needed'
+            $printerChanges = [Collections.Generic.List[string]]::new()
+            $printerStatus = 'Fail'
+            $printerState = 'Not verified. Please check manually.'
+            $keepPrintedState = 'Not verified. Please check manually.'
+            try {
+                $cimPrinter = @($cimPrinters | Where-Object { $_.Name -eq $pName }) | Select-Object -First 1
+                if (-not $cimPrinter) { throw 'Win32_Printer state is unavailable for this queue.' }
+                $health = Get-PrinterHealth -Printer $ptr -CimPrinter $cimPrinter
+                $printerState = $health.State
                 $keepPrinted = $ptr.KeepPrintedJobs
-                if ($null -eq $keepPrinted) { $keepPrintedState = 'Not verified. Please check manually.'; throw 'Cannot verify Keep printed documents setting.' }
+                if ($null -eq $keepPrinted) { $keepPrinted = $cimPrinter.KeepPrintedJobs }
+                if ($null -eq $keepPrinted) { throw 'Cannot read Keep printed documents setting.' }
                 $keepPrintedState = if ($keepPrinted) { 'Enabled' } else { 'Disabled' }
-                if (-not $keepPrinted) { throw 'Keep printed documents could not be enabled.' }
-                $printerChanges.Add('Enabled Keep printed documents')
-            }
+                if (-not $keepPrinted -and (Test-CanApply)) {
+                    Set-Printer -Name ([WildcardPattern]::Escape($pName)) -KeepPrintedJobs $true -ErrorAction Stop
+                    $ptr = Get-Printer -Name ([WildcardPattern]::Escape($pName)) -ErrorAction Stop
+                    $keepPrinted = $ptr.KeepPrintedJobs
+                    if ($null -eq $keepPrinted) { $keepPrintedState = 'Not verified. Please check manually.'; throw 'Cannot verify Keep printed documents setting.' }
+                    $keepPrintedState = if ($keepPrinted) { 'Enabled' } else { 'Disabled' }
+                    if (-not $keepPrinted) { throw 'Keep printed documents could not be enabled.' }
+                    $printerChanges.Add('Enabled Keep printed documents')
+                }
 
-            $printerState = $health.State
-            if ($health.Healthy -and $keepPrinted) { $printerStatus = 'Pass' }
-            if (-not $keepPrinted) { $printerChanges.Add('Enable Keep printed documents in Apply Mode') }
-            if ($health.State -in @('Offline','Not available')) { $printerChanges.Add('Check printer connection and availability') }
-            elseif ($printerState -in @('Error','Paused')) { $printerChanges.Add('Check printer status manually') }
-            if ($printerChanges.Count -gt 0) { $printerAction = $printerChanges -join '; ' }
-        } catch {
-            $printerAction = $_.Exception.Message
+                $printerState = $health.State
+                if ($health.Healthy -and $keepPrinted) { $printerStatus = 'Pass' }
+                if (-not $keepPrinted) { $printerChanges.Add('Enable Keep printed documents in Apply Mode') }
+                if ($health.State -in @('Offline','Not available')) { $printerChanges.Add('Check printer connection and availability') }
+                elseif ($printerState -in @('Error','Paused')) { $printerChanges.Add('Check printer status manually') }
+                if ($printerChanges.Count -gt 0) { $printerAction = $printerChanges -join '; ' }
+            } catch {
+                $printerAction = $_.Exception.Message
+            }
+            $printerHtml = ConvertTo-ReportDefinitionHtml ([ordered]@{ 'Printer Name'=$pName; 'Printer status'=$printerState; 'Keep printed documents'=$keepPrintedState })
+            $printerShortcut = New-ReportCommand @('control printers', ('rundll32 printui.dll,PrintUIEntry /o /n "{0}"' -f $pName))
+            Add-AuditEntry -SectionNumber $sec1Num -SectionTitle $sec1Title -ItemTitle $pName -ItemSub 'Type: Receipt / POS Printer' -Shortcut $printerShortcut -FoundStateHtml $printerHtml -Status $printerStatus -ActionTaken ([System.Net.WebUtility]::HtmlEncode($printerAction))
         }
-        $printerHtml = ConvertTo-ReportDefinitionHtml ([ordered]@{ 'Printer Name'=$pName; 'Printer status'=$printerState; 'Keep printed documents'=$keepPrintedState })
-        $printerShortcut = New-ReportCommand @('control printers', ('rundll32 printui.dll,PrintUIEntry /o /n "{0}"' -f $pName))
-        Add-AuditEntry -SectionNumber $sec1Num -SectionTitle $sec1Title -ItemTitle $pName -ItemSub 'Type: Receipt / POS Printer' -Shortcut $printerShortcut -FoundStateHtml $printerHtml -Status $printerStatus -ActionTaken ([System.Net.WebUtility]::HtmlEncode($printerAction))
     }
 } catch {
-    Add-AuditEntry -SectionNumber $sec1Num -SectionTitle $sec1Title -ItemTitle 'Physical Printers' -ItemSub 'Type: Receipt / Hardware' -Shortcut '<code>control printers</code>' -FoundStateHtml 'Not verified. Please check manually.' -Status 'Fail' -ActionTaken ([System.Net.WebUtility]::HtmlEncode($_.Exception.Message))
+    $errHtml = ConvertTo-ReportDefinitionHtml ([ordered]@{
+        'Printer Name' = 'No printer detected'
+        'Printer status' = 'Not verified'
+        'Keep printed documents' = 'Not verified'
+    })
+    Add-AuditEntry -SectionNumber $sec1Num -SectionTitle $sec1Title -ItemTitle 'Physical Printers' -ItemSub 'Type: Receipt / Hardware' -Shortcut '<code>control printers</code>' -FoundStateHtml $errHtml -Status 'Fail' -ActionTaken ([System.Net.WebUtility]::HtmlEncode($_.Exception.Message))
 }
 
 # 1.2 PrintService Event Log
@@ -1124,14 +1137,33 @@ $reportPath=Save-ThoroughReportBundle -Path $reportPath -ClientType $script:Kios
             (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe')
         ) | Where-Object { [IO.File]::Exists($_) } | Select-Object -First 1
 
+        $refreshed = $false
         try {
-            if ($edgeExe) {
-                [void](Start-Process -FilePath $edgeExe -ArgumentList "`"$reportPath`"")
-            } else {
-                [void](Start-Process -FilePath $reportPath)
+            $wshell = New-Object -ComObject WScript.Shell
+            $reportName = [IO.Path]::GetFileNameWithoutExtension($reportPath)
+            if ($wshell.AppActivate('Thorough Check Reports')) {
+                Start-Sleep -Milliseconds 200
+                $wshell.SendKeys('{F5}')
+                $refreshed = $true
+            } elseif ($wshell.AppActivate($reportName)) {
+                Start-Sleep -Milliseconds 200
+                $wshell.SendKeys('{F5}')
+                $refreshed = $true
             }
         } catch {
-            # Fallback if running headless, in automated test mocks, or restricted process launch
+            $refreshed = $false
+        }
+
+        if (-not $refreshed) {
+            try {
+                if ($edgeExe) {
+                    [void](Start-Process -FilePath $edgeExe -ArgumentList "`"$reportPath`"")
+                } else {
+                    [void](Start-Process -FilePath $reportPath)
+                }
+            } catch {
+                # Fallback if running headless, in automated test mocks, or restricted process launch
+            }
         }
     }
     }

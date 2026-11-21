@@ -75,6 +75,23 @@ foreach($client in @('SaaS','Subway')){
     $final=New-ThoroughReportSnapshot -Rows @($printers[0],$printers[1],$log) -DisplayMode Final
     $html=Decode-FinalInventory $final
     Assert-FinalInventory ((Get-SettingRenderedComponent $html Printer).Count -eq 0 -and (Get-SettingRenderedComponent $html 'PrintService Log').Count -eq 1) 'No eligible printers left a false printer row or removed other hardware checks'
+    $noPhysicalPrinterRow = [pscustomobject]@{
+        SectionNumber = 1; SectionTitle = 'Hardware & Peripherals'
+        ItemTitle = 'Physical Printers'; ItemSub = 'Type: Receipt / Hardware'
+        Shortcut = '<code>control printers</code>'
+        FoundStateHtml = (ConvertTo-ReportDefinitionHtml ([ordered]@{
+            'Printer Name' = 'No printer detected'
+            'Printer status' = 'Not detected'
+            'Keep printed documents' = 'Not detected'
+        }))
+        Status = 'Fail'
+        ActionTaken = 'No physical printer detected. Check connection and printer driver.'
+    }
+    $noPrinterFinal = New-ThoroughReportSnapshot -Rows @($noPhysicalPrinterRow, $log) -DisplayMode Final
+    $noPrinterHtml = Decode-FinalInventory $noPrinterFinal
+    $noPrinterView = Get-SettingRenderedComponent $noPrinterHtml Printer
+    Assert-FinalInventory (@($noPrinterView.Fields | Where-Object { $_.Setting -eq 'Printer Name' -and $_.Value -eq 'No printer detected' }).Count -eq 1) 'Missing physical printer did not show No printer detected in Final report'
+    Assert-FinalInventory ((Get-SettingRenderedComponent $noPrinterHtml 'PrintService Log').Count -eq 1) 'Missing physical printer removed PrintService Log'
     $healthyFix=New-ThoroughReportSnapshot -Rows @($printers[3]) -DisplayMode Fix
     Assert-FinalInventory ((Decode-FinalInventory $healthyFix).Contains('No fixes required.')) 'Single-row Fix lost its array shape or no-fixes message'
     $adminCases=@(

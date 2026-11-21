@@ -596,7 +596,7 @@ function Get-ThoroughSettingRecords {
     if($current.Heading -or $current.Fields.Count){$records.Add($current)}
     foreach($record in $records){
         foreach($label in @('Account Name','Printer Name','Service Name','Task Name','Terminal ID','TerminalId','POS ID','PosId','Ports')){
-            $identity=@($record.Fields|Where-Object {$_.Kind -eq 'Field' -and $_.Label -ieq $label -and -not [string]::IsNullOrWhiteSpace($_.Text) -and $_.Text -notmatch '(?i)^(?:not verified|not detected|unknown|missing|not found)'})
+            $identity=@($record.Fields|Where-Object {$_.Kind -eq 'Field' -and $_.Label -ieq $label -and -not [string]::IsNullOrWhiteSpace($_.Text) -and $_.Text -notmatch '(?i)^(?:not verified|not detected|no printer detected|unknown|missing|not found)'})
             if($identity.Count -eq 1){$record.Identity=$identity[0];break}
         }
         $key=if($record.Identity){$record.Identity.Label+[char]31+$record.Identity.Text}else{$record.Record}
@@ -608,7 +608,7 @@ function Get-ThoroughSettingRecords {
 function ConvertTo-ThoroughSettingValue {
     param([AllowEmptyString()][string]$Html,[string]$State,[string]$Description)
     $plain=Convert-ReportHtmlToTerminalText $Html
-    if($plain -match '(?i)\bnot\s+verified\b|^(?:not detected|not recorded|not applied|unknown|unavailable|not executed)(?:[.\s(]|$)'){$State='unverified'}
+    if($plain -match '(?i)\bnot\s+verified\b|^(?:not detected|no printer detected|not recorded|not applied|unknown|unavailable|not executed)(?:[.\s(]|$)'){$State='unverified'}
     $class=if($State -in @('mismatch','unverified','manual') -or ($State -eq 'match' -and $Description -in @('Matches installed USB printer','Matches installed IP printer','Matches required service URL'))){' finding-'+$State}else{''}
     $title=if($Description){' title="'+[Net.WebUtility]::HtmlEncode($Description)+'"'}else{''}
     '<span class="setting-observed'+$class+'"'+$title+'>'+$Html+'</span>'
@@ -1068,8 +1068,9 @@ function New-ThoroughReportBundleHtml {
       <button type="button" role="tab" id="tab-Fix" data-mode="Fix" aria-controls="report-frame" aria-selected="false" tabindex="-1">Fix</button>
       <button type="button" role="tab" id="tab-Final" data-mode="Final" aria-controls="report-frame" aria-selected="false" tabindex="-1">Final</button>
     </div>
-    <div class="bundle-actions" id="final-actions" hidden>
-      <button type="button" class="bundle-action" id="print-final">Print</button>
+    <div class="bundle-actions" id="bundle-actions">
+      <button type="button" class="bundle-action" id="reload-report" title="Reload report from disk">&#x21bb; Refresh</button>
+      <button type="button" class="bundle-action" id="print-final" hidden>Print</button>
     </div>
   </div>
 </header>
@@ -1104,7 +1105,7 @@ function update(){
   message('');var snapshot=active.Reports[mode];
   document.querySelectorAll('[data-mode]').forEach(function(button){var selected=button.dataset.mode===mode;button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;});
   frame.setAttribute('aria-labelledby','tab-'+mode);frame.title=active.ClientType+' '+labels[mode];
-  document.getElementById('final-actions').hidden=mode!=='Final'||!snapshot;
+  document.getElementById('print-final').hidden=mode!=='Final'||!snapshot;
   document.getElementById('bundle-description').textContent=descriptions[mode]+(snapshot?(snapshot.Origin==='Audit observations'?' Based on Audit.':'')+' Saved: '+snapshot.GeneratedAt+' | Restaurant ID: '+(snapshot.RestaurantId||'Not detected'):' Not run.');
   if(snapshot){frame.srcdoc=decode(snapshot.HtmlBase64);}
   else{var empty=document.implementation.createHTMLDocument(labels[mode]);var main=empty.createElement('main');main.style.cssText='font:14px/1.5 Arial,sans-serif;color:#253b53;padding:32px';var title=empty.createElement('h2');title.textContent=labels[mode]+' has not been run';var note=empty.createElement('p');note.textContent='Run this mode in Device Management to add its results to this file.';main.append(title,note);empty.body.appendChild(main);frame.srcdoc='<!doctype html>'+empty.documentElement.outerHTML;}
@@ -1115,6 +1116,10 @@ document.querySelectorAll('[data-mode]').forEach(function(button){
   button.addEventListener('click',function(){mode=button.dataset.mode;update();});
   button.addEventListener('keydown',function(event){var index=modes.indexOf(mode),next;if(event.key==='ArrowRight')next=(index+1)%modes.length;else if(event.key==='ArrowLeft')next=(index+modes.length-1)%modes.length;else if(event.key==='Home')next=0;else if(event.key==='End')next=modes.length-1;else return;event.preventDefault();mode=modes[next];update();document.getElementById('tab-'+mode).focus();});
 });
+var reloadBtn=document.getElementById('reload-report');if(reloadBtn){reloadBtn.addEventListener('click',function(){window.location.reload();});}
+var lastActive=Date.now();
+window.addEventListener('focus',function(){if(Date.now()-lastActive>2500){lastActive=Date.now();window.location.reload();}});
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible'&&(Date.now()-lastActive>2500)){lastActive=Date.now();window.location.reload();}});
 document.getElementById('print-final').addEventListener('click',function(){if(mode==='Final'&&active.Reports.Final){preparePrint();window.print();}});
 var originalTitle=document.title;
 window.addEventListener('beforeprint',function(){preparePrint();if(active.Reports.Final){document.title=(active.Reports.Final.ExportFileName||'Thorough Check Report').replace(/\.html$/i,'');}});
@@ -1742,8 +1747,8 @@ function New-ThoroughPrinterReportRow {
     $printerNumber=0
     foreach ($printer in $Rows) {
         $detected=$printer.ItemSub -eq 'Type: Receipt / POS Printer' -and -not [string]::IsNullOrWhiteSpace([string]$printer.ItemTitle)
-        $name=if ($detected) { [string]$printer.ItemTitle } else { 'Not verified' }
-        $blockTitle=if ($detected) { $printerNumber++; 'Printer '+$printerNumber } else { 'Not verified' }
+        $name=if ($detected) { [string]$printer.ItemTitle } else { 'No printer detected' }
+        $blockTitle=if ($detected) { $printerNumber++; 'Printer '+$printerNumber } else { 'No printer detected' }
         $heading=if ($multiple) { '<div class="config-item-title">['+$blockTitle+']</div>' } else { '' }
         $state=[string]$printer.FoundStateHtml
         if ([string]::IsNullOrWhiteSpace($state)) { $state='Not verified. Please check manually.'; $verified=$false }
@@ -2009,7 +2014,7 @@ function Get-ThoroughReportCollectedValueState {
         }
         # AppSettings colors describe collected data, including False and zero.
         if($actual -match '(?i)\bnot\s+verified\b|\bmanual\s+action\s+required\b|^(?:unknown|unavailable)(?:[.\s(]|$)|\bnot available\b'){return 'unverified'}
-        if(-not $actual -or $actual -eq '(empty)' -or $actual -match '(?i)^(?:Missing|Not found|Not detected|Not recorded|Not configured|Not readable)(?:[.!](?:\s.*)?)?$'){return 'unverified'}
+        if(-not $actual -or $actual -eq '(empty)' -or $actual -match '(?i)^(?:Missing|Not found|Not detected|No printer detected|Not recorded|Not configured|Not readable)(?:[.!](?:\s.*)?)?$'){return 'unverified'}
         if($Row.ItemTitle -in @('Print','Printer') -and $Label -in @('KioskPrinterDisableChineseMode','Disable Chinese Mode') -and $Requirements -and $Requirements.Contains($Label)){
             if($actual -ieq 'true'){return 'required-match'}
             return 'required-mismatch'
@@ -2032,7 +2037,7 @@ function Get-ThoroughReportCollectedValueState {
     if(-not $targeted){return ''}
     $actual=([string]$Value).Trim()
     if($actual -match '(?i)\bnot\s+verified\b|^(?:unknown|unavailable)(?:[.\s(]|$)'){return 'unverified'}
-    if(-not $actual -or $actual -match '(?i)^(?:Missing|Not found|Not detected|Not recorded|Not configured|Not readable|No trigger configured)(?:[.!](?:\s.*)?)?$'){return 'missing'}
+    if(-not $actual -or $actual -match '(?i)^(?:Missing|Not found|Not detected|No printer detected|Not recorded|Not configured|Not readable|No trigger configured)(?:[.!](?:\s.*)?)?$'){return 'missing'}
     'collected'
 }
 
