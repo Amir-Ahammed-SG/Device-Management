@@ -932,7 +932,7 @@ try {
         if (-not $wuRecoveryValid) { throw 'Windows Update recovery settings could not be verified; remaining repairs skipped.' }
         if ($wuauserv.StartMode -ne 'Disabled') { Set-Service -Name 'wuauserv' -StartupType Disabled -ErrorAction Stop; $wuChanges.Add('Startup set to Disabled') }
         if ($wuauserv.State -ne 'Stopped') {
-            Stop-Service -Name 'wuauserv' -Force -ErrorAction Stop
+            Stop-Service -Name 'wuauserv' -Force -WarningAction SilentlyContinue -ErrorAction Stop
             $wuChanges.Add('Service stop requested')
             $wuWaitService = Get-Service -Name 'wuauserv' -ErrorAction Stop
             $wuWaitService.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped, [TimeSpan]::FromSeconds(30))

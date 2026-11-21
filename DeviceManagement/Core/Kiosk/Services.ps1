@@ -883,7 +883,7 @@ function Invoke-LegacyPaymentServiceCheck {
             if (-not $noAction) { throw 'Take No Action recovery could not be verified; remaining changes skipped.' }
             if ($startup -ne 'Manual') { Set-Service -Name $serviceName -StartupType Manual -ErrorAction Stop; $legacyChanges.Add('Startup set to Manual') }
             if ($state -ne 'Stopped') {
-                Stop-Service -Name $serviceName -ErrorAction Stop
+                Stop-Service -Name $serviceName -WarningAction SilentlyContinue -ErrorAction Stop
                 $legacyChanges.Add('Service stop requested')
                 $waitService=Get-Service -Name $serviceName -ErrorAction Stop
                 $waitService.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Stopped,[TimeSpan]::FromSeconds(30))
