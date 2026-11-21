@@ -145,6 +145,9 @@ if (-not (Test-Path $ScriptDir)) {
 # Create Kiosk Launch Script
 $KioskScriptPath = Join-Path $ScriptDir "LaunchKiosk.ps1"
 $KioskScriptContent = @"
+if (Get-Process -Name msedge -ErrorAction SilentlyContinue) {
+    exit 0
+}
 Start-Process -FilePath '$EdgePath' -ArgumentList '--kiosk $URL --edge-kiosk-type=fullscreen --no-first-run --disable-pinch --disable-features=msEdgeSwipe' -WindowStyle Maximized
 "@
 $KioskScriptContent | Set-Content -Path $KioskScriptPath
@@ -156,7 +159,12 @@ if (-not (Test-Path $StartupFolder)) {
 }
 
 $BatchFilePath = Join-Path $StartupFolder "LaunchKiosk.bat"
-$BatchFileContent = "powershell.exe -ExecutionPolicy Bypass -File `"$KioskScriptPath`""
+$BatchFileContent = @"
+@echo off
+tasklist /FI "IMAGENAME eq msedge.exe" 2>NUL | find /I /N "msedge.exe">NUL
+if "%ERRORLEVEL%"=="0" exit /b 0
+powershell.exe -ExecutionPolicy Bypass -File "$KioskScriptPath"
+"@
 $BatchFileContent | Set-Content -Path $BatchFilePath
 
 # Create shortcut to Kiosk Script on Desktop

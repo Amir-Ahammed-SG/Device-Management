@@ -43,7 +43,7 @@ The CDN bundle embeds these dependencies in memory.
 | `Packages/Nmap/` | Instructions and preparation script for an optional verified local installer. Installer binaries are ignored by Git. |
 | `Handlers/` | Returns Unavailable for operations that are not implemented. |
 | `Tests/` | Current isolated regression scripts, shared helpers and historical renderer fixtures. |
-| `Deployment/` | Release building, analysis, in-memory execution and controlled CDN publication. |
+| `Deployment/` | Release building, in-memory bundling, static analysis, and runtime verification. |
 | `Deployment/ScriptAnalysis/` | Pinned analyzer version, rules and source coverage policy. |
 | `Docs/` | Operator and developer guides. |
 | `output/` | Disposable builds, reports and fixture files; generated and ignored by Git. |
@@ -58,7 +58,7 @@ configuration scenarios; they do not supply separate implementations.
 - [Shared architecture and module loading](Docs/Architecture.md)
 - [Tests and CI](Docs/Testing.md)
 - [Local records, archives and recovery](Docs/Maintenance.md)
-- [Deployment](Deployment/README.md)
+- [Release building and deployment](Deployment/README.md)
 
 POS/KDS checks, payment-package operations and other unsupported client/device
 selections remain unavailable. An unavailable selection performs no device changes.

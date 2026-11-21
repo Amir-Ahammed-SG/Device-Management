@@ -862,6 +862,8 @@ function Open-KioskLaunchTaskScheduler {
 function New-KioskLaunchTaskDefinition {
     param($Service,$Context)
     $definition=$service.NewTask(0)
+    # The task starts the kiosk launcher at user logon. Single-instance execution is enforced
+    # both via MultipleInstances=IgnoreNew (2) and process detection inside the launcher script.
     $definition.RegistrationInfo.Description='Start the existing kiosk launcher five seconds after the selected local user logs on.'
     $definition.Principal.UserId=$Context.Sid;$definition.Principal.LogonType=3;$definition.Principal.RunLevel=0
     $trigger=$definition.Triggers.Create(9);$trigger.UserId=$Context.Sid;$trigger.Delay='PT5S';$trigger.Enabled=$true

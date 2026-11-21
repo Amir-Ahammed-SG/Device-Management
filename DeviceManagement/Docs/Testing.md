@@ -53,9 +53,7 @@ No production service is controlled in either mode.
 
 GitHub Actions pins the official setup-node action, selects Node.js 24, runs analysis first, then Test-GitHubRelease with browser tests.
 That release gate validates source/runtime hashes and invokes this same discovered
-suite. Regression logs and results are retained as CI artifacts even on failure. The Linux deployment fixture job runs Test-GitHubDeployment.py against fake
-SSH/SCP/HTTPS boundaries, including rollback. Publishing remains gated by the
-existing deployment variables and main-branch restrictions.
+suite. Regression logs, verified release artifacts, and analysis summaries are retained as CI artifacts.
 
 The earlier Legacy Pester suite referenced retired modules and old requirements.
 It is preserved in the verified local recovery archive; it is not part of the

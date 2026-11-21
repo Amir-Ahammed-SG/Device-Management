@@ -1,15 +1,20 @@
-# In-memory CDN entry
+# In-memory bundle and deployment
 
-GitHub `main` deployment is configured by
-[GitHub Actions](GitHub-Actions.md). Local commands below remain available.
+This directory contains the release build tools that package the application into a
+single in-memory executable script for web distribution.
+
+The active deployment is served by **Dokploy** via the Nginx static file container
+maintained in `OrdermonkeyDeploy/All-In-One/`. The previous SSH/CDN publisher and
+legacy server scripts have been retired.
 
 Run in 64-bit Windows PowerShell 5.1 as Administrator when performing checks:
 
 ```powershell
-irm 'https://cdn-ito.selisesme.com/script/DeviceManagement.ps1' -EA Stop | iex
+irm 'https://<your-domain>/DeviceManagement.ps1' -EA Stop | iex
 ```
 
-Publication history is in [GitHub Actions](https://github.com/Amir-Ahammed-SG/Device-Management/actions/workflows/device-management.yml). The entry offers Microsoft Edge only for the [shared SaaS/Subway KIOSK setup](../Installations/KIOSK/README.md) with prompted inputs. Pushes and merges to `main` build and test; automatic deployment requires the repository's deployment variables and secrets.
+Releases are built locally or in CI from the maintained source and published via the
+OrderMonkey Dokploy deployment.
 
 `/script/DeviceManagement.ps1` is the standard CDN entry for the shared device
 and tool menu. The previous `/device-management/Start-DeviceManagement.ps1` and
@@ -84,28 +89,12 @@ The local build and private staging filename stays Start-DeviceManagement.ps1;
 the publisher exposes those exact bytes as DeviceManagement.ps1. The local
 file-based launcher and internal resource paths retain their existing names.
 
-Stage both files and Publish-Release.sh in the server's private directory:
-/home/ito_kpi_admin/ito-cdn/.deployments/<release-id>
+To deploy the built release to the OrderMonkey Dokploy server:
 
-The publish destination is
-`/home/ito_kpi_admin/ito-cdn/files/script/DeviceManagement.ps1`.
-Its parent directory must exist as a real directory before activation. The initial
-URL migration and endpoint-specific rollback are recorded under
-the local recovery archive. Older deployment records are
-historical and retain their original URLs.
-
-Activate using the current entry hash and the new entry hash:
-
-```bash
-sudo -n bash /home/ito_kpi_admin/ito-cdn/.deployments/<release-id>/Publish-Release.sh activate <release-id> <previous-sha256> <new-sha256>
-```
-
-Use absent instead of a previous hash only for a new endpoint. Activation checks
-the current contents, saves an existing entry privately and atomically replaces
-it while preserving ownership/mode. Verify the public SHA256 and run an Exit-only
-menu smoke test. The same arguments with rollback restore the prior entry only
-if the endpoint still matches the new hash. Older deployments keep their own
-publisher scripts and rollback arguments. No container restart is required.
+1. Copy the generated `Start-DeviceManagement.ps1` to `All-In-One/public/DeviceManagement.ps1` in the `OrdermonkeyDeploy` checkout.
+2. Copy `release.json` to `All-In-One/release.json`.
+3. Verify that the copied script SHA256 matches `BootstrapSHA256` in `release.json`.
+4. Commit and push `All-In-One/` in the `ordermonkey-issue` repository. Dokploy automatically builds and deploys the Nginx container serving the updated bundle.
 
 Reports write to `C:\Thorough Check\` when requested; restore points use its
 `Restore Points` subfolder. Other Tools > Payment Cron Job runs from an isolated
